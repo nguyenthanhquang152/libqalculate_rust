@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use libqalculate_rust::batch::is_session_command;
+
 const BATCH_FILES: &[&str] = &[
     "bitwise.batch",
     "calculus.batch",
@@ -148,8 +150,4 @@ fn flush_case_id(
             ids.push(format!("{batch_file}:{line}"));
         }
     }
-}
-
-fn is_session_command(line: &str) -> bool {
-    line.starts_with("set ") || line.starts_with("/set ") || line.starts_with("/assume ")
 }

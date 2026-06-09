@@ -30,7 +30,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use libqalculate_rust::batch::read_batch_cases;
+use libqalculate_rust::batch::{is_session_command, read_batch_cases};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -186,10 +186,7 @@ fn parse_session_commands(input: &str) -> Vec<(usize, SessionCommand)> {
     for (idx, raw_line) in input.lines().enumerate() {
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let trimmed = line.trim();
-        if trimmed.starts_with("/set ")
-            || trimmed.starts_with("set ")
-            || trimmed.starts_with("/assume ")
-        {
+        if is_session_command(trimmed) {
             commands.push((
                 idx + 1,
                 SessionCommand {
@@ -228,10 +225,7 @@ fn accumulated_settings_for_cases(input: &str, case_count: usize) -> Vec<Vec<Ses
             continue;
         }
 
-        if stripped.starts_with("/set ")
-            || stripped.starts_with("set ")
-            || stripped.starts_with("/assume ")
-        {
+        if is_session_command(stripped) {
             if current_expr_line.is_some() && has_expected {
                 expr_lines.push(current_expr_line.unwrap());
                 current_expr_line = None;

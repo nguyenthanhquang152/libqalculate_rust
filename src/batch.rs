@@ -133,7 +133,8 @@ fn flush_case(
     Ok(())
 }
 
-fn is_session_command(line: &str) -> bool {
+/// Return true for upstream batch session commands that affect later cases.
+pub fn is_session_command(line: &str) -> bool {
     line.starts_with("set ") || line.starts_with("/set ") || line.starts_with("/assume ")
 }
 
