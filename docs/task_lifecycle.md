@@ -1,17 +1,20 @@
 # Task Lifecycle for Porting Agents
 
-This lifecycle is the required path from selecting a porting task to handing it off for
-review. It ties together the master plan, coding rules, testing strategy, quality gates, and
-agent skills.
+This lifecycle is the required path from selecting a GitHub issue to handing its pull
+request off for review. It ties together the master plan, coding rules, testing strategy,
+quality gates, GitHub workflow, and agent skills.
 
 ## 1. Select and Bound the Task
 
-Start from `docs/porting_master_plan.md`. If a task is larger than M, split it before
-implementation. A task must have a disjoint owner module and a clear upstream oracle.
+Start from a GitHub issue created from `docs/porting_master_plan.md` and
+`docs/github_workflow.md`. If a task is larger than M, split it before implementation. A task
+must have a disjoint owner module and a clear upstream oracle.
 
 Do not start coding until the task packet below is filled in.
 
 ```md
+GitHub issue:
+Linked tracking issue or milestone:
 Task ID / epic / size:
 Dependencies:
 Rust owner modules:
@@ -26,10 +29,16 @@ Intentional divergences:
 Prior lessons consulted:
 Tests to add first:
 Hygiene checkpoints:
+Branch:
+PR plan:
 Required gates:
 Required review skills:
 Completion evidence:
 ```
+
+An AI coding agent must comment on the issue with the branch name and first verification
+target before implementation begins. The branch should be named
+`issue/<number>-<short-slug>` or `agent/<number>-<short-slug>`.
 
 ## 2. Research Upstream Behavior
 
@@ -171,7 +180,25 @@ Run the review skills required by the task:
 Resolve findings and rerun affected gates. If a finding is intentionally not resolved, record
 the reason and the residual risk.
 
-## 9. Extract Lessons Learned
+## 9. Open or Update the Pull Request
+
+Each implementation issue must produce a PR. The PR is the review vehicle and the only path
+to `main`.
+
+PR rules:
+
+- Link exactly one primary issue.
+- Use `Closes #N` only when the PR fully satisfies the issue definition of done.
+- Use `Refs #N` for partial infrastructure or preparatory work.
+- Keep the PR as draft until required gates, oracle evidence, hygiene checks, and review
+  skills are complete or explicitly documented.
+- Push review fixes to the same PR branch and rerun affected gates.
+- Do not merge with open P0/P1 findings.
+
+Update the linked issue whenever scope changes, blockers appear, acceptance criteria are
+split, or follow-up issues are created.
+
+## 10. Extract Lessons Learned
 
 Every task should decide whether it produced a reusable lesson for future agents. Lessons are
 required when an agent:
@@ -199,11 +226,14 @@ If a lesson is reusable across tasks, update this lifecycle document or a dedica
 lessons registry in the same PR. Keep lessons concrete and actionable; avoid vague notes like
 "be careful" or "write better tests".
 
-## 10. Final Handoff Template
+## 11. Final Handoff Template
 
 Use this format for the final task response or PR body:
 
 ```md
+Issue:
+PR:
+
 Summary:
 -
 
@@ -235,10 +265,13 @@ Residual risks:
 -
 ```
 
-## 11. Completion Rules
+## 12. Completion Rules
 
 A task is incomplete if any of these are true:
 
+- There is no GitHub issue or the issue lacks a complete task packet.
+- The implementation was pushed directly to `main` instead of through a PR.
+- The PR does not link the issue or uses `Closes #N` before the issue is actually complete.
 - The upstream oracle files are not named.
 - Tests only prove fixture parsing or upstream availability.
 - The feature still uses C++ fallback but is claimed as native.

@@ -4,7 +4,8 @@ This document tells AI coding agents how to use the repository skills and docs w
 porting `libqalculate` from C++ to Rust. It is intentionally portable across Claude Code,
 Codex, Gemini, and plain shell-driven agents.
 
-For the full task lifecycle and handoff templates, see `docs/task_lifecycle.md`.
+For the full task lifecycle and handoff templates, see `docs/task_lifecycle.md`. For GitHub
+issue and pull request rules, see `docs/github_workflow.md`.
 
 ## Skill Invocation Rules
 
@@ -31,6 +32,7 @@ For the full task lifecycle and handoff templates, see `docs/task_lifecycle.md`.
 | CLI behavior | `domain-cli` | Compare with `../libqalculate/src/qalc.cc`; test as a user. | CLI flags, stdin, exit status, session behavior. |
 | Testing design | `code-review-testing`, testing handbook skills when available | Use `docs/testing_strategy.md` and `docs/quality-gates.md`. | Fixtures, oracle cases, property/fuzz/mutation scope. |
 | Refactoring | `rust-refactor-helper` | Use LSP or `cargo check` after small edits. | Refactor scope and gates. |
+| GitHub issue/PR work | `gh-cli`, `codex-pr-body` | Use authenticated `gh` commands; update issue and PR descriptions manually if needed. | Linked issue, branch, PR, review state. |
 | Final review | `code-review` orchestrator, `code-review-context`, `code-review-change-size`, `code-review-testing`, `code-review-breaking-changes` | Manually run each repository-local review checklist. | Findings resolved or documented. |
 | PR/handoff | `codex-pr-body` | Use the handoff template in `docs/task_lifecycle.md`. | Summary, tests, oracle evidence, deviations. |
 
@@ -38,13 +40,16 @@ For the full task lifecycle and handoff templates, see `docs/task_lifecycle.md`.
 
 Every implementation task must follow this order:
 
-1. Build a task packet from `docs/task_lifecycle.md`.
-2. Research upstream files and fixtures named by the packet.
-3. Add failing or pending tests from upstream behavior.
-4. Implement a native Rust slice without C++ fallback for the feature under test.
-5. Run required gates from `docs/quality-gates.md`.
-6. Run review skills and resolve findings.
-7. Record completion evidence and update any inventories or deviations.
+1. Pick or create a GitHub issue using `docs/github_workflow.md`.
+2. Build a task packet from `docs/task_lifecycle.md`.
+3. Comment on the issue with branch name and first verification target.
+4. Research upstream files and fixtures named by the packet.
+5. Add failing or pending tests from upstream behavior.
+6. Implement a native Rust slice without C++ fallback for the feature under test.
+7. Open a draft PR linked to the issue when code or review discussion is ready.
+8. Run required gates from `docs/quality-gates.md`.
+9. Run review skills and resolve findings on the PR branch.
+10. Record completion evidence and update any inventories, deviations, issues, and PR body.
 
 Do not mark a task complete from scaffold checks alone. `just test-oracle` proves parity only
 when it compares Rust and C++ output for the same case with fallback disabled.
@@ -53,6 +58,7 @@ when it compares Rust and C++ output for the same case with fallback disabled.
 
 Each task handoff must name:
 
+- GitHub issue and PR.
 - Upstream version and `qalc` path used.
 - Upstream headers and `.cc` files inspected.
 - Upstream data files used or affected.
@@ -69,12 +75,14 @@ evidence without broad source archaeology.
 
 Before final handoff for code changes:
 
-1. Run `code-review-change-size` to confirm task scope stayed XS/S/M.
-2. Run `code-review-context` to confirm upstream evidence is sufficient.
-3. Run `code-review-testing` to confirm behavior tests and oracle coverage.
-4. Run `code-review-breaking-changes` when public API or CLI behavior differs.
-5. Run `unsafe-checker` for any unsafe, FFI, raw pointer, ABI, or manual `Send`/`Sync` work.
-6. Resolve findings, rerun affected gates, and include the resolved-findings summary.
+1. Confirm the PR links the implementation issue and uses `Closes #N` only for complete work.
+2. Run `code-review-change-size` to confirm task scope stayed XS/S/M.
+3. Run `code-review-context` to confirm upstream evidence is sufficient.
+4. Run `code-review-testing` to confirm behavior tests and oracle coverage.
+5. Run `code-review-breaking-changes` when public API or CLI behavior differs.
+6. Run `unsafe-checker` for any unsafe, FFI, raw pointer, ABI, or manual `Send`/`Sync` work.
+7. Resolve findings, rerun affected gates, and include the resolved-findings summary in the
+   PR body and issue update.
 
 `thermos` may be used as an additional strict review pass, but it does not replace the
 repository-local review skills above.

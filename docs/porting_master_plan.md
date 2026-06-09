@@ -5,23 +5,28 @@ This plan drives a complete Rust port of `libqalculate` 5.11.0, using the adjace
 calculator. The final state must cover the public library surface, `qalc` CLI behavior,
 definition data, batch fixtures, diagnostics, and output formatting that upstream exposes.
 
-The plan is written for autonomous coding agents. Each task must be small enough to
-complete with tests in one focused change and must name the upstream files, fixtures, and
-Rust modules that prove compatibility.
+The plan is written for autonomous coding agents. Each task must become a GitHub issue
+before implementation. Each issue must be small enough to complete with tests in one focused
+change and must name the upstream files, fixtures, and Rust modules that prove
+compatibility. Each implementation issue is completed through a linked pull request, review
+fixes, and merge to `main`.
 
 ## Non-Negotiable Completion Contract
 
 A feature is not complete until all of the following are true:
 
-1. The relevant upstream C++ headers, implementation files, data files, and batch fixtures
+1. A GitHub issue exists with a complete task packet and a linked PR.
+2. The relevant upstream C++ headers, implementation files, data files, and batch fixtures
    are named in the task packet.
-2. Rust tests are added before or with the implementation and assert user-visible behavior.
-3. The Rust behavior passes without calling the C++ fallback for that feature.
-4. Differential oracle evidence compares Rust output with upstream `qalc` or a documented
+3. Rust tests are added before or with the implementation and assert user-visible behavior.
+4. The Rust behavior passes without calling the C++ fallback for that feature.
+5. Differential oracle evidence compares Rust output with upstream `qalc` or a documented
    upstream fixture.
-5. Any intentional divergence is recorded in `docs/deviations.md` with a test that locks it.
-6. Required quality gates and review skills from `docs/quality-gates.md` and
+6. Any intentional divergence is recorded in `docs/deviations.md` with a test that locks it.
+7. Required quality gates and review skills from `docs/quality-gates.md` and
    `docs/agent_skills_mapping.md` have been run, with evidence in the handoff.
+8. Review findings have been resolved or converted into accepted follow-up issues before
+   merge.
 
 The final port is complete only when every upstream public API family and every
 `../libqalculate/tests/*.batch` case is passing, or has an approved deviation or documented
@@ -40,12 +45,16 @@ Tasks larger than M must be split before assignment.
 
 ## Required Task Packet
 
-Every task in this plan must be expanded into this packet before an agent starts work:
+Every task in this plan must be expanded into this packet inside a GitHub issue before an
+agent starts work:
 
 ```md
+GitHub issue:
+Tracking issue / milestone:
 Task ID / epic / size:
 Dependencies:
 Rust owner modules:
+Architecture boundary:
 Upstream oracle files:
   - Headers:
   - Implementation:
@@ -53,9 +62,12 @@ Upstream oracle files:
   - Tests:
 User-visible behavior:
 Intentional divergences:
+Prior lessons consulted:
 Tests to add first:
+Hygiene checkpoints:
 Required gates:
 Required review skills:
+PR link:
 Completion evidence:
 ```
 
