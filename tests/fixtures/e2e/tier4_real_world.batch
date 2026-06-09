@@ -1,0 +1,33 @@
+set decimal comma 0
+set curconv 0
+set percent 1
+set abbr 1
+set edisp 0
+
+# Case 1: Compound Interest (finance)
+10000 USD * (1 + 4.5% / 12)^(12 * 15)
+	$19615.55008
+
+# Case 2: Newtonian Gravitational Force (physics)
+G * (5.972 * 10^24 kg) * (7.348 * 10^22 kg) / (3.844 * 10^8 m)^2
+	198.2 EN
+
+# Case 3: Retail discounting with sales tax (business)
+(120 USD - 25%) + 8.25%
+	$97.425
+
+# Case 4: Torque vector calculation via cross product (vector mechanics)
+cross([0 m, 2 m, 0 m], [10 N, 0 N, 0 N])
+	[(0 N*m)  (0 N*m)  (-20 N*m)]
+
+# Case 5: Tsiolkovsky rocket equation acceleration (calculus/aerospace)
+4500 m/s * ln(100000 kg / 10000 kg) to km/s
+	10.36163292 km/s
+
+# Case 6: Scientific Unit Pipelines (e.g. Light-years to meters)
+4.22 ly to m
+	3.992428259E16 m
+
+# Case 7: Date subtraction/duration scheduling (time math)
+date(2026, 6, 15) - date(2026, 6, 1) to hours
+	336 h

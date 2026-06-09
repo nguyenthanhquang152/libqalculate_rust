@@ -1,0 +1,4 @@
+interface:
+  display_name: "Change Size Review"
+  short_description: "Assess reviewable port diff size"
+  default_prompt: "Use $code-review-change-size to assess whether this Rust libqalculate port diff is reviewable."

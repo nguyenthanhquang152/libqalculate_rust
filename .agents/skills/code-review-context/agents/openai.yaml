@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context Review"
+  short_description: "Check bounded port review context"
+  default_prompt: "Use $code-review-context to check whether this Rust libqalculate port change has enough bounded review context."

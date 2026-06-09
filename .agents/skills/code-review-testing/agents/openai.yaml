@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing Review"
+  short_description: "Review libqalculate port test evidence"
+  default_prompt: "Use $code-review-testing to review whether this Rust libqalculate port change has enough test evidence."

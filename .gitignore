@@ -1,0 +1,96 @@
+# Rust build output
+/target/
+/target_*/
+**/target/
+
+# Rust tooling caches and generated reports
+/.tools/
+/coverage/
+/tarpaulin-report.html
+/lcov.info
+*.profraw
+*.profdata
+
+# Fuzzing and property-test artifacts
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz/coverage/
+/proptest-regressions/
+
+# Mutation-testing artifacts
+/mutants.out/
+/mutants.out.old/
+/.mutants.out/
+/mewt.sqlite
+
+# Native/compiler byproducts and local scratch builds
+*.a
+*.d
+*.dSYM/
+*.la
+*.lo
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+/test_compile
+/test_compile.*
+
+# Logs, temp files, and local environment
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.env
+.env.*
+!.env.example
+/.cache/
+/tmp/
+/temp/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+/.idea/
+/.vscode/*
+!/.vscode/extensions.json
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+
+# AI coding agent state, transcripts, and generated workspaces
+/.agents/*
+!/.agents/skills/
+!/.agents/skills/**
+/.codex/
+/.claude/
+/.gemini/
+/.omx/
+/.aider*
+/.continue/
+/.cursor/
+/.cursorrules
+/.windsurf/
+/.roo/
+/.kilocode/
+/.crush/
+/.openhands/
+/.devin/
+/.junie/
+/.qodo/
+/.tabnine/
+/.copilot/
+
+# Agent-generated codebase graphs and indexes
+/graphify-out/
+/.serena/
+/.semantic/
+/.repo-map/
+/.code-index/

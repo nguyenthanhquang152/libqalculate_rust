@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Orchestrate final port code review"
+  default_prompt: "Use $code-review to run a final review of this Rust libqalculate port change."

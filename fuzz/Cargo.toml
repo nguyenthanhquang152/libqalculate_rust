@@ -1,0 +1,21 @@
+[package]
+name = "libqalculate_rust-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+libqalculate_rust = { path = ".." }
+
+[[bin]]
+name = "batch_parser"
+path = "fuzz_targets/batch_parser.rs"
+test = false
+doc = false
+bench = false

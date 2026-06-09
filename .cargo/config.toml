@@ -1,0 +1,5 @@
+[alias]
+quality = "test --all-targets --all-features"
+
+[env]
+LIBQALCULATE_UPSTREAM_DIR = { value = "../libqalculate", relative = true }

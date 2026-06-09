@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex PR Body"
+  short_description: "Draft compatibility-aware PR bodies"
+  default_prompt: "Use $codex-pr-body to draft or update the PR body for this Rust libqalculate port change."

@@ -1,0 +1,142 @@
+# Feature 1: Basic Arithmetic & Operators
+1 / 0
+	1 / 0
+
+2^-3
+	0.125
+
+(-2)^-3
+	-0.125
+
+0^0
+	0^0
+
+0^-3
+	1 / 0^3
+
+0 * (1 / 0)
+	0 / 0
+
+1 + 2 * 3^4
+	163
+
+# Feature 2: Number Types
+10^100
+	1E100
+
+0.1234567890123456789012345678901234567890
+	0.1234567890
+
+(1/3)/0
+	0.3333333333 / 0
+
+set cplx 0
+
+sqrt(-1)
+	sqrt(-1)
+
+set cplx 1
+
+sqrt(-1)
+	i
+
+ln(-1)
+	3.141592654i
+
+# Feature 3: Intervals & Uncertainty
+[2, 2]
+	[2  2]
+
+[5, 2]
+	[5  2]
+
+5+/-(-0.2)
+	5.00±0.20
+
+[1, 2] / [-1, 1]
+	[1  2] / [-1  1]
+
+[2, 5] * [0, 0]
+	[0  0] * [2  5]
+
+[2, 5] / [0, 0]
+	[2  5] / [0  0]
+
+# Feature 4: Built-in Functions
+asin(2)
+	1.570796327 - 1.316957897i
+
+factorial(-1)
+	factorial(-1)
+
+log(0)
+	-infinity
+
+sin(10^100)
+	sin(1E100)
+
+log(0, 1)
+	(-infinity) / 0
+
+# Feature 5: Variables & Custom Definitions
+pi := 5
+	5
+
+pi
+	5
+
+myVar := 10
+	10
+
+myvar
+	10
+
+MyVar
+	10
+
+x := x + 1
+	x + 1
+
+x
+	x + 1
+
+y := z
+	z
+
+z := y
+	z
+
+y
+	z
+
+# Feature 6: Units & Conversions
+-274 oC to K
+	-0.85 K
+
+1 m to kg
+	1 m
+
+0 m to cm
+	0 cm
+
+0 oC to K
+	273.15 K
+
+0 K to oC
+	-273.15 oC
+
+# Feature 7: Percentages
+100 + 1000000%
+	1000100
+
+100 - -10%
+	110
+
+100 + 0%
+	100
+
+100 * 0%
+	0
+
+100 / 0%
+	100 / 0

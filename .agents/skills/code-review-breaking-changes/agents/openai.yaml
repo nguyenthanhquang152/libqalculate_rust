@@ -1,0 +1,4 @@
+interface:
+  display_name: "Breaking Change Review"
+  short_description: "Review libqalculate compatibility breaks"
+  default_prompt: "Use $code-review-breaking-changes to review this Rust libqalculate port diff for compatibility breaks."
