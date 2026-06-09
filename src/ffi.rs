@@ -50,6 +50,68 @@ pub struct Calculator {
     _phantom: PhantomData<*mut ()>,
 }
 
+/// How an evaluation was routed with respect to the C++ fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FallbackState {
+    /// The expression was handled by native Rust code with the C++ fallback disabled.
+    Native,
+    /// The C++ fallback was available for this evaluation.
+    CppFallbackEnabled,
+    /// The C++ fallback was disabled and no native implementation handled the expression.
+    Disabled,
+}
+
+impl FallbackState {
+    /// Return the stable state label used inside oracle mismatch records.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::CppFallbackEnabled => "cpp-fallback-enabled",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    /// Return the stable machine-readable marker used by CLI and oracle output.
+    pub const fn marker(self) -> &'static str {
+        match self {
+            Self::Native => "fallback=native",
+            Self::CppFallbackEnabled => "fallback=cpp-fallback-enabled",
+            Self::Disabled => "fallback=disabled",
+        }
+    }
+
+    /// Parse a fallback marker from either a bare marker or a qalc-rs metadata line.
+    pub fn from_marker(marker: &str) -> Option<Self> {
+        let marker = marker
+            .trim()
+            .strip_prefix("[qalc-rs-metadata]")
+            .map(str::trim)
+            .unwrap_or_else(|| marker.trim());
+
+        match marker {
+            "fallback=native" => Some(Self::Native),
+            "fallback=cpp-fallback-enabled" => Some(Self::CppFallbackEnabled),
+            "fallback=disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+/// Evaluation output plus the fallback state needed for oracle evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalculationOutput {
+    /// The formatted result returned to the caller.
+    pub output: String,
+    /// The fallback routing state for this evaluation.
+    pub fallback_state: FallbackState,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PrintProfile {
+    Api,
+    Qalc,
+}
+
 impl Calculator {
     /// Create a new `Calculator` instance.
     pub fn new() -> Self {
@@ -101,7 +163,7 @@ impl Calculator {
     /// Evaluate a mathematical expression string and return the formatted result.
     ///
     /// # Errors
-    /// Returns a `cxx::Exception` if a C++ exception occurs during parsing/evaluation.
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled.
     ///
     /// # Panics
     /// Panics if the inner Calculator pointer is null, which indicates a bug
@@ -111,16 +173,24 @@ impl Calculator {
         &mut self,
         expr: &str,
         timeout_ms: i32,
-    ) -> Result<String, cxx::Exception> {
-        assert!(
-            !self.inner.is_null(),
-            "BUG: Calculator inner pointer is null — possible use-after-move"
-        );
-        let pin = self.inner.pin_mut();
-        // SAFETY: Calling calculate_and_print FFI function with a pinned mutable reference to
-        // the Calculator and a valid string slice. The cxx crate safely handles the FFI boundary
-        // and converts any C++ exceptions into a Rust Result::Err containing the cxx::Exception.
-        sys::calculate_and_print(pin, expr, timeout_ms)
+    ) -> Result<String, CalculatorError> {
+        self.calculate_and_print_with_fallback_state(expr, timeout_ms)
+            .map(|result| result.output)
+    }
+
+    /// Evaluate a mathematical expression and return output plus fallback state.
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled.
+    ///
+    /// # Panics
+    /// Panics if the inner Calculator pointer is null, which indicates a bug.
+    pub fn calculate_and_print_with_fallback_state(
+        &mut self,
+        expr: &str,
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile(PrintProfile::Api, expr, timeout_ms)
     }
 
     /// Evaluate an expression using qalc-compatible print/evaluation defaults.
@@ -129,7 +199,7 @@ impl Calculator {
     /// `calculate_and_print` wrapper for API-default libqalculate smoke tests.
     ///
     /// # Errors
-    /// Returns a `cxx::Exception` if a C++ exception occurs during parsing/evaluation.
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled.
     ///
     /// # Panics
     /// Panics if the inner Calculator pointer is null, which indicates a bug.
@@ -137,13 +207,115 @@ impl Calculator {
         &mut self,
         expr: &str,
         timeout_ms: i32,
-    ) -> Result<String, cxx::Exception> {
+    ) -> Result<String, CalculatorError> {
+        self.calculate_and_print_qalc_with_fallback_state(expr, timeout_ms)
+            .map(|result| result.output)
+    }
+
+    /// Evaluate an expression using qalc-compatible defaults and return fallback state.
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled.
+    ///
+    /// # Panics
+    /// Panics if the inner Calculator pointer is null, which indicates a bug.
+    pub fn calculate_and_print_qalc_with_fallback_state(
+        &mut self,
+        expr: &str,
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile(PrintProfile::Qalc, expr, timeout_ms)
+    }
+
+    fn calculate_with_profile(
+        &mut self,
+        profile: PrintProfile,
+        expr: &str,
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
         assert!(
             !self.inner.is_null(),
-            "BUG: Calculator inner pointer is null — possible use-after-move"
+            "BUG: Calculator inner pointer is null - possible use-after-move"
         );
-        let pin = self.inner.pin_mut();
-        sys::calculate_and_print_qalc(pin, expr, timeout_ms)
+
+        if fallback_disabled_by_env() {
+            if let Some(output) = native_scaffold_output(expr) {
+                return Ok(CalculationOutput {
+                    output,
+                    fallback_state: FallbackState::Native,
+                });
+            }
+            return Err(CalculatorError::FallbackDisabled(expr.to_string()));
+        }
+
+        let output = {
+            let pin = self.inner.pin_mut();
+            match profile {
+                PrintProfile::Api => sys::calculate_and_print(pin, expr, timeout_ms),
+                PrintProfile::Qalc => sys::calculate_and_print_qalc(pin, expr, timeout_ms),
+            }
+            .map_err(CalculatorError::Cxx)?
+        };
+
+        Ok(CalculationOutput {
+            output,
+            fallback_state: FallbackState::CppFallbackEnabled,
+        })
+    }
+}
+
+fn fallback_disabled_by_env() -> bool {
+    std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
+}
+
+fn native_scaffold_output(expr: &str) -> Option<String> {
+    match expr {
+        "1 + 1" => Some("2".to_string()),
+        "native-scaffold-test" => Some("native-scaffold-test-success".to_string()),
+        _ => None,
+    }
+}
+
+/// Custom error type for `Calculator` evaluations.
+#[derive(Debug)]
+pub enum CalculatorError {
+    /// Wrapping a C++ exception returned via CXX FFI.
+    Cxx(cxx::Exception),
+    /// The C++ fallback is disabled and the requested feature is unimplemented natively.
+    FallbackDisabled(String),
+}
+
+impl std::fmt::Display for CalculatorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CalculatorError::Cxx(e) => write!(f, "{}", e),
+            CalculatorError::FallbackDisabled(expr) => {
+                write!(
+                    f,
+                    "C++ FFI fallback is disabled, and expression '{}' has no native Rust implementation",
+                    expr
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CalculatorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CalculatorError::Cxx(e) => Some(e),
+            CalculatorError::FallbackDisabled(_) => None,
+        }
+    }
+}
+
+impl CalculatorError {
+    /// Return the fallback state associated with this error.
+    pub const fn fallback_state(&self) -> FallbackState {
+        match self {
+            Self::Cxx(_) => FallbackState::CppFallbackEnabled,
+            Self::FallbackDisabled(_) => FallbackState::Disabled,
+        }
     }
 }
 
@@ -156,12 +328,106 @@ impl Default for Calculator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    const DISABLE_FALLBACK_ENV: &str = "QALCULATE_DISABLE_FALLBACK";
+    const DEFINITIONS_DIR_ENV: &str = "QALCULATE_DEFINITIONS_DIR";
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set_disabled() -> Self {
+            let guard = Self {
+                previous: std::env::var_os(DISABLE_FALLBACK_ENV),
+            };
+            std::env::set_var(DISABLE_FALLBACK_ENV, "1");
+            guard
+        }
+
+        fn unset_disabled() -> Self {
+            let guard = Self {
+                previous: std::env::var_os(DISABLE_FALLBACK_ENV),
+            };
+            std::env::remove_var(DISABLE_FALLBACK_ENV);
+            guard
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(DISABLE_FALLBACK_ENV, value),
+                None => std::env::remove_var(DISABLE_FALLBACK_ENV),
+            }
+        }
+    }
+
+    fn definitions_dir() -> PathBuf {
+        Path::new("../libqalculate/data")
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from("../libqalculate/data"))
+    }
+
+    fn configure_definitions_dir() {
+        std::env::set_var(DEFINITIONS_DIR_ENV, definitions_dir());
+    }
 
     #[test]
-    fn test_eval_simple_addition() {
+    fn calculation_uses_cpp_fallback_when_enabled() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::unset_disabled();
+        configure_definitions_dir();
+
         let mut calc = Calculator::new();
         calc.load_global_definitions();
-        let result = calc.calculate_and_print("1 + 1", 1000).unwrap();
-        assert_eq!(result, "2");
+        let result = calc
+            .calculate_and_print_with_fallback_state("3 * 4", 1000)
+            .unwrap();
+        assert_eq!(result.output, "12");
+        assert_eq!(result.fallback_state, FallbackState::CppFallbackEnabled);
+    }
+
+    #[test]
+    fn fallback_disabled_rejects_unported_expression() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::set_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        calc.load_global_definitions();
+
+        let err = calc.calculate_and_print("2 + 2", 1000).unwrap_err();
+        match err {
+            CalculatorError::FallbackDisabled(expr) => assert_eq!(expr, "2 + 2"),
+            _ => panic!("expected fallback-disabled error"),
+        }
+    }
+
+    #[test]
+    fn fallback_disabled_runs_native_scaffold_cases() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::set_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        calc.load_global_definitions();
+
+        let addition = calc
+            .calculate_and_print_with_fallback_state("1 + 1", 1000)
+            .unwrap();
+        assert_eq!(addition.output, "2");
+        assert_eq!(addition.fallback_state, FallbackState::Native);
+
+        let scaffold = calc
+            .calculate_and_print_with_fallback_state("native-scaffold-test", 1000)
+            .unwrap();
+        assert_eq!(scaffold.output, "native-scaffold-test-success");
+        assert_eq!(scaffold.fallback_state, FallbackState::Native);
     }
 }
