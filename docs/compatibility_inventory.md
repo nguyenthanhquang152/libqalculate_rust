@@ -128,7 +128,7 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | 8 | `BuiltinFunctions-logical.cc` | Logical/comparison functions | `unstarted` |
 | 9 | `BuiltinFunctions-statistics.cc` | Statistical functions | `unstarted` |
 | 10 | `BuiltinFunctions-trigonometry.cc` | Trigonometric functions | `unstarted` |
-| 11 | `BuiltinFunctions-unit.cc` | Unit-related functions | `unstarted` |
+| 11 | `BuiltinFunctions-special.cc` | Special functions (gamma, beta, zeta, erf, etc.) | `unstarted` |
 | 12 | `BuiltinFunctions-util.cc` | Utility functions (string, base, etc.) | `unstarted` |
 
 ### Other Families (8 files)
@@ -151,6 +151,24 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | `fallback-only` | Calculator construction, calculation, definitions | 3 |
 | `scaffold` | Number | 1 |
 | `unstarted` | Calculator conversion/parsing/plot APIs, MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 37 |
+
+---
+
+## 2.1 Upstream CLI and Test Harness Files
+
+Maps the upstream command-line and test harness sources inspected for Epic 0. These files are not public library modules, but they define the user-facing batch/oracle behavior used by the Rust harness.
+
+| # | Upstream File | Rust Owner | Status | Deviation | Next Task |
+|---|---|---|---|---|---|
+| 1 | `../libqalculate/src/qalc.cc` | `src/main.rs`, `src/ffi.rs`, `tests/oracle.rs` | `fallback-only` | none | #4, #20, #83 |
+| 2 | `../libqalculate/src/test.cc` | `tests/oracle.rs`, `tests/batch_manifest_validation.rs` | `scaffold` | none | #4 |
+| 3 | `../libqalculate/src/unittest.cc` | `tests/oracle.rs`, `tests/e2e_batch_runner.rs` | `scaffold` | none | #4 |
+| 4 | `../libqalculate/libqalculate/Makefile.am` | `.github/workflows/rust.yml`, `build.rs` | `scaffold` | none | #6 |
+| 5 | `../libqalculate/src/Makefile.am` | `.github/workflows/rust.yml`, `scripts/oracle.sh` | `scaffold` | none | #66 |
+| 6 | `../libqalculate/tests/Makefile.am` | `docs/batch_manifest.md`, `tests/batch_manifest_validation.rs` | `native-pass` | none | #3 |
+| 7 | `../libqalculate/data/Makefile.am` | `docs/compatibility_inventory.md` | `unstarted` | none | #41 |
+
+All rows use exact upstream paths, an owner artifact in this repository, a parity status, a deviation value, and a next-task reference. No native parity is claimed for CLI expression evaluation because it still routes through the C++ fallback bridge.
 
 ---
 
@@ -378,7 +396,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 | Class | Total Categories | scaffold | fallback-only | unstarted |
 |---|---|---|---|---|
-| Calculator | 8 | 2 | 6 | 0 |
+| Calculator | 8 | 2 | 1 | 5 |
 | MathStructure | 14 | 0 | 0 | 14 |
 | Number | 11 | 4 | 0 | 7 |
 | ExpressionItem | 4 | 0 | 0 | 4 |
@@ -387,7 +405,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | DataSet | 4 | 0 | 0 | 4 |
 | Unit | 5 | 0 | 0 | 5 |
 | Prefix | 4 | 0 | 0 | 4 |
-| **Total** | **59** | **6** | **6** | **47** |
+| **Total** | **59** | **6** | **1** | **52** |
 
 ---
 
@@ -405,7 +423,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 ### Upstream Files with No Rust Counterpart
 
-34 of 41 `.cc` files have no Rust counterpart yet (all MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, and util families).
+37 of 41 `.cc` implementation responsibilities remain unstarted (Calculator conversion/parsing/plot APIs, all MathStructure files, all BuiltinFunctions files, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, and util families).
 
 ---
 
@@ -457,8 +475,8 @@ status_summary:
   implementation_files:
     native_pass: 0
     scaffold: 1
-    fallback_only: 6
-    unstarted: 34
+    fallback_only: 3
+    unstarted: 37
     out_of_scope: 0
   definition_data:
     native_pass: 0
@@ -481,7 +499,7 @@ status_summary:
   api_categories:
     native_pass: 0
     scaffold: 6
-    fallback_only: 6
-    unstarted: 47
+    fallback_only: 1
+    unstarted: 52
     out_of_scope: 0
 -->

@@ -42,6 +42,11 @@ Lessons already known:
 Definition of done:
 ```
 
+Use `docs/templates/task_packet.md` as the starting point for implementation issues. Use
+`docs/templates/oracle_evidence.md` for oracle results, `docs/templates/pr_closure.md` for
+pull request bodies and issue closure evidence, and `docs/templates/slop_cleaner_report.md`
+when removing scaffolding or fallback code.
+
 Required labels:
 
 - `type:port`

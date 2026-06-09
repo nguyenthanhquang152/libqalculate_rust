@@ -20,6 +20,22 @@ directory before editing or reviewing this file.
 | Total batch files | **17** |
 | Files with session state | `explog.batch`, `limits.batch`, `numberbase.batch`, `polynomial.batch`, `solver.batch`, `strings.batch` |
 
+### Case Schema and Status Policy
+
+Each case row uses `case_id` values in `{source_file}:{source_line}` format. The file section supplies `source_file`, `feature_tags`, required assets, and session-command scope; the `Settings` column records accumulated `required_settings` for the case. Unless a row says otherwise, case rows have:
+
+- `input_kind`: expression
+- `source_file`: the batch filename portion of `case_id`
+- `source_line`: the one-based upstream source line portion of `case_id`
+- `expected_status`: pass
+- `normalization`: exact-utf8
+- `deviation_id`: none
+- `parity_status`: inventory-only
+- `owner`: unassigned
+- `last_checked_upstream_version`: 5.11.0
+
+Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pass`, `approved-deviation`, and `out-of-scope`. Inventory-only rows are fixture coverage evidence, not native Rust parity evidence.
+
 ### Per-File Breakdown
 
 | File | Cases | Session Commands | Assets |
@@ -56,30 +72,30 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `bitwise.batch:1` | `¬1` | `-2` | — | untested |
-| 2 | `bitwise.batch:3` | `~0` | `-1` | — | untested |
-| 3 | `bitwise.batch:5` | `~-1` | `0` | — | untested |
-| 4 | `bitwise.batch:7` | `~ -812` | `811` | — | untested |
-| 5 | `bitwise.batch:11` | `0 >> 0` | `0` | — | untested |
-| 6 | `bitwise.batch:13` | `0 >> 1` | `0` | — | untested |
-| 7 | `bitwise.batch:15` | `18 >> 2` | `4` | — | untested |
-| 8 | `bitwise.batch:17` | `11 >> 0` | `11` | — | untested |
-| 9 | `bitwise.batch:19` | `-11 >> 0` | `-11` | — | untested |
-| 10 | `bitwise.batch:21` | `-18 >> 1` | `-9` | — | untested |
-| 11 | `bitwise.batch:25` | `0 << 0` | `0` | — | untested |
-| 12 | `bitwise.batch:27` | `0 << 1` | `0` | — | untested |
-| 13 | `bitwise.batch:29` | `18 << 0` | `18` | — | untested |
-| 14 | `bitwise.batch:31` | `18 << 1` | `36` | — | untested |
-| 15 | `bitwise.batch:33` | `-18 << 2` | `-72` | — | untested |
-| 16 | `bitwise.batch:37` | `0b1011 0010 ∨ 0b0111 0001 to bin8` | `1111 0011` | — | untested |
-| 17 | `bitwise.batch:40` | `0b0101 \| 0b1001 to bin4` | `1101` | — | untested |
-| 18 | `bitwise.batch:44` | `0b1011 0010 ∧ 0b0111 0001 to bin8` | `0011 0000` | — | untested |
-| 19 | `bitwise.batch:47` | `0b1011 0010 & 0b0111 0001 to bin8` | `0011 0000` | — | untested |
-| 20 | `bitwise.batch:51` | `0b1011 0010 xor 0b0111 0001 to bin8` | `1100 0011` | — | untested |
-| 21 | `bitwise.batch:54` | `0b1011 0010 ^^ 0b0111 0001 to bin8` | `1100 0011` | — | untested |
-| 22 | `bitwise.batch:57` | `0b1011 0010 ⊻ 0b0111 0001 to bin8` | `1100 0011` | — | untested |
-| 23 | `bitwise.batch:61` | `0b0101 \| 0b1001 xor 0b0101 & 0b0111` | `13` | — | untested |
-| 24 | `bitwise.batch:64` | `0b0101 & 0b0111 xor 0b1001 \| 0b0101` | `13` | — | untested |
+| 1 | `bitwise.batch:1` | `¬1` | `-2` | — | inventory-only |
+| 2 | `bitwise.batch:3` | `~0` | `-1` | — | inventory-only |
+| 3 | `bitwise.batch:5` | `~-1` | `0` | — | inventory-only |
+| 4 | `bitwise.batch:7` | `~ -812` | `811` | — | inventory-only |
+| 5 | `bitwise.batch:11` | `0 >> 0` | `0` | — | inventory-only |
+| 6 | `bitwise.batch:13` | `0 >> 1` | `0` | — | inventory-only |
+| 7 | `bitwise.batch:15` | `18 >> 2` | `4` | — | inventory-only |
+| 8 | `bitwise.batch:17` | `11 >> 0` | `11` | — | inventory-only |
+| 9 | `bitwise.batch:19` | `-11 >> 0` | `-11` | — | inventory-only |
+| 10 | `bitwise.batch:21` | `-18 >> 1` | `-9` | — | inventory-only |
+| 11 | `bitwise.batch:25` | `0 << 0` | `0` | — | inventory-only |
+| 12 | `bitwise.batch:27` | `0 << 1` | `0` | — | inventory-only |
+| 13 | `bitwise.batch:29` | `18 << 0` | `18` | — | inventory-only |
+| 14 | `bitwise.batch:31` | `18 << 1` | `36` | — | inventory-only |
+| 15 | `bitwise.batch:33` | `-18 << 2` | `-72` | — | inventory-only |
+| 16 | `bitwise.batch:37` | `0b1011 0010 ∨ 0b0111 0001 to bin8` | `1111 0011` | — | inventory-only |
+| 17 | `bitwise.batch:40` | `0b0101 \| 0b1001 to bin4` | `1101` | — | inventory-only |
+| 18 | `bitwise.batch:44` | `0b1011 0010 ∧ 0b0111 0001 to bin8` | `0011 0000` | — | inventory-only |
+| 19 | `bitwise.batch:47` | `0b1011 0010 & 0b0111 0001 to bin8` | `0011 0000` | — | inventory-only |
+| 20 | `bitwise.batch:51` | `0b1011 0010 xor 0b0111 0001 to bin8` | `1100 0011` | — | inventory-only |
+| 21 | `bitwise.batch:54` | `0b1011 0010 ^^ 0b0111 0001 to bin8` | `1100 0011` | — | inventory-only |
+| 22 | `bitwise.batch:57` | `0b1011 0010 ⊻ 0b0111 0001 to bin8` | `1100 0011` | — | inventory-only |
+| 23 | `bitwise.batch:61` | `0b0101 \| 0b1001 xor 0b0101 & 0b0111` | `13` | — | inventory-only |
+| 24 | `bitwise.batch:64` | `0b0101 & 0b0111 xor 0b1001 \| 0b0101` | `13` | — | inventory-only |
 
 ---
 
@@ -95,17 +111,17 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `calculus.batch:1` | `diff(6x^2)` | `12x` | — | untested |
-| 2 | `calculus.batch:3` | `diff(sinh(x^2)/(5x) + 3xy/sqrt(x))` | `0.4 * cosh(x^2) + (3y) / (2 * sqrt(x)) - sinh(x^2) / (5x^2)` | — | untested |
-| 3 | `calculus.batch:6` | `integrate(6x^2)` | `2x^3 + C` | — | untested |
-| 4 | `calculus.batch:8` | `integrate(6x^2; 1; 5)` | `248` | — | untested |
-| 5 | `calculus.batch:10` | `integrate(sinh(x^2)/(5x) + 3xy/sqrt(x))` | `2x * sqrt(x) * y + 0.1 * Shi(x^2) + C` | — | untested |
-| 6 | `calculus.batch:12` | `integrate(sinh(x^2)/(5x) + 3xy/sqrt(x); 1; 2)` | `3.656854249y + 0.8760076036` | — | untested |
-| 7 | `calculus.batch:14` | `integrate(Ei(x) + 3^x - sin(ln(x)), 1, 2)` | `8.434289610` | — | untested |
-| 8 | `calculus.batch:17` | `romberg(5x + ln(x), 1, 5)` | `64.04718956` | — | untested |
-| 9 | `calculus.batch:20` | `fresnels(5)` | `0.4991913819` | — | untested |
-| 10 | `calculus.batch:22` | `gammainc(53, 5.2)` | `1.02201E34` | — | untested |
-| 11 | `calculus.batch:24` | `betainc(5i - 2, 32, 3.2)` | `-9.431063439E27 - 5.083225623E27i` | — | untested |
+| 1 | `calculus.batch:1` | `diff(6x^2)` | `12x` | — | inventory-only |
+| 2 | `calculus.batch:3` | `diff(sinh(x^2)/(5x) + 3xy/sqrt(x))` | `0.4 * cosh(x^2) + (3y) / (2 * sqrt(x)) - sinh(x^2) / (5x^2)` | — | inventory-only |
+| 3 | `calculus.batch:6` | `integrate(6x^2)` | `2x^3 + C` | — | inventory-only |
+| 4 | `calculus.batch:8` | `integrate(6x^2; 1; 5)` | `248` | — | inventory-only |
+| 5 | `calculus.batch:10` | `integrate(sinh(x^2)/(5x) + 3xy/sqrt(x))` | `2x * sqrt(x) * y + 0.1 * Shi(x^2) + C` | — | inventory-only |
+| 6 | `calculus.batch:12` | `integrate(sinh(x^2)/(5x) + 3xy/sqrt(x); 1; 2)` | `3.656854249y + 0.8760076036` | — | inventory-only |
+| 7 | `calculus.batch:14` | `integrate(Ei(x) + 3^x - sin(ln(x)), 1, 2)` | `8.434289610` | — | inventory-only |
+| 8 | `calculus.batch:17` | `romberg(5x + ln(x), 1, 5)` | `64.04718956` | — | inventory-only |
+| 9 | `calculus.batch:20` | `fresnels(5)` | `0.4991913819` | — | inventory-only |
+| 10 | `calculus.batch:22` | `gammainc(53, 5.2)` | `1.02201E34` | — | inventory-only |
+| 11 | `calculus.batch:24` | `betainc(5i - 2, 32, 3.2)` | `-9.431063439E27 - 5.083225623E27i` | — | inventory-only |
 
 ---
 
@@ -121,17 +137,17 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `dates.batch:1` | `10:31 + 8:30 to time` | `19:01` | — | untested |
-| 2 | `dates.batch:3` | `10h 31min + 8h 30min to time` | `19:01` | — | untested |
-| 3 | `dates.batch:5` | `"2020-07-10T07:50CET" to utc+8` | `"2020-07-10T14:50:00+08:00"` | — | untested |
-| 4 | `dates.batch:7` | `"2020-05-20" + 523d` | `"2021-10-25"` | — | untested |
-| 5 | `dates.batch:9` | `addDays(2020-05-20; 523)` | `"2021-10-25"` | — | untested |
-| 6 | `dates.batch:11` | `"2020-11-05" - "2020-10-05"` | `31 d` | — | untested |
-| 7 | `dates.batch:13` | `"2020-10-05" - "2020-10-15"` | `-10 d` | — | untested |
-| 8 | `dates.batch:15` | `timestamp(2020-05-20T00:00:00Z)` | `1589932800` | — | untested |
-| 9 | `dates.batch:17` | `stamptodate(1 589 932 800) to utc` | `"2020-05-20T00:00:00Z"` | — | untested |
-| 10 | `dates.batch:19` | `lunarphase(2022-02-11T00:00Z)` | `0.32288434` | — | untested |
-| 11 | `dates.batch:21` | `nextlunarphase(0.5, 2022-02-11T00:00Z) to utc` | `"2022-02-16T16:56:27Z"` | — | untested |
+| 1 | `dates.batch:1` | `10:31 + 8:30 to time` | `19:01` | — | inventory-only |
+| 2 | `dates.batch:3` | `10h 31min + 8h 30min to time` | `19:01` | — | inventory-only |
+| 3 | `dates.batch:5` | `"2020-07-10T07:50CET" to utc+8` | `"2020-07-10T14:50:00+08:00"` | — | inventory-only |
+| 4 | `dates.batch:7` | `"2020-05-20" + 523d` | `"2021-10-25"` | — | inventory-only |
+| 5 | `dates.batch:9` | `addDays(2020-05-20; 523)` | `"2021-10-25"` | — | inventory-only |
+| 6 | `dates.batch:11` | `"2020-11-05" - "2020-10-05"` | `31 d` | — | inventory-only |
+| 7 | `dates.batch:13` | `"2020-10-05" - "2020-10-15"` | `-10 d` | — | inventory-only |
+| 8 | `dates.batch:15` | `timestamp(2020-05-20T00:00:00Z)` | `1589932800` | — | inventory-only |
+| 9 | `dates.batch:17` | `stamptodate(1 589 932 800) to utc` | `"2020-05-20T00:00:00Z"` | — | inventory-only |
+| 10 | `dates.batch:19` | `lunarphase(2022-02-11T00:00Z)` | `0.32288434` | — | inventory-only |
+| 11 | `dates.batch:21` | `nextlunarphase(0.5, 2022-02-11T00:00Z) to utc` | `"2022-02-16T16:56:27Z"` | — | inventory-only |
 
 ---
 
@@ -153,16 +169,16 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `explog.batch:1` | `lambertw(5i + 2+/-0.002, -1)` | `0.389008±0.000043 - 3.62889±0.00035i` | — | untested |
-| 2 | `explog.batch:4` | `(2+/-3)^3.2` | `9.18958684±44.11001683` | — | untested |
-| 3 | `explog.batch:7` | `(2i - 3)^(3.2i + 3)` | `0.009212545193 - 0.009517560625i` | — | untested |
-| 4 | `explog.batch:10` | `ln((5+/-0.003)i - 0+/-0.2)` | `1.60944±0.00060 + 1.571±0.040i` | — | untested |
-| 5 | `explog.batch:13` | `Ei(3+/-0.3)` | `9.9±2.0` | — | untested |
-| 6 | `explog.batch:18` | `(2+/-3)^3.2` | `86±87 - 0.29±0.30i` | /set ic 2 | untested |
-| 7 | `explog.batch:21` | `ln((5+/-0.003)i - 0+/-0.2)` | `1.60984±0.00100 + 1.571±0.040i` | /set ic 2 | untested |
-| 8 | `explog.batch:24` | `Ei(3+/-0.3)` | `10.1±2.1` | /set ic 2 | untested |
-| 9 | `explog.batch:27` | `powertower(2, 4)` | `65536` | /set ic 2 | untested |
-| 10 | `explog.batch:30` | `allroots(4, 7)` | `[1.219013654  (0.7600425817 + 0.9530632524i)  (-0.2712560568 + 1.188450437i)  (-1.098293352 + 0.5289102023i)  (-1.098293352 - 0.5289102023i)  (-0.2712560568 - 1.188450437i)  (0.7600425817 - 0.9530632524i)]` | /set ic 2 | untested |
+| 1 | `explog.batch:1` | `lambertw(5i + 2+/-0.002, -1)` | `0.389008±0.000043 - 3.62889±0.00035i` | — | inventory-only |
+| 2 | `explog.batch:4` | `(2+/-3)^3.2` | `9.18958684±44.11001683` | — | inventory-only |
+| 3 | `explog.batch:7` | `(2i - 3)^(3.2i + 3)` | `0.009212545193 - 0.009517560625i` | — | inventory-only |
+| 4 | `explog.batch:10` | `ln((5+/-0.003)i - 0+/-0.2)` | `1.60944±0.00060 + 1.571±0.040i` | — | inventory-only |
+| 5 | `explog.batch:13` | `Ei(3+/-0.3)` | `9.9±2.0` | — | inventory-only |
+| 6 | `explog.batch:18` | `(2+/-3)^3.2` | `86±87 - 0.29±0.30i` | /set ic 2 | inventory-only |
+| 7 | `explog.batch:21` | `ln((5+/-0.003)i - 0+/-0.2)` | `1.60984±0.00100 + 1.571±0.040i` | /set ic 2 | inventory-only |
+| 8 | `explog.batch:24` | `Ei(3+/-0.3)` | `10.1±2.1` | /set ic 2 | inventory-only |
+| 9 | `explog.batch:27` | `powertower(2, 4)` | `65536` | /set ic 2 | inventory-only |
+| 10 | `explog.batch:30` | `allroots(4, 7)` | `[1.219013654  (0.7600425817 + 0.9530632524i)  (-0.2712560568 + 1.188450437i)  (-1.098293352 + 0.5289102023i)  (-1.098293352 - 0.5289102023i)  (-0.2712560568 - 1.188450437i)  (0.7600425817 - 0.9530632524i)]` | /set ic 2 | inventory-only |
 
 ---
 
@@ -178,36 +194,36 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `geometry.batch:1` | `circle(3)` | `28.27433388` | — | untested |
-| 2 | `geometry.batch:3` | `circumference(3)` | `18.84955592` | — | untested |
-| 3 | `geometry.batch:6` | `cone(3, 4)` | `37.69911184` | — | untested |
-| 4 | `geometry.batch:8` | `cone_sa(3, 4)` | `75.39822369` | — | untested |
-| 5 | `geometry.batch:11` | `cube(3)` | `27` | — | untested |
-| 6 | `geometry.batch:13` | `cube_sa(3)` | `54` | — | untested |
-| 7 | `geometry.batch:16` | `cylinder(3, 4)` | `113.0973355` | — | untested |
-| 8 | `geometry.batch:18` | `cylinder_sa(3, 4)` | `131.9468915` | — | untested |
-| 9 | `geometry.batch:21` | `parallelogram(3, 4)` | `12` | — | untested |
-| 10 | `geometry.batch:23` | `parallelogram_perimeter(3,4)` | `14` | — | untested |
-| 11 | `geometry.batch:26` | `rectprism(3, 4, 5)` | `60` | — | untested |
-| 12 | `geometry.batch:28` | `rectprism_sa(3, 4, 5)` | `94` | — | untested |
-| 13 | `geometry.batch:31` | `triangleprism(3, 4, 5)` | `30` | — | untested |
-| 14 | `geometry.batch:34` | `tetrahedron(3)` | `3.181980515` | — | untested |
-| 15 | `geometry.batch:36` | `tetrahedron_height(3)` | `2.449489743` | — | untested |
-| 16 | `geometry.batch:38` | `tetrahedron_sa(3)` | `15.58845727` | — | untested |
-| 17 | `geometry.batch:41` | `sqpyramid(3)` | `6.363961031` | — | untested |
-| 18 | `geometry.batch:43` | `sqpyramid_height(3)` | `2.121320344` | — | untested |
-| 19 | `geometry.batch:45` | `sqpyramid_sa(3)` | `24.58845727` | — | untested |
-| 20 | `geometry.batch:48` | `pyramid(3, 4, 5)` | `20` | — | untested |
-| 21 | `geometry.batch:51` | `rect(3, 4)` | `12` | — | untested |
-| 22 | `geometry.batch:53` | `rect_perimeter(3, 4)` | `14` | — | untested |
-| 23 | `geometry.batch:56` | `sphere(4)` | `268.0825731` | — | untested |
-| 24 | `geometry.batch:58` | `sphere_sa(4)` | `201.0619298` | — | untested |
-| 25 | `geometry.batch:61` | `square(3)` | `9` | — | untested |
-| 26 | `geometry.batch:63` | `square_perimeter(3)` | `12` | — | untested |
-| 27 | `geometry.batch:66` | `trapezoid(3, 4, 5)` | `17.5` | — | untested |
-| 28 | `geometry.batch:69` | `triangle(3, 4)` | `6` | — | untested |
-| 29 | `geometry.batch:71` | `triangle_perimeter(3, 4, 5)` | `12` | — | untested |
-| 30 | `geometry.batch:73` | `hypot(3, 4)` | `5` | — | untested |
+| 1 | `geometry.batch:1` | `circle(3)` | `28.27433388` | — | inventory-only |
+| 2 | `geometry.batch:3` | `circumference(3)` | `18.84955592` | — | inventory-only |
+| 3 | `geometry.batch:6` | `cone(3, 4)` | `37.69911184` | — | inventory-only |
+| 4 | `geometry.batch:8` | `cone_sa(3, 4)` | `75.39822369` | — | inventory-only |
+| 5 | `geometry.batch:11` | `cube(3)` | `27` | — | inventory-only |
+| 6 | `geometry.batch:13` | `cube_sa(3)` | `54` | — | inventory-only |
+| 7 | `geometry.batch:16` | `cylinder(3, 4)` | `113.0973355` | — | inventory-only |
+| 8 | `geometry.batch:18` | `cylinder_sa(3, 4)` | `131.9468915` | — | inventory-only |
+| 9 | `geometry.batch:21` | `parallelogram(3, 4)` | `12` | — | inventory-only |
+| 10 | `geometry.batch:23` | `parallelogram_perimeter(3,4)` | `14` | — | inventory-only |
+| 11 | `geometry.batch:26` | `rectprism(3, 4, 5)` | `60` | — | inventory-only |
+| 12 | `geometry.batch:28` | `rectprism_sa(3, 4, 5)` | `94` | — | inventory-only |
+| 13 | `geometry.batch:31` | `triangleprism(3, 4, 5)` | `30` | — | inventory-only |
+| 14 | `geometry.batch:34` | `tetrahedron(3)` | `3.181980515` | — | inventory-only |
+| 15 | `geometry.batch:36` | `tetrahedron_height(3)` | `2.449489743` | — | inventory-only |
+| 16 | `geometry.batch:38` | `tetrahedron_sa(3)` | `15.58845727` | — | inventory-only |
+| 17 | `geometry.batch:41` | `sqpyramid(3)` | `6.363961031` | — | inventory-only |
+| 18 | `geometry.batch:43` | `sqpyramid_height(3)` | `2.121320344` | — | inventory-only |
+| 19 | `geometry.batch:45` | `sqpyramid_sa(3)` | `24.58845727` | — | inventory-only |
+| 20 | `geometry.batch:48` | `pyramid(3, 4, 5)` | `20` | — | inventory-only |
+| 21 | `geometry.batch:51` | `rect(3, 4)` | `12` | — | inventory-only |
+| 22 | `geometry.batch:53` | `rect_perimeter(3, 4)` | `14` | — | inventory-only |
+| 23 | `geometry.batch:56` | `sphere(4)` | `268.0825731` | — | inventory-only |
+| 24 | `geometry.batch:58` | `sphere_sa(4)` | `201.0619298` | — | inventory-only |
+| 25 | `geometry.batch:61` | `square(3)` | `9` | — | inventory-only |
+| 26 | `geometry.batch:63` | `square_perimeter(3)` | `12` | — | inventory-only |
+| 27 | `geometry.batch:66` | `trapezoid(3, 4, 5)` | `17.5` | — | inventory-only |
+| 28 | `geometry.batch:69` | `triangle(3, 4)` | `6` | — | inventory-only |
+| 29 | `geometry.batch:71` | `triangle_perimeter(3, 4, 5)` | `12` | — | inventory-only |
+| 30 | `geometry.batch:73` | `hypot(3, 4)` | `5` | — | inventory-only |
 
 ---
 
@@ -232,187 +248,187 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `limits.batch:4` | `limit(x^2-4,2)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 2 | `limits.batch:6` | `limit((x^3-4x)/(2x^2+3x),0)` | `-4/3` | /set approximation exact; /set fr 2 | untested |
-| 3 | `limits.batch:8` | `limit(x^3/(x+1)^2,-1)` | `-infinity` | /set approximation exact; /set fr 2 | untested |
-| 4 | `limits.batch:10` | `limit((x+1)^2(x-1)/(x^3+1),-1)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 5 | `limits.batch:12` | `limit((x^3-2x^2+x)/(2x^3+x^2-2x),0)` | `-1/2` | /set approximation exact; /set fr 2 | untested |
-| 6 | `limits.batch:14` | `limit((x^2+2x+3)/(x-1)^2,1)` | `+infinity` | /set approximation exact; /set fr 2 | untested |
-| 7 | `limits.batch:16` | `limit((x^4-4x^3+x^2)/(x^3+x^2+x),0)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 8 | `limits.batch:18` | `limit((x^3+x^2+x+1)/(x^4+x^2-2),-1)` | `-1/3` | /set approximation exact; /set fr 2 | untested |
-| 9 | `limits.batch:22` | `limit((x-2)/(x^2-3x+2),2)` | `1` | /set approximation exact; /set fr 2 | untested |
-| 10 | `limits.batch:24` | `limit((3x+2x^-1)/(x+4x^-1),0)` | `1/2` | /set approximation exact; /set fr 2 | untested |
-| 11 | `limits.batch:26` | `limit((x^2-3x+2)/(x^2-2x),2)` | `1/2` | /set approximation exact; /set fr 2 | untested |
-| 12 | `limits.batch:28` | `limit(1/(1-x)-3/(1-x^3),1)` | `-1` | /set approximation exact; /set fr 2 | untested |
-| 13 | `limits.batch:30` | `limit((x^2-x-2)/(x^2-2x),2)` | `3/2` | /set approximation exact; /set fr 2 | untested |
-| 14 | `limits.batch:32` | `limit((x^2+5)/(x^2-3),2)` | `9` | /set approximation exact; /set fr 2 | untested |
-| 15 | `limits.batch:34` | `limit((3x^4-4x^3+1)/(x-1)^2,1)` | `6` | /set approximation exact; /set fr 2 | untested |
-| 16 | `limits.batch:36` | `limit((3x+6)/(x^3+8),-2)` | `1/4` | /set approximation exact; /set fr 2 | untested |
-| 17 | `limits.batch:38` | `limit((x+1)/(x-1),2)` | `3` | /set approximation exact; /set fr 2 | untested |
-| 18 | `limits.batch:40` | `limit((x^3+3x^2+2x)/(x^2-x-6),-2)` | `-2/5` | /set approximation exact; /set fr 2 | untested |
-| 19 | `limits.batch:42` | `limit((x^2-2x+1)/(x^3-x),1)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 20 | `limits.batch:44` | `limit((x^2+7x-44)/(x^2-6x+8),4)` | `15/2` | /set approximation exact; /set fr 2 | untested |
-| 21 | `limits.batch:48` | `limit((x^3-5x+4)/(x^3-1),1)` | `-2/3` | /set approximation exact; /set fr 2 | untested |
-| 22 | `limits.batch:50` | `limit((x^2-4)/(x-2),2)` | `4` | /set approximation exact; /set fr 2 | untested |
-| 23 | `limits.batch:52` | `limit((x^2-4)/(x^2-3x+2),2)` | `4` | /set approximation exact; /set fr 2 | untested |
-| 24 | `limits.batch:54` | `limit(1/(x^2-1)-2/(x^4-1),1)` | `1/2` | /set approximation exact; /set fr 2 | untested |
-| 25 | `limits.batch:56` | `limit((x-3)/(x^2-5x+6),3)` | `1` | /set approximation exact; /set fr 2 | untested |
-| 26 | `limits.batch:59` | `limit((x^2-1)/(2x^2+1),infinity)` | `1/2` | /set approximation exact; /set fr 2 | untested |
-| 27 | `limits.batch:61` | `limit((x^3+x^2-4)/(2x^3+x+11),-infinity)` | `1/2` | /set approximation exact; /set fr 2 | untested |
-| 28 | `limits.batch:63` | `limit((3x^2+2x-1)/(x^3-x+2),infinity)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 29 | `limits.batch:65` | `limit((x^3)/(x^2+2)-x,infinity)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 30 | `limits.batch:67` | `limit((x^2+3x-4)/(3x^2-2x+5),infinity)` | `1/3` | /set approximation exact; /set fr 2 | untested |
-| 31 | `limits.batch:69` | `limit((x(x-1)(x-2))/(x^2+6x-9),infinity)` | `+infinity` | /set approximation exact; /set fr 2 | untested |
-| 32 | `limits.batch:71` | `limit((sqrt(x^2+9))/(x+3),infinity)` | `1` | /set approximation exact; /set fr 2 | untested |
-| 33 | `limits.batch:73` | `limit(((x^2+x-1)/(2x^2-x+1))^3,infinity)` | `1/8` | /set approximation exact; /set fr 2 | untested |
-| 34 | `limits.batch:75` | `limit((x^2+2x+1)/(5x),infinity)` | `+infinity` | /set approximation exact; /set fr 2 | untested |
-| 35 | `limits.batch:77` | `limit((x^3+x^4-1)/(2x^5+x-x^2),-infinity)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 36 | `limits.batch:79` | `limit((sqrt(x^2+1)+x)^2/(cbrt(x^6+1)),infinity)` | `4` | /set approximation exact; /set fr 2 | untested |
-| 37 | `limits.batch:81` | `limit((x^6+7x^4-40)/(1-x-5x^7),-infinity)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 38 | `limits.batch:83` | `limit(((x+1)(x-2))/(3x^2+6x-5),infinity)` | `1/3` | /set approximation exact; /set fr 2 | untested |
-| 39 | `limits.batch:85` | `limit(sqrt(x^2+1)/(x),infinity)` | `1` | /set approximation exact; /set fr 2 | untested |
-| 40 | `limits.batch:87` | `limit(((3x^2+2x+1)/(x^2-3x+2))^4,infinity)` | `81` | /set approximation exact; /set fr 2 | untested |
-| 41 | `limits.batch:89` | `limit((5x^3-x^2+x)/(1-x-3x^2),-infinity)` | `+infinity` | /set approximation exact; /set fr 2 | untested |
-| 42 | `limits.batch:91` | `limit((1+x-3x^3)/(1+x^2+3x^3),infinity)` | `-1` | /set approximation exact; /set fr 2 | untested |
-| 43 | `limits.batch:93` | `limit(((x^3-8)/(x^4+16))^10,-infinity)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 44 | `limits.batch:95` | `limit(((x+3)(x+4)(x+5))/(x^4+x-11),infinity)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 45 | `limits.batch:97` | `limit((8x-2x^5+x^6)/(11x+5x^3+3x^5),-infinity)` | `-infinity` | /set approximation exact; /set fr 2 | untested |
-| 46 | `limits.batch:99` | `limit((x^3)/(2x^2-1)-x^2/(2x+1),infinity)` | `1/4` | /set approximation exact; /set fr 2 | untested |
-| 47 | `limits.batch:101` | `limit(x^2-(x^4-1)/(x^2-2),infinity)` | `-2` | /set approximation exact; /set fr 2 | untested |
-| 48 | `limits.batch:103` | `limit(((x-1)^100*(6x+1)^200)/(3x+5)^300,infinity)` | `3117982410208` | /set approximation exact; /set fr 2 | untested |
-| 49 | `limits.batch:105` | `limit((root(x^5,4)+root(x^3,5)+root(x^8,6))/(cbrt(x^4+2)),infinity)` | `1` | /set approximation exact; /set fr 2 | untested |
-| 50 | `limits.batch:107` | `limit((x^2(2x+1)(3x-2))/(2x^2(5x-8)(x+6)),-infinity)` | `3/5` | /set approximation exact; /set fr 2 | untested |
-| 51 | `limits.batch:109` | `limit(((2x^8+8x^6+6x^4)/(4x^8-x^6+12x^4))^5,infinity)` | `1/32` | /set approximation exact; /set fr 2 | untested |
-| 52 | `limits.batch:111` | `limit(((2x-3)^20*(3x+2)^30)/(2x+1)^50,-infinity)` | `191751.0592` | /set approximation exact; /set fr 2 | untested |
-| 53 | `limits.batch:114` | `limit((sqrt(1+2x)-1)/(3x),0)` | `1/3` | /set approximation exact; /set fr 2 | untested |
-| 54 | `limits.batch:116` | `limit((sqrt(x+1)-sqrt(1-x))/(x),0)` | `1` | /set approximation exact; /set fr 2 | untested |
-| 55 | `limits.batch:118` | `limit((x-sqrt(x))/(sqrt(x)),0)` | `-1` | /set approximation exact; /set fr 2 | untested |
-| 56 | `limits.batch:120` | `limit((sqrt(x-1)-2)/(x^2-25),5)` | `1/40` | /set approximation exact; /set fr 2 | untested |
-| 57 | `limits.batch:124` | `limit((3-sqrt(x))/(27-sqrt(x^3)),9)` | `1/27` | /set approximation exact; /set fr 2 | untested |
-| 58 | `limits.batch:126` | `limit((cbrt(1+x)-cbrt(1-x))/(x),0)` | `2/3` | /set approximation exact; /set fr 2 | untested |
-| 59 | `limits.batch:128` | `limit((x^(2/3)-1)/(x^(3/5)-1),1)` | `10/9` | /set approximation exact; /set fr 2 | untested |
-| 60 | `limits.batch:131` | `limit((1 − (x^(1 / z))) / (1 − (x^(1 / y))), 1)` | `y / z` | /set approximation exact; /set fr 2; /assume positive | untested |
-| 61 | `limits.batch:134` | `limit(sqrt(x-2)-sqrt(x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 62 | `limits.batch:136` | `limit(sqrt(x^2+x)-x,infinity)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 63 | `limits.batch:138` | `limit(sqrt(x^2+x)-1,-infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 64 | `limits.batch:140` | `limit(sqrt(x-3)-sqrt(x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 65 | `limits.batch:142` | `limit(sqrt(x)*(sqrt(x-3)-sqrt(x)),infinity)` | `-3/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 66 | `limits.batch:144` | `limit(x(sqrt(x^2+1)-x),infinity)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 67 | `limits.batch:146` | `limit(x(sqrt(x^2+1)-x),-infinity)` | `-infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 68 | `limits.batch:148` | `limit(sqrt(x^2+1)-x,infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 69 | `limits.batch:150` | `limit(sqrt(x^2+1)-x,-infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 70 | `limits.batch:152` | `limit((sqrt(x+2)-sqrt(2))/(x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 71 | `limits.batch:154` | `limit((sqrt(x+5)-sqrt(5))/(sqrt(x)-5),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 72 | `limits.batch:156` | `limit((sqrt(x^2+9)-sqrt(x^2-9))/(6x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 73 | `limits.batch:158` | `limit((sqrt(x-1)-2x)/(x-7),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 74 | `limits.batch:160` | `limit((sqrt(x)-6x)/(3x+1),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 75 | `limits.batch:162` | `limit((sqrt(x^2+1)+sqrt(x))/(root(x^3+x,4)-x),infinity)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 76 | `limits.batch:164` | `limit((sqrt(x^2+1)+sqrt(x))/(root(x^2+1,4)-x),infinity)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 77 | `limits.batch:166` | `limit((cbrt(x)-2*sqrt(x^3))/(root(x^5,4)+x*sqrt(x)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 78 | `limits.batch:171` | `limit((1+1/x)^(3x),infinity)` | `e^3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 79 | `limits.batch:173` | `limit((1+1/x^2)^(3x),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 80 | `limits.batch:175` | `limit((1+1/x^2)^(3x-4),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 81 | `limits.batch:177` | `limit((1+1/(5x))^(2x),infinity)` | `e^(2/5)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 82 | `limits.batch:179` | `limit((1+1/(5x))^(2x+6),infinity)` | `e^(2/5)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 83 | `limits.batch:181` | `limit((1+7/(3x))^(x),infinity)` | `e^2 * cbrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 84 | `limits.batch:183` | `limit((1+7/(3x))^(x-1),infinity)` | `e^2 * cbrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 85 | `limits.batch:185` | `limit((1-1/3x)^x,infinity)` | `1 / cbrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 86 | `limits.batch:187` | `limit((1-5/x)^x,infinity)` | `1 / e^5` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 87 | `limits.batch:189` | `limit(((x-1)/(x+1))^x,infinity)` | `1 / e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 88 | `limits.batch:191` | `limit(((x+6)/(x+5))^x,infinity)` | `e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 89 | `limits.batch:193` | `limit(((x-3)/(x))^(x/2),infinity)` | `1 / (e * sqrt(e))` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 90 | `limits.batch:195` | `limit(((7x+10)/(1+7x))^(x/3),infinity)` | `e^(3/7)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 91 | `limits.batch:197` | `limit(((2x-1)/(2x+1))^(x),infinity)` | `1 / e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 92 | `limits.batch:199` | `limit(((6+4x)/(2+4x))^(-2x),infinity)` | `1 / e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 93 | `limits.batch:203` | `limit(((x+5)/(x+4))^(2x),infinity)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 94 | `limits.batch:207` | `limit(((2x+5)/(2x))^(3x),infinity)` | `e^7 * sqrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 95 | `limits.batch:211` | `limit(((2x+1)/(2x-3))^(3x),infinity)` | `e^6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 96 | `limits.batch:213` | `limit(((x-1)/(x+3))^(-4x),infinity)` | `e^16` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 97 | `limits.batch:217` | `limit(((x)/(x+1))^(x),infinity)` | `1 / e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 98 | `limits.batch:219` | `limit(((3x-2)/(3x+1))^(2x),infinity)` | `1 / e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 99 | `limits.batch:221` | `limit(((2x-5)/(2x-2))^(4x^2),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 100 | `limits.batch:223` | `limit(((3x+6)/(3x-1))^(x^2),infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 101 | `limits.batch:225` | `limit(((x^2+2x+2)/(x^2+3))^(x),infinity)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 102 | `limits.batch:227` | `limit((1+2x)^(1/x),0)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 103 | `limits.batch:229` | `limit((1+5x)^(1/8x),0)` | `e^(5/8)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 104 | `limits.batch:231` | `limit(ln(((3x+1)/(3x-5))^(-x)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 105 | `limits.batch:233` | `limit(ln(((3x+1)/(3x-5))^(2-x)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 106 | `limits.batch:235` | `limit(x*(ln(x+3)-ln(x)),infinity)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 107 | `limits.batch:237` | `limit(x*(ln(x)-ln(x+2)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 108 | `limits.batch:239` | `limit((x+1)*(ln(x+1)-ln(x)),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 109 | `limits.batch:242` | `limit(sin(10x)/(10x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 110 | `limits.batch:244` | `limit(sin(3x)/(2x),0)` | `3/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 111 | `limits.batch:246` | `limit(tan(8x)/(x),0)` | `8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 112 | `limits.batch:248` | `limit(sin(3x)/sin(5x),0)` | `3/5` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 113 | `limits.batch:250` | `limit(tan(5x)/sin(4x),0)` | `5/4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 114 | `limits.batch:252` | `limit(tan(5x)/tan(6x),0)` | `5/6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 115 | `limits.batch:254` | `limit(tan(x)/(3x),0)` | `1/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 116 | `limits.batch:256` | `limit((1-cos(x))/(x),0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 117 | `limits.batch:260` | `limit(sin(x)/(x^3),0)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 118 | `limits.batch:262` | `limit((1-cos(2x))/(x*sin(x)),0)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 119 | `limits.batch:264` | `limit((sin(x/2)^3)/(x^3),0)` | `1/8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 120 | `limits.batch:266` | `limit((sin(4x)+sin(7x))/(sin(3x)),0)` | `11/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 121 | `limits.batch:270` | `limit((tan(x)-sin(x))/(x^3),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 122 | `limits.batch:272` | `limit(x*sin(pi/x),infinity)` | `pi` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 123 | `limits.batch:274` | `limit((x^3+1)/sin(x+1),-1)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 124 | `limits.batch:278` | `limit((tan(x-1))/(sqrt(x)-1),1)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 125 | `limits.batch:280` | `limit((sqrt(cos(x))-1)/(sin(x)^2),0)` | `-1/4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 126 | `limits.batch:282` | `limit((sin(3x)+sin(5x))/sin(2x),0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 127 | `limits.batch:284` | `limit((cos(x)-cos(x)^3)/(x^2),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 128 | `limits.batch:286` | `limit(x*cot(2x),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 129 | `limits.batch:290` | `limit((sqrt(1-tan(x))-sqrt(1+tan(x)))/sin(2x),pi)` | `-1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 130 | `limits.batch:292` | `limit(ln(x)/ln(sin(x)),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 131 | `limits.batch:294` | `limit(ln(sin(2x))/ln(sin(x)),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 132 | `limits.batch:297` | `limit((3^x-1)/(6^x-1),0)` | `ln(3) / ln(6)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 133 | `limits.batch:299` | `limit(x(2^(1/x)-1),infinity)` | `ln(2)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 134 | `limits.batch:301` | `limit((e^x+x)^(1/x),0)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 135 | `limits.batch:303` | `limit((e^((1+x)/(1-x)))/2,infinity)` | `1 / (2e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 136 | `limits.batch:305` | `limit((e^x-e^(-x))/(2),infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 137 | `limits.batch:307` | `limit((e^x+e^(-x))/(e^x-e^(-x)),-infinity)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 138 | `limits.batch:309` | `limit(ln(1+x)/(x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 139 | `limits.batch:311` | `limit(ln(1+3x)/(x),0)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 140 | `limits.batch:313` | `limit((ln(x)-1)/(x-e),e)` | `1 / e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 141 | `limits.batch:315` | `limit(ln((x-1)/(x+1)),-infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 142 | `limits.batch:317` | `limit(1/x*ln(sqrt((1+x)/(1-x))),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 143 | `limits.batch:319` | `limit((ln(x^x)-x)/(2-ln(x^2)),e)` | `-e / 2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 144 | `limits.batch:321` | `limit((1-3^x)/(sin(3x)),0)` | `-ln(3) / 3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 145 | `limits.batch:323` | `limit(2^x*sin(2pi*x),-infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 146 | `limits.batch:325` | `limit((sin(2x))/(sqrt(x+3)-sqrt(3)),0)` | `4 * sqrt(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 147 | `limits.batch:329` | `limit(cos(x)^(1/x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 148 | `limits.batch:331` | `limit((1-sin(x))/(pi-2x),pi/2)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 149 | `limits.batch:333` | `limit((sin(x)-cos(x))/cos(2x),pi/4)` | `-1 / sqrt(2)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 150 | `limits.batch:339` | `limit(asin(x)/(x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 151 | `limits.batch:341` | `limit(asin(5x)/(3x),0)` | `5/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 152 | `limits.batch:345` | `limit(acos(sqrt(x^2+x)-x),infinity)` | `pi / 3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 153 | `limits.batch:347` | `limit(acot(x)/(x^2-x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 154 | `limits.batch:349` | `limit(sqrt(pi/2-atan(1/(x-1)^2)),1)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 155 | `limits.batch:352` | `limit((x^3-2x^2+x)/(x^2-1),1)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 156 | `limits.batch:354` | `limit((x^3-9x)/(x^4-3x^3-x+3),3)` | `9/13` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 157 | `limits.batch:356` | `limit((cbrt(8x)-2x)/(root(x,4)-x),1)` | `16/9` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 158 | `limits.batch:358` | `limit((sqrt(x+1)-sqrt(2))/(x^2-1),1)` | `1 / (sqrt(2) * 4)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 159 | `limits.batch:360` | `limit((5^x-1)/(x),0)` | `ln(5)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 160 | `limits.batch:362` | `limit((3x^3-3)/(3^x-3),1)` | `3 / ln(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 161 | `limits.batch:364` | `limit((e^x-e^(-x))/(x),0)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 162 | `limits.batch:368` | `limit((1-2*cos(x))/(pi-3x),pi/3)` | `-1 / sqrt(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 163 | `limits.batch:370` | `limit((sin(x))/(e^x-1),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 164 | `limits.batch:372` | `limit(atan(3x)/asin(2x),0)` | `3/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 165 | `limits.batch:374` | `limit((e^x-e^(-x))/(2x-sin(x)),0)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 166 | `limits.batch:376` | `limit((x^3+pi*x)/sin(3x),0)` | `pi / 3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 167 | `limits.batch:378` | `limit(ln(1+4x)/(3^x-1),0)` | `4 / ln(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 168 | `limits.batch:380` | `limit(sin(4x)/ln(1+sin(x)),0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 169 | `limits.batch:382` | `limit((3*ln(1-2x))/(2*atan(3x)),0)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 170 | `limits.batch:384` | `limit((atan(x)+x^2)/(2^(3x)-3^(2x)),0)` | `1 / (3 * ln(2) - 2 * ln(3))` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 171 | `limits.batch:386` | `limit(atan(x-pi/2)/(pi-2x),pi/2)` | `-1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 172 | `limits.batch:388` | `limit((e^(3x)-e^(-2x))/(2*asin(x)-sin(x)),0)` | `5` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 173 | `limits.batch:390` | `limit(ln(cos(3x))/atan(4x),0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 174 | `limits.batch:392` | `limit(((1+x)^2-(1+2x))/(x^2+4x^3),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 175 | `limits.batch:394` | `limit((x^2+3x+2)^2/(x^3-3x-2),-1)` | `-1/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 176 | `limits.batch:396` | `limit((1-cos(x)^4)/(4x^2),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 177 | `limits.batch:398` | `limit((1-cos(x))/(2x*sin(x)),0)` | `1/4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 178 | `limits.batch:400` | `limit((x-sin(x))/(e^x-e^(-x)-2x),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 179 | `limits.batch:402` | `limit((e^(3x)-3x-1)/(sin(x)^2),0)` | `9/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 180 | `limits.batch:404` | `limit((x^3)/(x-atan(x)),0)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 181 | `limits.batch:406` | `limit((1-sin(x)/x)^(1/ln(x)),0)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
+| 1 | `limits.batch:4` | `limit(x^2-4,2)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 2 | `limits.batch:6` | `limit((x^3-4x)/(2x^2+3x),0)` | `-4/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 3 | `limits.batch:8` | `limit(x^3/(x+1)^2,-1)` | `-infinity` | /set approximation exact; /set fr 2 | inventory-only |
+| 4 | `limits.batch:10` | `limit((x+1)^2(x-1)/(x^3+1),-1)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 5 | `limits.batch:12` | `limit((x^3-2x^2+x)/(2x^3+x^2-2x),0)` | `-1/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 6 | `limits.batch:14` | `limit((x^2+2x+3)/(x-1)^2,1)` | `+infinity` | /set approximation exact; /set fr 2 | inventory-only |
+| 7 | `limits.batch:16` | `limit((x^4-4x^3+x^2)/(x^3+x^2+x),0)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 8 | `limits.batch:18` | `limit((x^3+x^2+x+1)/(x^4+x^2-2),-1)` | `-1/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 9 | `limits.batch:22` | `limit((x-2)/(x^2-3x+2),2)` | `1` | /set approximation exact; /set fr 2 | inventory-only |
+| 10 | `limits.batch:24` | `limit((3x+2x^-1)/(x+4x^-1),0)` | `1/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 11 | `limits.batch:26` | `limit((x^2-3x+2)/(x^2-2x),2)` | `1/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 12 | `limits.batch:28` | `limit(1/(1-x)-3/(1-x^3),1)` | `-1` | /set approximation exact; /set fr 2 | inventory-only |
+| 13 | `limits.batch:30` | `limit((x^2-x-2)/(x^2-2x),2)` | `3/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 14 | `limits.batch:32` | `limit((x^2+5)/(x^2-3),2)` | `9` | /set approximation exact; /set fr 2 | inventory-only |
+| 15 | `limits.batch:34` | `limit((3x^4-4x^3+1)/(x-1)^2,1)` | `6` | /set approximation exact; /set fr 2 | inventory-only |
+| 16 | `limits.batch:36` | `limit((3x+6)/(x^3+8),-2)` | `1/4` | /set approximation exact; /set fr 2 | inventory-only |
+| 17 | `limits.batch:38` | `limit((x+1)/(x-1),2)` | `3` | /set approximation exact; /set fr 2 | inventory-only |
+| 18 | `limits.batch:40` | `limit((x^3+3x^2+2x)/(x^2-x-6),-2)` | `-2/5` | /set approximation exact; /set fr 2 | inventory-only |
+| 19 | `limits.batch:42` | `limit((x^2-2x+1)/(x^3-x),1)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 20 | `limits.batch:44` | `limit((x^2+7x-44)/(x^2-6x+8),4)` | `15/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 21 | `limits.batch:48` | `limit((x^3-5x+4)/(x^3-1),1)` | `-2/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 22 | `limits.batch:50` | `limit((x^2-4)/(x-2),2)` | `4` | /set approximation exact; /set fr 2 | inventory-only |
+| 23 | `limits.batch:52` | `limit((x^2-4)/(x^2-3x+2),2)` | `4` | /set approximation exact; /set fr 2 | inventory-only |
+| 24 | `limits.batch:54` | `limit(1/(x^2-1)-2/(x^4-1),1)` | `1/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 25 | `limits.batch:56` | `limit((x-3)/(x^2-5x+6),3)` | `1` | /set approximation exact; /set fr 2 | inventory-only |
+| 26 | `limits.batch:59` | `limit((x^2-1)/(2x^2+1),infinity)` | `1/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 27 | `limits.batch:61` | `limit((x^3+x^2-4)/(2x^3+x+11),-infinity)` | `1/2` | /set approximation exact; /set fr 2 | inventory-only |
+| 28 | `limits.batch:63` | `limit((3x^2+2x-1)/(x^3-x+2),infinity)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 29 | `limits.batch:65` | `limit((x^3)/(x^2+2)-x,infinity)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 30 | `limits.batch:67` | `limit((x^2+3x-4)/(3x^2-2x+5),infinity)` | `1/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 31 | `limits.batch:69` | `limit((x(x-1)(x-2))/(x^2+6x-9),infinity)` | `+infinity` | /set approximation exact; /set fr 2 | inventory-only |
+| 32 | `limits.batch:71` | `limit((sqrt(x^2+9))/(x+3),infinity)` | `1` | /set approximation exact; /set fr 2 | inventory-only |
+| 33 | `limits.batch:73` | `limit(((x^2+x-1)/(2x^2-x+1))^3,infinity)` | `1/8` | /set approximation exact; /set fr 2 | inventory-only |
+| 34 | `limits.batch:75` | `limit((x^2+2x+1)/(5x),infinity)` | `+infinity` | /set approximation exact; /set fr 2 | inventory-only |
+| 35 | `limits.batch:77` | `limit((x^3+x^4-1)/(2x^5+x-x^2),-infinity)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 36 | `limits.batch:79` | `limit((sqrt(x^2+1)+x)^2/(cbrt(x^6+1)),infinity)` | `4` | /set approximation exact; /set fr 2 | inventory-only |
+| 37 | `limits.batch:81` | `limit((x^6+7x^4-40)/(1-x-5x^7),-infinity)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 38 | `limits.batch:83` | `limit(((x+1)(x-2))/(3x^2+6x-5),infinity)` | `1/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 39 | `limits.batch:85` | `limit(sqrt(x^2+1)/(x),infinity)` | `1` | /set approximation exact; /set fr 2 | inventory-only |
+| 40 | `limits.batch:87` | `limit(((3x^2+2x+1)/(x^2-3x+2))^4,infinity)` | `81` | /set approximation exact; /set fr 2 | inventory-only |
+| 41 | `limits.batch:89` | `limit((5x^3-x^2+x)/(1-x-3x^2),-infinity)` | `+infinity` | /set approximation exact; /set fr 2 | inventory-only |
+| 42 | `limits.batch:91` | `limit((1+x-3x^3)/(1+x^2+3x^3),infinity)` | `-1` | /set approximation exact; /set fr 2 | inventory-only |
+| 43 | `limits.batch:93` | `limit(((x^3-8)/(x^4+16))^10,-infinity)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 44 | `limits.batch:95` | `limit(((x+3)(x+4)(x+5))/(x^4+x-11),infinity)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 45 | `limits.batch:97` | `limit((8x-2x^5+x^6)/(11x+5x^3+3x^5),-infinity)` | `-infinity` | /set approximation exact; /set fr 2 | inventory-only |
+| 46 | `limits.batch:99` | `limit((x^3)/(2x^2-1)-x^2/(2x+1),infinity)` | `1/4` | /set approximation exact; /set fr 2 | inventory-only |
+| 47 | `limits.batch:101` | `limit(x^2-(x^4-1)/(x^2-2),infinity)` | `-2` | /set approximation exact; /set fr 2 | inventory-only |
+| 48 | `limits.batch:103` | `limit(((x-1)^100*(6x+1)^200)/(3x+5)^300,infinity)` | `3117982410208` | /set approximation exact; /set fr 2 | inventory-only |
+| 49 | `limits.batch:105` | `limit((root(x^5,4)+root(x^3,5)+root(x^8,6))/(cbrt(x^4+2)),infinity)` | `1` | /set approximation exact; /set fr 2 | inventory-only |
+| 50 | `limits.batch:107` | `limit((x^2(2x+1)(3x-2))/(2x^2(5x-8)(x+6)),-infinity)` | `3/5` | /set approximation exact; /set fr 2 | inventory-only |
+| 51 | `limits.batch:109` | `limit(((2x^8+8x^6+6x^4)/(4x^8-x^6+12x^4))^5,infinity)` | `1/32` | /set approximation exact; /set fr 2 | inventory-only |
+| 52 | `limits.batch:111` | `limit(((2x-3)^20*(3x+2)^30)/(2x+1)^50,-infinity)` | `191751.0592` | /set approximation exact; /set fr 2 | inventory-only |
+| 53 | `limits.batch:114` | `limit((sqrt(1+2x)-1)/(3x),0)` | `1/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 54 | `limits.batch:116` | `limit((sqrt(x+1)-sqrt(1-x))/(x),0)` | `1` | /set approximation exact; /set fr 2 | inventory-only |
+| 55 | `limits.batch:118` | `limit((x-sqrt(x))/(sqrt(x)),0)` | `-1` | /set approximation exact; /set fr 2 | inventory-only |
+| 56 | `limits.batch:120` | `limit((sqrt(x-1)-2)/(x^2-25),5)` | `1/40` | /set approximation exact; /set fr 2 | inventory-only |
+| 57 | `limits.batch:124` | `limit((3-sqrt(x))/(27-sqrt(x^3)),9)` | `1/27` | /set approximation exact; /set fr 2 | inventory-only |
+| 58 | `limits.batch:126` | `limit((cbrt(1+x)-cbrt(1-x))/(x),0)` | `2/3` | /set approximation exact; /set fr 2 | inventory-only |
+| 59 | `limits.batch:128` | `limit((x^(2/3)-1)/(x^(3/5)-1),1)` | `10/9` | /set approximation exact; /set fr 2 | inventory-only |
+| 60 | `limits.batch:131` | `limit((1 − (x^(1 / z))) / (1 − (x^(1 / y))), 1)` | `y / z` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
+| 61 | `limits.batch:134` | `limit(sqrt(x-2)-sqrt(x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 62 | `limits.batch:136` | `limit(sqrt(x^2+x)-x,infinity)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 63 | `limits.batch:138` | `limit(sqrt(x^2+x)-1,-infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 64 | `limits.batch:140` | `limit(sqrt(x-3)-sqrt(x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 65 | `limits.batch:142` | `limit(sqrt(x)*(sqrt(x-3)-sqrt(x)),infinity)` | `-3/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 66 | `limits.batch:144` | `limit(x(sqrt(x^2+1)-x),infinity)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 67 | `limits.batch:146` | `limit(x(sqrt(x^2+1)-x),-infinity)` | `-infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 68 | `limits.batch:148` | `limit(sqrt(x^2+1)-x,infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 69 | `limits.batch:150` | `limit(sqrt(x^2+1)-x,-infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 70 | `limits.batch:152` | `limit((sqrt(x+2)-sqrt(2))/(x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 71 | `limits.batch:154` | `limit((sqrt(x+5)-sqrt(5))/(sqrt(x)-5),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 72 | `limits.batch:156` | `limit((sqrt(x^2+9)-sqrt(x^2-9))/(6x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 73 | `limits.batch:158` | `limit((sqrt(x-1)-2x)/(x-7),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 74 | `limits.batch:160` | `limit((sqrt(x)-6x)/(3x+1),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 75 | `limits.batch:162` | `limit((sqrt(x^2+1)+sqrt(x))/(root(x^3+x,4)-x),infinity)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 76 | `limits.batch:164` | `limit((sqrt(x^2+1)+sqrt(x))/(root(x^2+1,4)-x),infinity)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 77 | `limits.batch:166` | `limit((cbrt(x)-2*sqrt(x^3))/(root(x^5,4)+x*sqrt(x)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 78 | `limits.batch:171` | `limit((1+1/x)^(3x),infinity)` | `e^3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 79 | `limits.batch:173` | `limit((1+1/x^2)^(3x),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 80 | `limits.batch:175` | `limit((1+1/x^2)^(3x-4),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 81 | `limits.batch:177` | `limit((1+1/(5x))^(2x),infinity)` | `e^(2/5)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 82 | `limits.batch:179` | `limit((1+1/(5x))^(2x+6),infinity)` | `e^(2/5)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 83 | `limits.batch:181` | `limit((1+7/(3x))^(x),infinity)` | `e^2 * cbrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 84 | `limits.batch:183` | `limit((1+7/(3x))^(x-1),infinity)` | `e^2 * cbrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 85 | `limits.batch:185` | `limit((1-1/3x)^x,infinity)` | `1 / cbrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 86 | `limits.batch:187` | `limit((1-5/x)^x,infinity)` | `1 / e^5` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 87 | `limits.batch:189` | `limit(((x-1)/(x+1))^x,infinity)` | `1 / e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 88 | `limits.batch:191` | `limit(((x+6)/(x+5))^x,infinity)` | `e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 89 | `limits.batch:193` | `limit(((x-3)/(x))^(x/2),infinity)` | `1 / (e * sqrt(e))` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 90 | `limits.batch:195` | `limit(((7x+10)/(1+7x))^(x/3),infinity)` | `e^(3/7)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 91 | `limits.batch:197` | `limit(((2x-1)/(2x+1))^(x),infinity)` | `1 / e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 92 | `limits.batch:199` | `limit(((6+4x)/(2+4x))^(-2x),infinity)` | `1 / e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 93 | `limits.batch:203` | `limit(((x+5)/(x+4))^(2x),infinity)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 94 | `limits.batch:207` | `limit(((2x+5)/(2x))^(3x),infinity)` | `e^7 * sqrt(e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 95 | `limits.batch:211` | `limit(((2x+1)/(2x-3))^(3x),infinity)` | `e^6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 96 | `limits.batch:213` | `limit(((x-1)/(x+3))^(-4x),infinity)` | `e^16` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 97 | `limits.batch:217` | `limit(((x)/(x+1))^(x),infinity)` | `1 / e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 98 | `limits.batch:219` | `limit(((3x-2)/(3x+1))^(2x),infinity)` | `1 / e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 99 | `limits.batch:221` | `limit(((2x-5)/(2x-2))^(4x^2),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 100 | `limits.batch:223` | `limit(((3x+6)/(3x-1))^(x^2),infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 101 | `limits.batch:225` | `limit(((x^2+2x+2)/(x^2+3))^(x),infinity)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 102 | `limits.batch:227` | `limit((1+2x)^(1/x),0)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 103 | `limits.batch:229` | `limit((1+5x)^(1/8x),0)` | `e^(5/8)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 104 | `limits.batch:231` | `limit(ln(((3x+1)/(3x-5))^(-x)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 105 | `limits.batch:233` | `limit(ln(((3x+1)/(3x-5))^(2-x)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 106 | `limits.batch:235` | `limit(x*(ln(x+3)-ln(x)),infinity)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 107 | `limits.batch:237` | `limit(x*(ln(x)-ln(x+2)),infinity)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 108 | `limits.batch:239` | `limit((x+1)*(ln(x+1)-ln(x)),infinity)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 109 | `limits.batch:242` | `limit(sin(10x)/(10x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 110 | `limits.batch:244` | `limit(sin(3x)/(2x),0)` | `3/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 111 | `limits.batch:246` | `limit(tan(8x)/(x),0)` | `8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 112 | `limits.batch:248` | `limit(sin(3x)/sin(5x),0)` | `3/5` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 113 | `limits.batch:250` | `limit(tan(5x)/sin(4x),0)` | `5/4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 114 | `limits.batch:252` | `limit(tan(5x)/tan(6x),0)` | `5/6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 115 | `limits.batch:254` | `limit(tan(x)/(3x),0)` | `1/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 116 | `limits.batch:256` | `limit((1-cos(x))/(x),0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 117 | `limits.batch:260` | `limit(sin(x)/(x^3),0)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 118 | `limits.batch:262` | `limit((1-cos(2x))/(x*sin(x)),0)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 119 | `limits.batch:264` | `limit((sin(x/2)^3)/(x^3),0)` | `1/8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 120 | `limits.batch:266` | `limit((sin(4x)+sin(7x))/(sin(3x)),0)` | `11/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 121 | `limits.batch:270` | `limit((tan(x)-sin(x))/(x^3),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 122 | `limits.batch:272` | `limit(x*sin(pi/x),infinity)` | `pi` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 123 | `limits.batch:274` | `limit((x^3+1)/sin(x+1),-1)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 124 | `limits.batch:278` | `limit((tan(x-1))/(sqrt(x)-1),1)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 125 | `limits.batch:280` | `limit((sqrt(cos(x))-1)/(sin(x)^2),0)` | `-1/4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 126 | `limits.batch:282` | `limit((sin(3x)+sin(5x))/sin(2x),0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 127 | `limits.batch:284` | `limit((cos(x)-cos(x)^3)/(x^2),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 128 | `limits.batch:286` | `limit(x*cot(2x),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 129 | `limits.batch:290` | `limit((sqrt(1-tan(x))-sqrt(1+tan(x)))/sin(2x),pi)` | `-1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 130 | `limits.batch:292` | `limit(ln(x)/ln(sin(x)),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 131 | `limits.batch:294` | `limit(ln(sin(2x))/ln(sin(x)),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 132 | `limits.batch:297` | `limit((3^x-1)/(6^x-1),0)` | `ln(3) / ln(6)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 133 | `limits.batch:299` | `limit(x(2^(1/x)-1),infinity)` | `ln(2)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 134 | `limits.batch:301` | `limit((e^x+x)^(1/x),0)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 135 | `limits.batch:303` | `limit((e^((1+x)/(1-x)))/2,infinity)` | `1 / (2e)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 136 | `limits.batch:305` | `limit((e^x-e^(-x))/(2),infinity)` | `+infinity` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 137 | `limits.batch:307` | `limit((e^x+e^(-x))/(e^x-e^(-x)),-infinity)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 138 | `limits.batch:309` | `limit(ln(1+x)/(x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 139 | `limits.batch:311` | `limit(ln(1+3x)/(x),0)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 140 | `limits.batch:313` | `limit((ln(x)-1)/(x-e),e)` | `1 / e` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 141 | `limits.batch:315` | `limit(ln((x-1)/(x+1)),-infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 142 | `limits.batch:317` | `limit(1/x*ln(sqrt((1+x)/(1-x))),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 143 | `limits.batch:319` | `limit((ln(x^x)-x)/(2-ln(x^2)),e)` | `-e / 2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 144 | `limits.batch:321` | `limit((1-3^x)/(sin(3x)),0)` | `-ln(3) / 3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 145 | `limits.batch:323` | `limit(2^x*sin(2pi*x),-infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 146 | `limits.batch:325` | `limit((sin(2x))/(sqrt(x+3)-sqrt(3)),0)` | `4 * sqrt(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 147 | `limits.batch:329` | `limit(cos(x)^(1/x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 148 | `limits.batch:331` | `limit((1-sin(x))/(pi-2x),pi/2)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 149 | `limits.batch:333` | `limit((sin(x)-cos(x))/cos(2x),pi/4)` | `-1 / sqrt(2)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 150 | `limits.batch:339` | `limit(asin(x)/(x),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 151 | `limits.batch:341` | `limit(asin(5x)/(3x),0)` | `5/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 152 | `limits.batch:345` | `limit(acos(sqrt(x^2+x)-x),infinity)` | `pi / 3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 153 | `limits.batch:347` | `limit(acot(x)/(x^2-x),infinity)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 154 | `limits.batch:349` | `limit(sqrt(pi/2-atan(1/(x-1)^2)),1)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 155 | `limits.batch:352` | `limit((x^3-2x^2+x)/(x^2-1),1)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 156 | `limits.batch:354` | `limit((x^3-9x)/(x^4-3x^3-x+3),3)` | `9/13` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 157 | `limits.batch:356` | `limit((cbrt(8x)-2x)/(root(x,4)-x),1)` | `16/9` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 158 | `limits.batch:358` | `limit((sqrt(x+1)-sqrt(2))/(x^2-1),1)` | `1 / (sqrt(2) * 4)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 159 | `limits.batch:360` | `limit((5^x-1)/(x),0)` | `ln(5)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 160 | `limits.batch:362` | `limit((3x^3-3)/(3^x-3),1)` | `3 / ln(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 161 | `limits.batch:364` | `limit((e^x-e^(-x))/(x),0)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 162 | `limits.batch:368` | `limit((1-2*cos(x))/(pi-3x),pi/3)` | `-1 / sqrt(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 163 | `limits.batch:370` | `limit((sin(x))/(e^x-1),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 164 | `limits.batch:372` | `limit(atan(3x)/asin(2x),0)` | `3/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 165 | `limits.batch:374` | `limit((e^x-e^(-x))/(2x-sin(x)),0)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 166 | `limits.batch:376` | `limit((x^3+pi*x)/sin(3x),0)` | `pi / 3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 167 | `limits.batch:378` | `limit(ln(1+4x)/(3^x-1),0)` | `4 / ln(3)` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 168 | `limits.batch:380` | `limit(sin(4x)/ln(1+sin(x)),0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 169 | `limits.batch:382` | `limit((3*ln(1-2x))/(2*atan(3x)),0)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 170 | `limits.batch:384` | `limit((atan(x)+x^2)/(2^(3x)-3^(2x)),0)` | `1 / (3 * ln(2) - 2 * ln(3))` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 171 | `limits.batch:386` | `limit(atan(x-pi/2)/(pi-2x),pi/2)` | `-1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 172 | `limits.batch:388` | `limit((e^(3x)-e^(-2x))/(2*asin(x)-sin(x)),0)` | `5` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 173 | `limits.batch:390` | `limit(ln(cos(3x))/atan(4x),0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 174 | `limits.batch:392` | `limit(((1+x)^2-(1+2x))/(x^2+4x^3),0)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 175 | `limits.batch:394` | `limit((x^2+3x+2)^2/(x^3-3x-2),-1)` | `-1/3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 176 | `limits.batch:396` | `limit((1-cos(x)^4)/(4x^2),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 177 | `limits.batch:398` | `limit((1-cos(x))/(2x*sin(x)),0)` | `1/4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 178 | `limits.batch:400` | `limit((x-sin(x))/(e^x-e^(-x)-2x),0)` | `1/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 179 | `limits.batch:402` | `limit((e^(3x)-3x-1)/(sin(x)^2),0)` | `9/2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 180 | `limits.batch:404` | `limit((x^3)/(x-atan(x)),0)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 181 | `limits.batch:406` | `limit((1-sin(x)/x)^(1/ln(x)),0)` | `e^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
 
 ---
 
@@ -428,136 +444,136 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `matrixvector.batch:1` | `(1,)` | `[1  0]` | — | untested |
-| 2 | `matrixvector.batch:3` | `1,` | `[1  0]` | — | untested |
-| 3 | `matrixvector.batch:5` | `[,,,]` | `[0  0  0  0]` | — | untested |
-| 4 | `matrixvector.batch:7` | `(,,,-2)` | `[0  0  0  -2]` | — | untested |
-| 5 | `matrixvector.batch:9` | `(1;;2)` | `[1  0  2]` | — | untested |
-| 6 | `matrixvector.batch:11` | `(1,1)` | `[1  1]` | — | untested |
-| 7 | `matrixvector.batch:13` | `((1, 2), (4, 5))` | `[1  2; 4  5]` | — | untested |
-| 8 | `matrixvector.batch:15` | `((1; 2; 3); (4; 5; 6))` | `[1  2  3; 4  5  6]` | — | untested |
-| 9 | `matrixvector.batch:17` | `[[1, 2], [4, 5]]` | `[1  2; 4  5]` | — | untested |
-| 10 | `matrixvector.batch:19` | `( 1; 2; 3, 4, 5, 6 ); (4; 5)` | `([1  2  3  4  5  6], [4  5])` | — | untested |
-| 11 | `matrixvector.batch:21` | `[-0.1, 1.23, ], [.1, , -.2], [,,]` | `[-0.1  1.23  0; 0.1  0  -0.2; 0  0  0]` | — | untested |
-| 12 | `matrixvector.batch:24` | `(1; 2; 3) * 2 - 2` | `[0  2  4]` | — | untested |
-| 13 | `matrixvector.batch:27` | `adj([1 2; 4 5])` | `[5  -2; -4  1]` | — | untested |
-| 14 | `matrixvector.batch:29` | `adj([1, 2, 3; 4, 5, 6; 1, 0, 9])` | `[45  -18  -3; -30  6  6; -5  2  -3]` | — | untested |
-| 15 | `matrixvector.batch:31` | `adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `[240  264  -177  -259; -284  -436  194  370; 16  100  -53  -31; -12  28  14  -54]` | — | untested |
-| 16 | `matrixvector.batch:34` | `cofactor([1 2; 4 5], 1, 1)` | `5` | — | untested |
-| 17 | `matrixvector.batch:36` | `cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2)` | `-30` | — | untested |
-| 18 | `matrixvector.batch:38` | `cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)` | `-54` | — | untested |
-| 19 | `matrixvector.batch:41` | `columns([])` | `0` | — | untested |
-| 20 | `matrixvector.batch:43` | `columns([1])` | `1` | — | untested |
-| 21 | `matrixvector.batch:45` | `columns([1 2; 4 5])` | `2` | — | untested |
-| 22 | `matrixvector.batch:49` | `columns([[,,,]])` | `4` | — | untested |
-| 23 | `matrixvector.batch:52` | `matrix(1, 1, [2])` | `2` | — | untested |
-| 24 | `matrixvector.batch:54` | `matrix(1, 3, 2)` | `[2  0  0]` | — | untested |
-| 25 | `matrixvector.batch:56` | `matrix(3, 1, [1 2])` | `[1; 2; 0]` | — | untested |
-| 26 | `matrixvector.batch:58` | `matrix(3, 3, [])` | `[0  0  0; 0  0  0; 0  0  0]` | — | untested |
-| 27 | `matrixvector.batch:60` | `matrix(3, 3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)` | `[1  2  3; 4  5  6; 7  8  9]` | — | untested |
-| 28 | `matrixvector.batch:63` | `vector()` | `[]` | — | untested |
-| 29 | `matrixvector.batch:65` | `vector(,)` | `[0  0]` | — | untested |
-| 30 | `matrixvector.batch:67` | `vector(1, 2, 3)` | `[1  2  3]` | — | untested |
-| 31 | `matrixvector.batch:70` | `matrix2vector([[0]])` | `0` | — | untested |
-| 32 | `matrixvector.batch:72` | `matrix2vector([1 2; 4 5])` | `[1  2  4  5]` | — | untested |
-| 33 | `matrixvector.batch:74` | `matrix2vector([1 2 3; 4 5 6; 7 8 9])` | `[1  2  3  4  5  6  7  8  9]` | — | untested |
-| 34 | `matrixvector.batch:77` | `horzcat([1], [2 3], [4 5 6 7])` | `[1  2  3  4  5  6  7]` | — | untested |
-| 35 | `matrixvector.batch:79` | `horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])` | `[1  3  4  7  8  9; 2  5  6  10  11  12]` | — | untested |
-| 36 | `matrixvector.batch:81` | `vertcat([1 2], [3 4], [5 6])` | `[1  2; 3  4; 5  6]` | — | untested |
-| 37 | `matrixvector.batch:84` | `((1; 2; 3); (4; 5; 6)) * ((7; 8); (9; 10); (11; 12))` | `[58  64; 139  154]` | — | untested |
-| 38 | `matrixvector.batch:87` | `cross((1; 2; 3); (4; 5; 6))` | `[-3  6  -3]` | — | untested |
-| 39 | `matrixvector.batch:90` | `det([[1]])` | `1` | — | untested |
-| 40 | `matrixvector.batch:92` | `det([1 2; 4 5])` | `-3` | — | untested |
-| 41 | `matrixvector.batch:94` | `det([1 2 3; 4 5 6; 1 0 9])` | `-30` | — | untested |
-| 42 | `matrixvector.batch:96` | `det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `-412` | — | untested |
-| 43 | `matrixvector.batch:99` | `dimension([])` | `0` | — | untested |
-| 44 | `matrixvector.batch:101` | `dimension([0])` | `1` | — | untested |
-| 45 | `matrixvector.batch:103` | `dimension([1 2 3 4])` | `4` | — | untested |
-| 46 | `matrixvector.batch:106` | `dot((2); (3))` | `6` | — | untested |
-| 47 | `matrixvector.batch:108` | `dot((1; 2); (3, 4))` | `11` | — | untested |
-| 48 | `matrixvector.batch:110` | `dot((1; 2; 3); (4; 5; 6))` | `32` | — | untested |
-| 49 | `matrixvector.batch:112` | `(1; 2; 3).(4; 5; 6)` | `32` | — | untested |
-| 50 | `matrixvector.batch:114` | `(1; 2; 3, 4) . (5; 6; 7, 8)` | `70` | — | untested |
-| 51 | `matrixvector.batch:117` | `element([1 2; 3 4], 1)` | `[1  2]` | — | untested |
-| 52 | `matrixvector.batch:119` | `element([1 2 3; 4 5 6; 1 0 9], 1, 3)` | `3` | — | untested |
-| 53 | `matrixvector.batch:121` | `element([1 2 3; 4 5 6], 2, 1)` | `4` | — | untested |
-| 54 | `matrixvector.batch:124` | `multiply(1)` | `1` | — | untested |
-| 55 | `matrixvector.batch:126` | `multiply([1 2; 4 5], 2)` | `[2  4; 8  10]` | — | untested |
-| 56 | `matrixvector.batch:128` | `[1 2; 4 5] * 2` | `[2  4; 8  10]` | — | untested |
-| 57 | `matrixvector.batch:130` | `multiply([1 2], 3, 4)` | `[12  24]` | — | untested |
-| 58 | `matrixvector.batch:132` | `[1 2] times 3 times 4` | `[12  24]` | — | untested |
-| 59 | `matrixvector.batch:134` | `[1 2].*[3 4]` | `[3  8]` | — | untested |
-| 60 | `matrixvector.batch:136` | `[1; 2].*[3 4]` | `[3  4; 6  8]` | — | untested |
-| 61 | `matrixvector.batch:138` | `[1 2; 3 4].*[1 2; 3 4]` | `[1  4; 9  16]` | — | untested |
-| 62 | `matrixvector.batch:141` | `pow([1 2; 3 4], 2)` | `[1  4; 9  16]` | — | untested |
-| 63 | `matrixvector.batch:143` | `[1 2; 3 4].^2` | `[1  4; 9  16]` | — | untested |
-| 64 | `matrixvector.batch:145` | `[2 4; 3 4].^[-1; 2]` | `[0.5  0.25; 9  16]` | — | untested |
-| 65 | `matrixvector.batch:147` | `[2; 3].^[3 4]` | `[8  16; 27  81]` | — | untested |
-| 66 | `matrixvector.batch:150` | `[2 4 12] / 2` | `[1  2  6]` | — | untested |
-| 67 | `matrixvector.batch:152` | `divide([2 4 12], 2)` | `[1  2  6]` | — | untested |
-| 68 | `matrixvector.batch:154` | `[2 4 12]./2` | `[1  2  6]` | — | untested |
-| 69 | `matrixvector.batch:156` | `[[2, 4], [6, 12]] / 2` | `[1  2; 3  6]` | — | untested |
-| 70 | `matrixvector.batch:158` | `[2 4; 6 12]./[1 2; 3 4]` | `[2  2; 2  3]` | — | untested |
-| 71 | `matrixvector.batch:161` | `elements([])` | `0` | — | untested |
-| 72 | `matrixvector.batch:163` | `elements([1 2])` | `2` | — | untested |
-| 73 | `matrixvector.batch:165` | `elements([1 2; 3 4])` | `4` | — | untested |
-| 74 | `matrixvector.batch:168` | `entrywise(x, [4 10 12], x)` | `[4  10  12]` | — | untested |
-| 75 | `matrixvector.batch:170` | `entrywise(x / y, [4 10 12], x, [2 2 4], y)` | `[2  5  3]` | — | untested |
-| 76 | `matrixvector.batch:172` | `entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)` | `[3  7  6]` | — | untested |
-| 77 | `matrixvector.batch:175` | `column([1], 1)` | `1` | — | untested |
-| 78 | `matrixvector.batch:177` | `column([1, 2], 1)` | `1` | — | untested |
-| 79 | `matrixvector.batch:179` | `column([1 2; 3 4], 2)` | `[2  4]` | — | untested |
-| 80 | `matrixvector.batch:182` | `row([1], 1)` | `1` | — | untested |
-| 81 | `matrixvector.batch:184` | `row([1 2], 1)` | `[1  2]` | — | untested |
-| 82 | `matrixvector.batch:186` | `row([1 2; 3 4], 2)` | `[3  4]` | — | untested |
-| 83 | `matrixvector.batch:189` | `genvector(x+10, 1, 2, 2)` | `[11  12]` | — | untested |
-| 84 | `matrixvector.batch:191` | `genvector(x+10, 1, 2, 3)` | `[11  11.5  12]` | — | untested |
-| 85 | `matrixvector.batch:193` | `genvector(x+10, -1, 2, 5)` | `[9  9.75  10.5  11.25  12]` | — | untested |
-| 86 | `matrixvector.batch:195` | `genvector(x+10, -1, 2, 7, x, 0)` | `[9  9.5  10  10.5  11  11.5  12]` | — | untested |
-| 87 | `matrixvector.batch:197` | `genvector(x+100, -3, 5, 2, x, 1)` | `[97  99  101  103  105]` | — | untested |
-| 88 | `matrixvector.batch:199` | `genvector(x+100, 1, 2, 1, y, 1)` | `[(x + 100)  (x + 100)]` | — | untested |
-| 89 | `matrixvector.batch:202` | `hadamard([2], [3], [4])` | `24` | — | untested |
-| 90 | `matrixvector.batch:204` | `hadamard([1 2 3; 4 5 6]; [7 8 9; 10 11 12])` | `[7  16  27; 40  55  72]` | — | untested |
-| 91 | `matrixvector.batch:207` | `identity(1)` | `1` | — | untested |
-| 92 | `matrixvector.batch:209` | `identity(3)` | `[1  0  0; 0  1  0; 0  0  1]` | — | untested |
-| 93 | `matrixvector.batch:211` | `identity([1 2; 4 5])` | `[1  0; 0  1]` | — | untested |
-| 94 | `matrixvector.batch:214` | `magnitude(-2)` | `2` | — | untested |
-| 95 | `matrixvector.batch:216` | `magnitude([-2])` | `2` | — | untested |
-| 96 | `matrixvector.batch:218` | `magnitude([-2, 3, 4])` | `5.385164807` | — | untested |
-| 97 | `matrixvector.batch:221` | `part([1], 1, 1, 1, 1)` | `1` | — | untested |
-| 98 | `matrixvector.batch:223` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)` | `5` | — | untested |
-| 99 | `matrixvector.batch:225` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)` | `[3; 6]` | — | untested |
-| 100 | `matrixvector.batch:227` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)` | `[2  3; 5  6; 8  9; 11  12]` | — | untested |
-| 101 | `matrixvector.batch:230` | `((1; 2); (3; 4))^-1` | `[-2  1; 1.5  -0.5]` | — | untested |
-| 102 | `matrixvector.batch:232` | `inverse([1 2; 3 5])` | `[-5  2; 3  -1]` | — | untested |
-| 103 | `matrixvector.batch:234` | `inverse([1  2  3; 4  5  6; 1  0  9])` | `[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]` | — | untested |
-| 104 | `matrixvector.batch:236` | `inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])` | `[2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]` | — | untested |
-| 105 | `matrixvector.batch:239` | `rk([1 2 3; 3 6 9])` | `1` | — | untested |
-| 106 | `matrixvector.batch:241` | `rk([1 2 3; 0 2 2; 1 4 5])` | `2` | — | untested |
-| 107 | `matrixvector.batch:243` | `rk([1 2 3; 0 2 2; 1 -2 -1])` | `2` | — | untested |
-| 108 | `matrixvector.batch:245` | `rk(identity(3))` | `3` | — | untested |
-| 109 | `matrixvector.batch:248` | `combine([1, 2])` | `[1  2]` | — | untested |
-| 110 | `matrixvector.batch:250` | `combine([1, 2], [3], [4, 5, 6])` | `[1  2  3  4  5  6]` | — | untested |
-| 111 | `matrixvector.batch:253` | `norm([2])` | `2` | — | untested |
-| 112 | `matrixvector.batch:255` | `norm([3, 4])` | `5` | — | untested |
-| 113 | `matrixvector.batch:257` | `norm([2, 3, 6])` | `7` | — | untested |
-| 114 | `matrixvector.batch:260` | `permanent([1])` | `1` | — | untested |
-| 115 | `matrixvector.batch:262` | `permanent([1 2; 4 5])` | `13` | — | untested |
-| 116 | `matrixvector.batch:264` | `permanent([1 2 3; 4 5 6; 1 0 9])` | `144` | — | untested |
-| 117 | `matrixvector.batch:266` | `permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `11028` | — | untested |
-| 118 | `matrixvector.batch:269` | `rank([6, 7, 1, 4])` | `[3  4  1  2]` | — | untested |
-| 119 | `matrixvector.batch:271` | `rank([-1, 2, 5, 10], 1)` | `[1  2  3  4]` | — | untested |
-| 120 | `matrixvector.batch:273` | `rank([-1, 2, 5, 10], 0)` | `[4  3  2  1]` | — | untested |
-| 121 | `matrixvector.batch:276` | `rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])` | `[1  0  -2  -3; 0  1  1  4; 0  0  0  0]` | — | untested |
-| 122 | `matrixvector.batch:279` | `rows([1])` | `1` | — | untested |
-| 123 | `matrixvector.batch:281` | `rows([1 2; 3 4])` | `2` | — | untested |
-| 124 | `matrixvector.batch:284` | `sort([5, 2, 0, 1, 3, -4, 0])` | `[-4  0  0  1  2  3  5]` | — | untested |
-| 125 | `matrixvector.batch:286` | `sort([5, 2, 0, 1, 3, -4, 0], 1)` | `[-4  0  0  1  2  3  5]` | — | untested |
-| 126 | `matrixvector.batch:288` | `sort([5, 2, 0, 1, 3, -4, 0], 0)` | `[5  3  2  1  0  0  -4]` | — | untested |
-| 127 | `matrixvector.batch:291` | `transpose([1 2; 3 4])` | `[1  3; 2  4]` | — | untested |
-| 128 | `matrixvector.batch:293` | `[1 2 3; 4 5 6].'` | `[1  4; 2  5; 3  6]` | — | untested |
-| 129 | `matrixvector.batch:296` | `slice([5], 1, 1)` | `5` | — | untested |
-| 130 | `matrixvector.batch:298` | `slice([5, 6, 7, 8, 9], 2, 4)` | `[6  7  8]` | — | untested |
+| 1 | `matrixvector.batch:1` | `(1,)` | `[1  0]` | — | inventory-only |
+| 2 | `matrixvector.batch:3` | `1,` | `[1  0]` | — | inventory-only |
+| 3 | `matrixvector.batch:5` | `[,,,]` | `[0  0  0  0]` | — | inventory-only |
+| 4 | `matrixvector.batch:7` | `(,,,-2)` | `[0  0  0  -2]` | — | inventory-only |
+| 5 | `matrixvector.batch:9` | `(1;;2)` | `[1  0  2]` | — | inventory-only |
+| 6 | `matrixvector.batch:11` | `(1,1)` | `[1  1]` | — | inventory-only |
+| 7 | `matrixvector.batch:13` | `((1, 2), (4, 5))` | `[1  2; 4  5]` | — | inventory-only |
+| 8 | `matrixvector.batch:15` | `((1; 2; 3); (4; 5; 6))` | `[1  2  3; 4  5  6]` | — | inventory-only |
+| 9 | `matrixvector.batch:17` | `[[1, 2], [4, 5]]` | `[1  2; 4  5]` | — | inventory-only |
+| 10 | `matrixvector.batch:19` | `( 1; 2; 3, 4, 5, 6 ); (4; 5)` | `([1  2  3  4  5  6], [4  5])` | — | inventory-only |
+| 11 | `matrixvector.batch:21` | `[-0.1, 1.23, ], [.1, , -.2], [,,]` | `[-0.1  1.23  0; 0.1  0  -0.2; 0  0  0]` | — | inventory-only |
+| 12 | `matrixvector.batch:24` | `(1; 2; 3) * 2 - 2` | `[0  2  4]` | — | inventory-only |
+| 13 | `matrixvector.batch:27` | `adj([1 2; 4 5])` | `[5  -2; -4  1]` | — | inventory-only |
+| 14 | `matrixvector.batch:29` | `adj([1, 2, 3; 4, 5, 6; 1, 0, 9])` | `[45  -18  -3; -30  6  6; -5  2  -3]` | — | inventory-only |
+| 15 | `matrixvector.batch:31` | `adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `[240  264  -177  -259; -284  -436  194  370; 16  100  -53  -31; -12  28  14  -54]` | — | inventory-only |
+| 16 | `matrixvector.batch:34` | `cofactor([1 2; 4 5], 1, 1)` | `5` | — | inventory-only |
+| 17 | `matrixvector.batch:36` | `cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2)` | `-30` | — | inventory-only |
+| 18 | `matrixvector.batch:38` | `cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)` | `-54` | — | inventory-only |
+| 19 | `matrixvector.batch:41` | `columns([])` | `0` | — | inventory-only |
+| 20 | `matrixvector.batch:43` | `columns([1])` | `1` | — | inventory-only |
+| 21 | `matrixvector.batch:45` | `columns([1 2; 4 5])` | `2` | — | inventory-only |
+| 22 | `matrixvector.batch:49` | `columns([[,,,]])` | `4` | — | inventory-only |
+| 23 | `matrixvector.batch:52` | `matrix(1, 1, [2])` | `2` | — | inventory-only |
+| 24 | `matrixvector.batch:54` | `matrix(1, 3, 2)` | `[2  0  0]` | — | inventory-only |
+| 25 | `matrixvector.batch:56` | `matrix(3, 1, [1 2])` | `[1; 2; 0]` | — | inventory-only |
+| 26 | `matrixvector.batch:58` | `matrix(3, 3, [])` | `[0  0  0; 0  0  0; 0  0  0]` | — | inventory-only |
+| 27 | `matrixvector.batch:60` | `matrix(3, 3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)` | `[1  2  3; 4  5  6; 7  8  9]` | — | inventory-only |
+| 28 | `matrixvector.batch:63` | `vector()` | `[]` | — | inventory-only |
+| 29 | `matrixvector.batch:65` | `vector(,)` | `[0  0]` | — | inventory-only |
+| 30 | `matrixvector.batch:67` | `vector(1, 2, 3)` | `[1  2  3]` | — | inventory-only |
+| 31 | `matrixvector.batch:70` | `matrix2vector([[0]])` | `0` | — | inventory-only |
+| 32 | `matrixvector.batch:72` | `matrix2vector([1 2; 4 5])` | `[1  2  4  5]` | — | inventory-only |
+| 33 | `matrixvector.batch:74` | `matrix2vector([1 2 3; 4 5 6; 7 8 9])` | `[1  2  3  4  5  6  7  8  9]` | — | inventory-only |
+| 34 | `matrixvector.batch:77` | `horzcat([1], [2 3], [4 5 6 7])` | `[1  2  3  4  5  6  7]` | — | inventory-only |
+| 35 | `matrixvector.batch:79` | `horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])` | `[1  3  4  7  8  9; 2  5  6  10  11  12]` | — | inventory-only |
+| 36 | `matrixvector.batch:81` | `vertcat([1 2], [3 4], [5 6])` | `[1  2; 3  4; 5  6]` | — | inventory-only |
+| 37 | `matrixvector.batch:84` | `((1; 2; 3); (4; 5; 6)) * ((7; 8); (9; 10); (11; 12))` | `[58  64; 139  154]` | — | inventory-only |
+| 38 | `matrixvector.batch:87` | `cross((1; 2; 3); (4; 5; 6))` | `[-3  6  -3]` | — | inventory-only |
+| 39 | `matrixvector.batch:90` | `det([[1]])` | `1` | — | inventory-only |
+| 40 | `matrixvector.batch:92` | `det([1 2; 4 5])` | `-3` | — | inventory-only |
+| 41 | `matrixvector.batch:94` | `det([1 2 3; 4 5 6; 1 0 9])` | `-30` | — | inventory-only |
+| 42 | `matrixvector.batch:96` | `det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `-412` | — | inventory-only |
+| 43 | `matrixvector.batch:99` | `dimension([])` | `0` | — | inventory-only |
+| 44 | `matrixvector.batch:101` | `dimension([0])` | `1` | — | inventory-only |
+| 45 | `matrixvector.batch:103` | `dimension([1 2 3 4])` | `4` | — | inventory-only |
+| 46 | `matrixvector.batch:106` | `dot((2); (3))` | `6` | — | inventory-only |
+| 47 | `matrixvector.batch:108` | `dot((1; 2); (3, 4))` | `11` | — | inventory-only |
+| 48 | `matrixvector.batch:110` | `dot((1; 2; 3); (4; 5; 6))` | `32` | — | inventory-only |
+| 49 | `matrixvector.batch:112` | `(1; 2; 3).(4; 5; 6)` | `32` | — | inventory-only |
+| 50 | `matrixvector.batch:114` | `(1; 2; 3, 4) . (5; 6; 7, 8)` | `70` | — | inventory-only |
+| 51 | `matrixvector.batch:117` | `element([1 2; 3 4], 1)` | `[1  2]` | — | inventory-only |
+| 52 | `matrixvector.batch:119` | `element([1 2 3; 4 5 6; 1 0 9], 1, 3)` | `3` | — | inventory-only |
+| 53 | `matrixvector.batch:121` | `element([1 2 3; 4 5 6], 2, 1)` | `4` | — | inventory-only |
+| 54 | `matrixvector.batch:124` | `multiply(1)` | `1` | — | inventory-only |
+| 55 | `matrixvector.batch:126` | `multiply([1 2; 4 5], 2)` | `[2  4; 8  10]` | — | inventory-only |
+| 56 | `matrixvector.batch:128` | `[1 2; 4 5] * 2` | `[2  4; 8  10]` | — | inventory-only |
+| 57 | `matrixvector.batch:130` | `multiply([1 2], 3, 4)` | `[12  24]` | — | inventory-only |
+| 58 | `matrixvector.batch:132` | `[1 2] times 3 times 4` | `[12  24]` | — | inventory-only |
+| 59 | `matrixvector.batch:134` | `[1 2].*[3 4]` | `[3  8]` | — | inventory-only |
+| 60 | `matrixvector.batch:136` | `[1; 2].*[3 4]` | `[3  4; 6  8]` | — | inventory-only |
+| 61 | `matrixvector.batch:138` | `[1 2; 3 4].*[1 2; 3 4]` | `[1  4; 9  16]` | — | inventory-only |
+| 62 | `matrixvector.batch:141` | `pow([1 2; 3 4], 2)` | `[1  4; 9  16]` | — | inventory-only |
+| 63 | `matrixvector.batch:143` | `[1 2; 3 4].^2` | `[1  4; 9  16]` | — | inventory-only |
+| 64 | `matrixvector.batch:145` | `[2 4; 3 4].^[-1; 2]` | `[0.5  0.25; 9  16]` | — | inventory-only |
+| 65 | `matrixvector.batch:147` | `[2; 3].^[3 4]` | `[8  16; 27  81]` | — | inventory-only |
+| 66 | `matrixvector.batch:150` | `[2 4 12] / 2` | `[1  2  6]` | — | inventory-only |
+| 67 | `matrixvector.batch:152` | `divide([2 4 12], 2)` | `[1  2  6]` | — | inventory-only |
+| 68 | `matrixvector.batch:154` | `[2 4 12]./2` | `[1  2  6]` | — | inventory-only |
+| 69 | `matrixvector.batch:156` | `[[2, 4], [6, 12]] / 2` | `[1  2; 3  6]` | — | inventory-only |
+| 70 | `matrixvector.batch:158` | `[2 4; 6 12]./[1 2; 3 4]` | `[2  2; 2  3]` | — | inventory-only |
+| 71 | `matrixvector.batch:161` | `elements([])` | `0` | — | inventory-only |
+| 72 | `matrixvector.batch:163` | `elements([1 2])` | `2` | — | inventory-only |
+| 73 | `matrixvector.batch:165` | `elements([1 2; 3 4])` | `4` | — | inventory-only |
+| 74 | `matrixvector.batch:168` | `entrywise(x, [4 10 12], x)` | `[4  10  12]` | — | inventory-only |
+| 75 | `matrixvector.batch:170` | `entrywise(x / y, [4 10 12], x, [2 2 4], y)` | `[2  5  3]` | — | inventory-only |
+| 76 | `matrixvector.batch:172` | `entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)` | `[3  7  6]` | — | inventory-only |
+| 77 | `matrixvector.batch:175` | `column([1], 1)` | `1` | — | inventory-only |
+| 78 | `matrixvector.batch:177` | `column([1, 2], 1)` | `1` | — | inventory-only |
+| 79 | `matrixvector.batch:179` | `column([1 2; 3 4], 2)` | `[2  4]` | — | inventory-only |
+| 80 | `matrixvector.batch:182` | `row([1], 1)` | `1` | — | inventory-only |
+| 81 | `matrixvector.batch:184` | `row([1 2], 1)` | `[1  2]` | — | inventory-only |
+| 82 | `matrixvector.batch:186` | `row([1 2; 3 4], 2)` | `[3  4]` | — | inventory-only |
+| 83 | `matrixvector.batch:189` | `genvector(x+10, 1, 2, 2)` | `[11  12]` | — | inventory-only |
+| 84 | `matrixvector.batch:191` | `genvector(x+10, 1, 2, 3)` | `[11  11.5  12]` | — | inventory-only |
+| 85 | `matrixvector.batch:193` | `genvector(x+10, -1, 2, 5)` | `[9  9.75  10.5  11.25  12]` | — | inventory-only |
+| 86 | `matrixvector.batch:195` | `genvector(x+10, -1, 2, 7, x, 0)` | `[9  9.5  10  10.5  11  11.5  12]` | — | inventory-only |
+| 87 | `matrixvector.batch:197` | `genvector(x+100, -3, 5, 2, x, 1)` | `[97  99  101  103  105]` | — | inventory-only |
+| 88 | `matrixvector.batch:199` | `genvector(x+100, 1, 2, 1, y, 1)` | `[(x + 100)  (x + 100)]` | — | inventory-only |
+| 89 | `matrixvector.batch:202` | `hadamard([2], [3], [4])` | `24` | — | inventory-only |
+| 90 | `matrixvector.batch:204` | `hadamard([1 2 3; 4 5 6]; [7 8 9; 10 11 12])` | `[7  16  27; 40  55  72]` | — | inventory-only |
+| 91 | `matrixvector.batch:207` | `identity(1)` | `1` | — | inventory-only |
+| 92 | `matrixvector.batch:209` | `identity(3)` | `[1  0  0; 0  1  0; 0  0  1]` | — | inventory-only |
+| 93 | `matrixvector.batch:211` | `identity([1 2; 4 5])` | `[1  0; 0  1]` | — | inventory-only |
+| 94 | `matrixvector.batch:214` | `magnitude(-2)` | `2` | — | inventory-only |
+| 95 | `matrixvector.batch:216` | `magnitude([-2])` | `2` | — | inventory-only |
+| 96 | `matrixvector.batch:218` | `magnitude([-2, 3, 4])` | `5.385164807` | — | inventory-only |
+| 97 | `matrixvector.batch:221` | `part([1], 1, 1, 1, 1)` | `1` | — | inventory-only |
+| 98 | `matrixvector.batch:223` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)` | `5` | — | inventory-only |
+| 99 | `matrixvector.batch:225` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)` | `[3; 6]` | — | inventory-only |
+| 100 | `matrixvector.batch:227` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)` | `[2  3; 5  6; 8  9; 11  12]` | — | inventory-only |
+| 101 | `matrixvector.batch:230` | `((1; 2); (3; 4))^-1` | `[-2  1; 1.5  -0.5]` | — | inventory-only |
+| 102 | `matrixvector.batch:232` | `inverse([1 2; 3 5])` | `[-5  2; 3  -1]` | — | inventory-only |
+| 103 | `matrixvector.batch:234` | `inverse([1  2  3; 4  5  6; 1  0  9])` | `[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]` | — | inventory-only |
+| 104 | `matrixvector.batch:236` | `inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])` | `[2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]` | — | inventory-only |
+| 105 | `matrixvector.batch:239` | `rk([1 2 3; 3 6 9])` | `1` | — | inventory-only |
+| 106 | `matrixvector.batch:241` | `rk([1 2 3; 0 2 2; 1 4 5])` | `2` | — | inventory-only |
+| 107 | `matrixvector.batch:243` | `rk([1 2 3; 0 2 2; 1 -2 -1])` | `2` | — | inventory-only |
+| 108 | `matrixvector.batch:245` | `rk(identity(3))` | `3` | — | inventory-only |
+| 109 | `matrixvector.batch:248` | `combine([1, 2])` | `[1  2]` | — | inventory-only |
+| 110 | `matrixvector.batch:250` | `combine([1, 2], [3], [4, 5, 6])` | `[1  2  3  4  5  6]` | — | inventory-only |
+| 111 | `matrixvector.batch:253` | `norm([2])` | `2` | — | inventory-only |
+| 112 | `matrixvector.batch:255` | `norm([3, 4])` | `5` | — | inventory-only |
+| 113 | `matrixvector.batch:257` | `norm([2, 3, 6])` | `7` | — | inventory-only |
+| 114 | `matrixvector.batch:260` | `permanent([1])` | `1` | — | inventory-only |
+| 115 | `matrixvector.batch:262` | `permanent([1 2; 4 5])` | `13` | — | inventory-only |
+| 116 | `matrixvector.batch:264` | `permanent([1 2 3; 4 5 6; 1 0 9])` | `144` | — | inventory-only |
+| 117 | `matrixvector.batch:266` | `permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `11028` | — | inventory-only |
+| 118 | `matrixvector.batch:269` | `rank([6, 7, 1, 4])` | `[3  4  1  2]` | — | inventory-only |
+| 119 | `matrixvector.batch:271` | `rank([-1, 2, 5, 10], 1)` | `[1  2  3  4]` | — | inventory-only |
+| 120 | `matrixvector.batch:273` | `rank([-1, 2, 5, 10], 0)` | `[4  3  2  1]` | — | inventory-only |
+| 121 | `matrixvector.batch:276` | `rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])` | `[1  0  -2  -3; 0  1  1  4; 0  0  0  0]` | — | inventory-only |
+| 122 | `matrixvector.batch:279` | `rows([1])` | `1` | — | inventory-only |
+| 123 | `matrixvector.batch:281` | `rows([1 2; 3 4])` | `2` | — | inventory-only |
+| 124 | `matrixvector.batch:284` | `sort([5, 2, 0, 1, 3, -4, 0])` | `[-4  0  0  1  2  3  5]` | — | inventory-only |
+| 125 | `matrixvector.batch:286` | `sort([5, 2, 0, 1, 3, -4, 0], 1)` | `[-4  0  0  1  2  3  5]` | — | inventory-only |
+| 126 | `matrixvector.batch:288` | `sort([5, 2, 0, 1, 3, -4, 0], 0)` | `[5  3  2  1  0  0  -4]` | — | inventory-only |
+| 127 | `matrixvector.batch:291` | `transpose([1 2; 3 4])` | `[1  3; 2  4]` | — | inventory-only |
+| 128 | `matrixvector.batch:293` | `[1 2 3; 4 5 6].'` | `[1  4; 2  5; 3  6]` | — | inventory-only |
+| 129 | `matrixvector.batch:296` | `slice([5], 1, 1)` | `5` | — | inventory-only |
+| 130 | `matrixvector.batch:298` | `slice([5, 6, 7, 8, 9], 2, 4)` | `[6  7  8]` | — | inventory-only |
 
 ---
 
@@ -581,21 +597,21 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `numberbase.batch:1` | `52 to bin` | `0011 0100` | — | untested |
-| 2 | `numberbase.batch:3` | `52 to bin16` | `0000 0000 0011 0100` | — | untested |
-| 3 | `numberbase.batch:5` | `52 to oct` | `064` | — | untested |
-| 4 | `numberbase.batch:7` | `52 to hex` | `0x34` | — | untested |
-| 5 | `numberbase.batch:9` | `0x34` | `52` | — | untested |
-| 6 | `numberbase.batch:11` | `hex(34)` | `52` | — | untested |
-| 7 | `numberbase.batch:13` | `523<<2&250 to bin` | `0010 1000` | — | untested |
-| 8 | `numberbase.batch:15` | `52.345 to float` | `0100 0010 0101 0001 0110 0001 0100 1000` | — | untested |
-| 9 | `numberbase.batch:17` | `float(01000010010100010110000101001000)` | `52.34500122` | — | untested |
-| 10 | `numberbase.batch:19` | `floatError(52.345)` | `0.000001220703125` | — | untested |
-| 11 | `numberbase.batch:21` | `1978 to roman` | `MCMLXXVIII` | — | untested |
-| 12 | `numberbase.batch:23` | `52 to base 32` | `1K` | — | untested |
-| 13 | `numberbase.batch:25` | `sqrt(32) to base sqrt(2)` | `100000` | — | untested |
-| 14 | `numberbase.batch:28` | `5p10+AEp-2*p23` | `364909568` | set input base 16 | untested |
-| 15 | `numberbase.batch:32` | `52.34 to sexa` | `52°20′24″` | set input base 16; set input base 10; /set unicode 1 | untested |
+| 1 | `numberbase.batch:1` | `52 to bin` | `0011 0100` | — | inventory-only |
+| 2 | `numberbase.batch:3` | `52 to bin16` | `0000 0000 0011 0100` | — | inventory-only |
+| 3 | `numberbase.batch:5` | `52 to oct` | `064` | — | inventory-only |
+| 4 | `numberbase.batch:7` | `52 to hex` | `0x34` | — | inventory-only |
+| 5 | `numberbase.batch:9` | `0x34` | `52` | — | inventory-only |
+| 6 | `numberbase.batch:11` | `hex(34)` | `52` | — | inventory-only |
+| 7 | `numberbase.batch:13` | `523<<2&250 to bin` | `0010 1000` | — | inventory-only |
+| 8 | `numberbase.batch:15` | `52.345 to float` | `0100 0010 0101 0001 0110 0001 0100 1000` | — | inventory-only |
+| 9 | `numberbase.batch:17` | `float(01000010010100010110000101001000)` | `52.34500122` | — | inventory-only |
+| 10 | `numberbase.batch:19` | `floatError(52.345)` | `0.000001220703125` | — | inventory-only |
+| 11 | `numberbase.batch:21` | `1978 to roman` | `MCMLXXVIII` | — | inventory-only |
+| 12 | `numberbase.batch:23` | `52 to base 32` | `1K` | — | inventory-only |
+| 13 | `numberbase.batch:25` | `sqrt(32) to base sqrt(2)` | `100000` | — | inventory-only |
+| 14 | `numberbase.batch:28` | `5p10+AEp-2*p23` | `364909568` | set input base 16 | inventory-only |
+| 15 | `numberbase.batch:32` | `52.34 to sexa` | `52°20′24″` | set input base 16; set input base 10; /set unicode 1 | inventory-only |
 
 ---
 
@@ -611,36 +627,36 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `operators.batch:1` | `1 + 2` | `3` | — | untested |
-| 2 | `operators.batch:3` | `1 plus 2` | `3` | — | untested |
-| 3 | `operators.batch:6` | `5−2` | `3` | — | untested |
-| 4 | `operators.batch:8` | `5 minus 3` | `2` | — | untested |
-| 5 | `operators.batch:10` | `5--2` | `7` | — | untested |
-| 6 | `operators.batch:12` | `5---2` | `3` | — | untested |
-| 7 | `operators.batch:14` | `-5-2` | `-7` | — | untested |
-| 8 | `operators.batch:16` | `5 minus minus 3` | `8` | — | untested |
-| 9 | `operators.batch:18` | `5 minus - 3` | `8` | — | untested |
-| 10 | `operators.batch:21` | `2*3` | `6` | — | untested |
-| 11 | `operators.batch:23` | `3 × 4` | `12` | — | untested |
-| 12 | `operators.batch:25` | `4 times 5` | `20` | — | untested |
-| 13 | `operators.batch:27` | `5 ⋅ 6` | `30` | — | untested |
-| 14 | `operators.batch:30` | `6/2` | `3` | — | untested |
-| 15 | `operators.batch:32` | `12 per 3` | `4` | — | untested |
-| 16 | `operators.batch:34` | `1/2` | `0.5` | — | untested |
-| 17 | `operators.batch:37` | `6%2` | `0` | — | untested |
-| 18 | `operators.batch:39` | `7 rem 2` | `1` | — | untested |
-| 19 | `operators.batch:41` | `-8%3` | `-2` | — | untested |
-| 20 | `operators.batch:44` | `3 %% 2` | `1` | — | untested |
-| 21 | `operators.batch:46` | `3 %% -2` | `-1` | — | untested |
-| 22 | `operators.batch:48` | `3 mod -2` | `-1` | — | untested |
-| 23 | `operators.batch:51` | `5//2` | `2` | — | untested |
-| 24 | `operators.batch:53` | `5\2` | `2` | — | untested |
-| 25 | `operators.batch:55` | `5 div 2` | `2` | — | untested |
-| 26 | `operators.batch:58` | `5 ^ 2` | `25` | — | untested |
-| 27 | `operators.batch:60` | `5 ** 3` | `125` | — | untested |
-| 28 | `operators.batch:62` | `4 ** 3 ** 2` | `262144` | — | untested |
-| 29 | `operators.batch:65` | `1!` | `1` | — | untested |
-| 30 | `operators.batch:67` | `5!` | `120` | — | untested |
+| 1 | `operators.batch:1` | `1 + 2` | `3` | — | inventory-only |
+| 2 | `operators.batch:3` | `1 plus 2` | `3` | — | inventory-only |
+| 3 | `operators.batch:6` | `5−2` | `3` | — | inventory-only |
+| 4 | `operators.batch:8` | `5 minus 3` | `2` | — | inventory-only |
+| 5 | `operators.batch:10` | `5--2` | `7` | — | inventory-only |
+| 6 | `operators.batch:12` | `5---2` | `3` | — | inventory-only |
+| 7 | `operators.batch:14` | `-5-2` | `-7` | — | inventory-only |
+| 8 | `operators.batch:16` | `5 minus minus 3` | `8` | — | inventory-only |
+| 9 | `operators.batch:18` | `5 minus - 3` | `8` | — | inventory-only |
+| 10 | `operators.batch:21` | `2*3` | `6` | — | inventory-only |
+| 11 | `operators.batch:23` | `3 × 4` | `12` | — | inventory-only |
+| 12 | `operators.batch:25` | `4 times 5` | `20` | — | inventory-only |
+| 13 | `operators.batch:27` | `5 ⋅ 6` | `30` | — | inventory-only |
+| 14 | `operators.batch:30` | `6/2` | `3` | — | inventory-only |
+| 15 | `operators.batch:32` | `12 per 3` | `4` | — | inventory-only |
+| 16 | `operators.batch:34` | `1/2` | `0.5` | — | inventory-only |
+| 17 | `operators.batch:37` | `6%2` | `0` | — | inventory-only |
+| 18 | `operators.batch:39` | `7 rem 2` | `1` | — | inventory-only |
+| 19 | `operators.batch:41` | `-8%3` | `-2` | — | inventory-only |
+| 20 | `operators.batch:44` | `3 %% 2` | `1` | — | inventory-only |
+| 21 | `operators.batch:46` | `3 %% -2` | `-1` | — | inventory-only |
+| 22 | `operators.batch:48` | `3 mod -2` | `-1` | — | inventory-only |
+| 23 | `operators.batch:51` | `5//2` | `2` | — | inventory-only |
+| 24 | `operators.batch:53` | `5\2` | `2` | — | inventory-only |
+| 25 | `operators.batch:55` | `5 div 2` | `2` | — | inventory-only |
+| 26 | `operators.batch:58` | `5 ^ 2` | `25` | — | inventory-only |
+| 27 | `operators.batch:60` | `5 ** 3` | `125` | — | inventory-only |
+| 28 | `operators.batch:62` | `4 ** 3 ** 2` | `262144` | — | inventory-only |
+| 29 | `operators.batch:65` | `1!` | `1` | — | inventory-only |
+| 30 | `operators.batch:67` | `5!` | `120` | — | inventory-only |
 
 ---
 
@@ -656,33 +672,33 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `parser.batch:1` | `0` | `0` | — | untested |
-| 2 | `parser.batch:3` | `-0` | `0` | — | untested |
-| 3 | `parser.batch:5` | `123456789` | `123456789` | — | untested |
-| 4 | `parser.batch:7` | `-123` | `-123` | — | untested |
-| 5 | `parser.batch:9` | `-123456789` | `-123456789` | — | untested |
-| 6 | `parser.batch:11` | `123 456 789` | `123456789` | — | untested |
-| 7 | `parser.batch:13` | `1 23  4 56  7  89 ` | `123456789` | — | untested |
-| 8 | `parser.batch:15` | `-   1 23  4 56  7  89 ` | `-123456789` | — | untested |
-| 9 | `parser.batch:18` | `-0.` | `0` | — | untested |
-| 10 | `parser.batch:20` | `0.` | `0` | — | untested |
-| 11 | `parser.batch:22` | `0.0` | `0` | — | untested |
-| 12 | `parser.batch:24` | `0.01` | `0.01` | — | untested |
-| 13 | `parser.batch:26` | `-  0  .  0   01` | `-0.001` | — | untested |
-| 14 | `parser.batch:28` | `.123` | `0.123` | — | untested |
-| 15 | `parser.batch:30` | `- .1 2 3` | `-0.123` | — | untested |
-| 16 | `parser.batch:32` | `-.` | `0` | — | untested |
-| 17 | `parser.batch:34` | `.` | `0` | — | untested |
-| 18 | `parser.batch:36` | `12345.67890` | `12345.6789` | — | untested |
-| 19 | `parser.batch:38` | `-1.000 000` | `-1` | — | untested |
-| 20 | `parser.batch:41` | `1e0` | `1` | — | untested |
-| 21 | `parser.batch:43` | `-1e0` | `-1` | — | untested |
-| 22 | `parser.batch:45` | `1e3` | `1000` | — | untested |
-| 23 | `parser.batch:47` | `1E3` | `1000` | — | untested |
-| 24 | `parser.batch:49` | `1e-3` | `0.001` | — | untested |
-| 25 | `parser.batch:51` | `-12 3.2 3e3` | `-123230` | — | untested |
-| 26 | `parser.batch:53` | `1e303` | `1E303` | — | untested |
-| 27 | `parser.batch:56` | `11k` | `11000` | — | untested |
+| 1 | `parser.batch:1` | `0` | `0` | — | inventory-only |
+| 2 | `parser.batch:3` | `-0` | `0` | — | inventory-only |
+| 3 | `parser.batch:5` | `123456789` | `123456789` | — | inventory-only |
+| 4 | `parser.batch:7` | `-123` | `-123` | — | inventory-only |
+| 5 | `parser.batch:9` | `-123456789` | `-123456789` | — | inventory-only |
+| 6 | `parser.batch:11` | `123 456 789` | `123456789` | — | inventory-only |
+| 7 | `parser.batch:13` | `1 23  4 56  7  89 ` | `123456789` | — | inventory-only |
+| 8 | `parser.batch:15` | `-   1 23  4 56  7  89 ` | `-123456789` | — | inventory-only |
+| 9 | `parser.batch:18` | `-0.` | `0` | — | inventory-only |
+| 10 | `parser.batch:20` | `0.` | `0` | — | inventory-only |
+| 11 | `parser.batch:22` | `0.0` | `0` | — | inventory-only |
+| 12 | `parser.batch:24` | `0.01` | `0.01` | — | inventory-only |
+| 13 | `parser.batch:26` | `-  0  .  0   01` | `-0.001` | — | inventory-only |
+| 14 | `parser.batch:28` | `.123` | `0.123` | — | inventory-only |
+| 15 | `parser.batch:30` | `- .1 2 3` | `-0.123` | — | inventory-only |
+| 16 | `parser.batch:32` | `-.` | `0` | — | inventory-only |
+| 17 | `parser.batch:34` | `.` | `0` | — | inventory-only |
+| 18 | `parser.batch:36` | `12345.67890` | `12345.6789` | — | inventory-only |
+| 19 | `parser.batch:38` | `-1.000 000` | `-1` | — | inventory-only |
+| 20 | `parser.batch:41` | `1e0` | `1` | — | inventory-only |
+| 21 | `parser.batch:43` | `-1e0` | `-1` | — | inventory-only |
+| 22 | `parser.batch:45` | `1e3` | `1000` | — | inventory-only |
+| 23 | `parser.batch:47` | `1E3` | `1000` | — | inventory-only |
+| 24 | `parser.batch:49` | `1e-3` | `0.001` | — | inventory-only |
+| 25 | `parser.batch:51` | `-12 3.2 3e3` | `-123230` | — | inventory-only |
+| 26 | `parser.batch:53` | `1e303` | `1E303` | — | inventory-only |
+| 27 | `parser.batch:56` | `11k` | `11000` | — | inventory-only |
 
 ---
 
@@ -698,32 +714,32 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `percentages.batch:1` | `0%` | `0` | — | untested |
-| 2 | `percentages.batch:3` | `1%` | `0.01` | — | untested |
-| 3 | `percentages.batch:5` | `.000123 %` | `0.00000123` | — | untested |
-| 4 | `percentages.batch:7` | `-15%` | `-0.15` | — | untested |
-| 5 | `percentages.batch:9` | `1234%` | `12.34` | — | untested |
-| 6 | `percentages.batch:11` | `1e-3%` | `0.00001` | — | untested |
-| 7 | `percentages.batch:14` | `10% + 5%` | `0.15` | — | untested |
-| 8 | `percentages.batch:16` | `10%-6%` | `0.04` | — | untested |
-| 9 | `percentages.batch:18` | `123% - 3% + 10%` | `1.3` | — | untested |
-| 10 | `percentages.batch:20` | `10% - 10%` | `0` | — | untested |
-| 11 | `percentages.batch:22` | `10% - 20%` | `-0.1` | — | untested |
-| 12 | `percentages.batch:24` | `10% * 2%` | `0.002` | — | untested |
-| 13 | `percentages.batch:26` | `10% / 2%` | `5` | — | untested |
-| 14 | `percentages.batch:28` | `10%*20%-30%/15%` | `-1.98` | — | untested |
-| 15 | `percentages.batch:31` | `100 + 10%` | `110` | — | untested |
-| 16 | `percentages.batch:33` | `100 + 10% + 10%` | `121` | — | untested |
-| 17 | `percentages.batch:35` | `100 + (10 + 10)%` | `120` | — | untested |
-| 18 | `percentages.batch:39` | `100	-	10%` | `90` | — | untested |
-| 19 | `percentages.batch:41` | `100 - 10% - 10%` | `81` | — | untested |
-| 20 | `percentages.batch:45` | `100 - (10-5) %` | `95` | — | untested |
-| 21 | `percentages.batch:48` | `10% + 100` | `100.1` | — | untested |
-| 22 | `percentages.batch:50` | `10% - 100` | `-99.9` | — | untested |
-| 23 | `percentages.batch:53` | `100 * 10%` | `10` | — | untested |
-| 24 | `percentages.batch:55` | `100 / 10%` | `1000` | — | untested |
-| 25 | `percentages.batch:58` | `10 meters + 20%` | `12 m` | — | untested |
-| 26 | `percentages.batch:61` | `10 - x% = 8` | `x = 20` | — | untested |
+| 1 | `percentages.batch:1` | `0%` | `0` | — | inventory-only |
+| 2 | `percentages.batch:3` | `1%` | `0.01` | — | inventory-only |
+| 3 | `percentages.batch:5` | `.000123 %` | `0.00000123` | — | inventory-only |
+| 4 | `percentages.batch:7` | `-15%` | `-0.15` | — | inventory-only |
+| 5 | `percentages.batch:9` | `1234%` | `12.34` | — | inventory-only |
+| 6 | `percentages.batch:11` | `1e-3%` | `0.00001` | — | inventory-only |
+| 7 | `percentages.batch:14` | `10% + 5%` | `0.15` | — | inventory-only |
+| 8 | `percentages.batch:16` | `10%-6%` | `0.04` | — | inventory-only |
+| 9 | `percentages.batch:18` | `123% - 3% + 10%` | `1.3` | — | inventory-only |
+| 10 | `percentages.batch:20` | `10% - 10%` | `0` | — | inventory-only |
+| 11 | `percentages.batch:22` | `10% - 20%` | `-0.1` | — | inventory-only |
+| 12 | `percentages.batch:24` | `10% * 2%` | `0.002` | — | inventory-only |
+| 13 | `percentages.batch:26` | `10% / 2%` | `5` | — | inventory-only |
+| 14 | `percentages.batch:28` | `10%*20%-30%/15%` | `-1.98` | — | inventory-only |
+| 15 | `percentages.batch:31` | `100 + 10%` | `110` | — | inventory-only |
+| 16 | `percentages.batch:33` | `100 + 10% + 10%` | `121` | — | inventory-only |
+| 17 | `percentages.batch:35` | `100 + (10 + 10)%` | `120` | — | inventory-only |
+| 18 | `percentages.batch:39` | `100	-	10%` | `90` | — | inventory-only |
+| 19 | `percentages.batch:41` | `100 - 10% - 10%` | `81` | — | inventory-only |
+| 20 | `percentages.batch:45` | `100 - (10-5) %` | `95` | — | inventory-only |
+| 21 | `percentages.batch:48` | `10% + 100` | `100.1` | — | inventory-only |
+| 22 | `percentages.batch:50` | `10% - 100` | `-99.9` | — | inventory-only |
+| 23 | `percentages.batch:53` | `100 * 10%` | `10` | — | inventory-only |
+| 24 | `percentages.batch:55` | `100 / 10%` | `1000` | — | inventory-only |
+| 25 | `percentages.batch:58` | `10 meters + 20%` | `12 m` | — | inventory-only |
+| 26 | `percentages.batch:61` | `10 - x% = 8` | `x = 20` | — | inventory-only |
 
 ---
 
@@ -748,55 +764,55 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `polynomial.batch:4` | `x + 3 = 0` | `x = -3` | /set approximation exact; /set fr 2 | untested |
-| 2 | `polynomial.batch:6` | `-x^2 + 3x = 1` | `x = (sqrt(5) + 3) / 2 or x = 3/2 - sqrt(5) / 2` | /set approximation exact; /set fr 2 | untested |
-| 3 | `polynomial.batch:8` | `x^3-5x^2-4x+20=0` | `x = 5 or x = 2 or x = -2` | /set approximation exact; /set fr 2 | untested |
-| 4 | `polynomial.batch:10` | `2x^3 + 5x -5x^2 + 21 = 9x + x^3 + 1` | `x = 5 or x = 2 or x = -2` | /set approximation exact; /set fr 2 | untested |
-| 5 | `polynomial.batch:12` | `x*(2x^2 + 5 -5x) + 21 = 9x + x^3 +1` | `x = 5 or x = 2 or x = -2` | /set approximation exact; /set fr 2 | untested |
-| 6 | `polynomial.batch:15` | `abs(x - abs(x)) - (abs(x) - x)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 7 | `polynomial.batch:17` | `sqrt(8 + 2*sqrt(15)) - (sqrt(5) + sqrt(3))` | `0` | /set approximation exact; /set fr 2 | untested |
-| 8 | `polynomial.batch:19` | `x / abs(x) - sgn(x)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 9 | `polynomial.batch:21` | `factor x + 2*sqrt(x) + 1` | `(sqrt(x) + 1)^2` | /set approximation exact; /set fr 2 | untested |
-| 10 | `polynomial.batch:23` | `abs(x - y) - abs(y - x)` | `0` | /set approximation exact; /set fr 2 | untested |
-| 11 | `polynomial.batch:26` | `sqrt(x + 2*sqrt(x) + 1)` | `sqrt(x) + 1` | /set approximation exact; /set fr 2; /assume positive | untested |
-| 12 | `polynomial.batch:28` | `factor x + 2 * sqrt(xy) + y` | `(sqrt(x) + sqrt(y))^2` | /set approximation exact; /set fr 2; /assume positive | untested |
-| 13 | `polynomial.batch:30` | `ln(x^2 + 2*x + 1)` | `2 * ln(x + 1)` | /set approximation exact; /set fr 2; /assume positive | untested |
-| 14 | `polynomial.batch:32` | `x^(log(y, x))` | `y` | /set approximation exact; /set fr 2; /assume positive | untested |
-| 15 | `polynomial.batch:36` | `coeff(3x + 4, 0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 16 | `polynomial.batch:38` | `coeff(3y + 4, 1)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 17 | `polynomial.batch:40` | `coeff(3a + 4, 2)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 18 | `polynomial.batch:42` | `coeff(4x*(2x^2 + 5 -5x), 3)` | `8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 19 | `polynomial.batch:44` | `coeff(x^3-7x^2-4x-5x^2, 2)` | `-12` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 20 | `polynomial.batch:46` | `coeff(1+x^3-4x-5x^2-1, 0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 21 | `polynomial.batch:48` | `coeff(3x + 4, 1, x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 22 | `polynomial.batch:50` | `coeff(3x + 4, 1, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 23 | `polynomial.batch:52` | `coeff(3x + 2y + 4, 1, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 24 | `polynomial.batch:55` | `pcontent(3x + 6)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 25 | `polynomial.batch:57` | `pcontent(2x^3-4x^2-6x-8x^2)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 26 | `polynomial.batch:59` | `pcontent(2y^3-3y^2-6y-8y^2)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 27 | `polynomial.batch:61` | `pcontent(2x^3-3x^2-6x-8x^2, y)` | `2x^3 - 11x^2 - 6x` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 28 | `polynomial.batch:64` | `lcoeff(6+ 3x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 29 | `polynomial.batch:66` | `lcoeff(6 -5x^2 + 3x^2)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 30 | `polynomial.batch:68` | `lcoeff(6 -5x^2 + 3x^2, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 31 | `polynomial.batch:70` | `lcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 32 | `polynomial.batch:73` | `ldegree(3x)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 33 | `polynomial.batch:75` | `ldegree(6 -5x^2 - 6)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 34 | `polynomial.batch:77` | `ldegree(-5x^2, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 35 | `polynomial.batch:79` | `ldegree(3yx^2 + 2y, y)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 36 | `polynomial.batch:82` | `degree(3x + 6)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 37 | `polynomial.batch:84` | `degree(2x^3-4x^2-6x-8x^2)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 38 | `polynomial.batch:86` | `degree(2x^3-3x^2-6x-2x^3)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 39 | `polynomial.batch:88` | `degree(2x^3-3x^2-6x-2x^3, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 40 | `polynomial.batch:91` | `primpart(3x + 6)` | `x + 2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 41 | `polynomial.batch:93` | `primpart(-12x^3 + 30x - 20)` | `6x^3 - 15x + 10` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 42 | `polynomial.batch:95` | `primpart(2xy + 8y + 16, y)` | `(xy) / 2 + 2y + 4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 43 | `polynomial.batch:98` | `tcoeff(6+ 3x)` | `6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 44 | `polynomial.batch:100` | `tcoeff(-5x^2 + 3x - x)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 45 | `polynomial.batch:102` | `tcoeff(6x -5x^2 + 3x^2, y)` | `6x - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 46 | `polynomial.batch:104` | `tcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 47 | `polynomial.batch:107` | `punit(-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 48 | `polynomial.batch:109` | `punit(1-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
-| 49 | `polynomial.batch:111` | `punit(3x-1)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | untested |
+| 1 | `polynomial.batch:4` | `x + 3 = 0` | `x = -3` | /set approximation exact; /set fr 2 | inventory-only |
+| 2 | `polynomial.batch:6` | `-x^2 + 3x = 1` | `x = (sqrt(5) + 3) / 2 or x = 3/2 - sqrt(5) / 2` | /set approximation exact; /set fr 2 | inventory-only |
+| 3 | `polynomial.batch:8` | `x^3-5x^2-4x+20=0` | `x = 5 or x = 2 or x = -2` | /set approximation exact; /set fr 2 | inventory-only |
+| 4 | `polynomial.batch:10` | `2x^3 + 5x -5x^2 + 21 = 9x + x^3 + 1` | `x = 5 or x = 2 or x = -2` | /set approximation exact; /set fr 2 | inventory-only |
+| 5 | `polynomial.batch:12` | `x*(2x^2 + 5 -5x) + 21 = 9x + x^3 +1` | `x = 5 or x = 2 or x = -2` | /set approximation exact; /set fr 2 | inventory-only |
+| 6 | `polynomial.batch:15` | `abs(x - abs(x)) - (abs(x) - x)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 7 | `polynomial.batch:17` | `sqrt(8 + 2*sqrt(15)) - (sqrt(5) + sqrt(3))` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 8 | `polynomial.batch:19` | `x / abs(x) - sgn(x)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 9 | `polynomial.batch:21` | `factor x + 2*sqrt(x) + 1` | `(sqrt(x) + 1)^2` | /set approximation exact; /set fr 2 | inventory-only |
+| 10 | `polynomial.batch:23` | `abs(x - y) - abs(y - x)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
+| 11 | `polynomial.batch:26` | `sqrt(x + 2*sqrt(x) + 1)` | `sqrt(x) + 1` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
+| 12 | `polynomial.batch:28` | `factor x + 2 * sqrt(xy) + y` | `(sqrt(x) + sqrt(y))^2` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
+| 13 | `polynomial.batch:30` | `ln(x^2 + 2*x + 1)` | `2 * ln(x + 1)` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
+| 14 | `polynomial.batch:32` | `x^(log(y, x))` | `y` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
+| 15 | `polynomial.batch:36` | `coeff(3x + 4, 0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 16 | `polynomial.batch:38` | `coeff(3y + 4, 1)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 17 | `polynomial.batch:40` | `coeff(3a + 4, 2)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 18 | `polynomial.batch:42` | `coeff(4x*(2x^2 + 5 -5x), 3)` | `8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 19 | `polynomial.batch:44` | `coeff(x^3-7x^2-4x-5x^2, 2)` | `-12` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 20 | `polynomial.batch:46` | `coeff(1+x^3-4x-5x^2-1, 0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 21 | `polynomial.batch:48` | `coeff(3x + 4, 1, x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 22 | `polynomial.batch:50` | `coeff(3x + 4, 1, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 23 | `polynomial.batch:52` | `coeff(3x + 2y + 4, 1, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 24 | `polynomial.batch:55` | `pcontent(3x + 6)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 25 | `polynomial.batch:57` | `pcontent(2x^3-4x^2-6x-8x^2)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 26 | `polynomial.batch:59` | `pcontent(2y^3-3y^2-6y-8y^2)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 27 | `polynomial.batch:61` | `pcontent(2x^3-3x^2-6x-8x^2, y)` | `2x^3 - 11x^2 - 6x` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 28 | `polynomial.batch:64` | `lcoeff(6+ 3x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 29 | `polynomial.batch:66` | `lcoeff(6 -5x^2 + 3x^2)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 30 | `polynomial.batch:68` | `lcoeff(6 -5x^2 + 3x^2, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 31 | `polynomial.batch:70` | `lcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 32 | `polynomial.batch:73` | `ldegree(3x)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 33 | `polynomial.batch:75` | `ldegree(6 -5x^2 - 6)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 34 | `polynomial.batch:77` | `ldegree(-5x^2, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 35 | `polynomial.batch:79` | `ldegree(3yx^2 + 2y, y)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 36 | `polynomial.batch:82` | `degree(3x + 6)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 37 | `polynomial.batch:84` | `degree(2x^3-4x^2-6x-8x^2)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 38 | `polynomial.batch:86` | `degree(2x^3-3x^2-6x-2x^3)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 39 | `polynomial.batch:88` | `degree(2x^3-3x^2-6x-2x^3, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 40 | `polynomial.batch:91` | `primpart(3x + 6)` | `x + 2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 41 | `polynomial.batch:93` | `primpart(-12x^3 + 30x - 20)` | `6x^3 - 15x + 10` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 42 | `polynomial.batch:95` | `primpart(2xy + 8y + 16, y)` | `(xy) / 2 + 2y + 4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 43 | `polynomial.batch:98` | `tcoeff(6+ 3x)` | `6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 44 | `polynomial.batch:100` | `tcoeff(-5x^2 + 3x - x)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 45 | `polynomial.batch:102` | `tcoeff(6x -5x^2 + 3x^2, y)` | `6x - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 46 | `polynomial.batch:104` | `tcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 47 | `polynomial.batch:107` | `punit(-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 48 | `polynomial.batch:109` | `punit(1-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 49 | `polynomial.batch:111` | `punit(3x-1)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
 
 ---
 
@@ -821,31 +837,31 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `solver.batch:4` | `5^x = 3` | `x = ln(3) / ln(5)` | /set approximation exact; /set fr 2 | untested |
-| 2 | `solver.batch:7` | `x^3 + x^2 + x = 5` | `x = 2 / (3 * cbrt(3 * sqrt(561) - 71)) - 1/3 - cbrt(3 * sqrt(561) - 71) / 3` | /set approximation exact; /set fr 2 | untested |
-| 3 | `solver.batch:10` | `x^4 + 20x^3 + 150x^2 + 500x + 625 = 0` | `x = -5` | /set approximation exact; /set fr 2 | untested |
-| 4 | `solver.batch:13` | `x^(1/3) + x^(2/3) = 3` | `x = 2 * sqrt(13) - 5` | /set approximation exact; /set fr 2 | untested |
-| 5 | `solver.batch:16` | `ln(x) + x = 3` | `x = lambertw(e^3)` | /set approximation exact; /set fr 2 | untested |
-| 6 | `solver.batch:19` | `2^(3x) + 4x = 5` | `x = 5/4 - lambertw(6 * 8^(1/4) * ln(2)) / (3 * ln(2))` | /set approximation exact; /set fr 2 | untested |
-| 7 | `solver.batch:22` | `x^(-3x) = 2` | `x = e^lambertw(-ln(2) / 3) or x = e^lambertw(-ln(2) / 3, -1)` | /set approximation exact; /set fr 2 | untested |
-| 8 | `solver.batch:25` | `1/3 * sin(3x) - 1/3 = 0` | `x = (2/3) * pi * n + pi / 6` | /set approximation exact; /set fr 2 | untested |
-| 9 | `solver.batch:28` | `2/3 * sin(3x) - 1/3 = 0` | `x = (2/3) * pi * n + (5/18) * pi or x = (2/3) * pi * n + pi / 18` | /set approximation exact; /set fr 2 | untested |
-| 10 | `solver.batch:31` | `sin(x) + cos(x) = 1` | `x = 2 pi * n or x = 2 pi * n + pi / 2` | /set approximation exact; /set fr 2 | untested |
-| 11 | `solver.batch:34` | `sin(x) = 1 + cos(x)` | `x = 2 pi * n + pi or x = 2 pi * n + pi / 2` | /set approximation exact; /set fr 2 | untested |
-| 12 | `solver.batch:37` | `sqrt(2) * cos(3x + pi/6) = 1` | `x = (2/3) * pi * n + pi / 36 or x = (2/3) * pi * n - (5/36) * pi` | /set approximation exact; /set fr 2 | untested |
-| 13 | `solver.batch:40` | `2 * sin(3x/4) = 1` | `x = (8/3) * pi * n + (10/9) * pi or x = (8/3) * pi * n + (2/9) * pi` | /set approximation exact; /set fr 2 | untested |
-| 14 | `solver.batch:43` | `tan(x/4 + pi/3) = sqrt(3)` | `x = 4 pi * n` | /set approximation exact; /set fr 2 | untested |
-| 15 | `solver.batch:46` | `sqrt(3) * sin(x) + cos(x) = sqrt(3)` | `x = 2 pi * n + pi / 2 or x = 2 pi * n + pi / 6` | /set approximation exact; /set fr 2 | untested |
-| 16 | `solver.batch:49` | `sin(x)^2 = sin(x)^3` | `x = pi * n or x = 2 pi * n + pi / 2` | /set approximation exact; /set fr 2 | untested |
-| 17 | `solver.batch:52` | `sin(x) = sin(x/2)` | `x = 2 pi * n or x = 4 pi * n + (2/3) * pi or x = 4 pi * n - (2/3) * pi` | /set approximation exact; /set fr 2 | untested |
-| 18 | `solver.batch:55` | `sin(4x) + cos(2x) = 0` | `x = pi * n + (7/12) * pi or x = pi * n - pi / 12 or x = (pi * n) / 2 - pi / 4` | /set approximation exact; /set fr 2 | untested |
-| 19 | `solver.batch:60` | `newtonsolve(Ei(x) = 3, 1)` | `1.397510842` | /set approximation exact; /set fr 2; /set approximation try exact | untested |
-| 20 | `solver.batch:63` | `secantsolve(Ei(x) = 3, 1, 4)` | `1.397510842` | /set approximation exact; /set fr 2; /set approximation try exact | untested |
-| 21 | `solver.batch:66` | `newtonsolve(Ei(x) = 3i, 1)` | `-1.160849461 + 1.034283360i` | /set approximation exact; /set fr 2; /set approximation try exact | untested |
-| 22 | `solver.batch:71` | `x^7 - x^5 + 3x^2 + 5x = 3` | `x ≈ 0.4706753153` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | untested |
-| 23 | `solver.batch:74` | `x^(5x) = 5` | `x ≈ 1.284730245` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | untested |
-| 24 | `solver.batch:77` | `1 * 2^(3x) + 4x = 5` | `x ≈ 0.5171781450` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | untested |
-| 25 | `solver.batch:80` | `x^(-3x) = 2` | `x ≈ 0.7280844118 or x ≈ 0.1006083268` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | untested |
+| 1 | `solver.batch:4` | `5^x = 3` | `x = ln(3) / ln(5)` | /set approximation exact; /set fr 2 | inventory-only |
+| 2 | `solver.batch:7` | `x^3 + x^2 + x = 5` | `x = 2 / (3 * cbrt(3 * sqrt(561) - 71)) - 1/3 - cbrt(3 * sqrt(561) - 71) / 3` | /set approximation exact; /set fr 2 | inventory-only |
+| 3 | `solver.batch:10` | `x^4 + 20x^3 + 150x^2 + 500x + 625 = 0` | `x = -5` | /set approximation exact; /set fr 2 | inventory-only |
+| 4 | `solver.batch:13` | `x^(1/3) + x^(2/3) = 3` | `x = 2 * sqrt(13) - 5` | /set approximation exact; /set fr 2 | inventory-only |
+| 5 | `solver.batch:16` | `ln(x) + x = 3` | `x = lambertw(e^3)` | /set approximation exact; /set fr 2 | inventory-only |
+| 6 | `solver.batch:19` | `2^(3x) + 4x = 5` | `x = 5/4 - lambertw(6 * 8^(1/4) * ln(2)) / (3 * ln(2))` | /set approximation exact; /set fr 2 | inventory-only |
+| 7 | `solver.batch:22` | `x^(-3x) = 2` | `x = e^lambertw(-ln(2) / 3) or x = e^lambertw(-ln(2) / 3, -1)` | /set approximation exact; /set fr 2 | inventory-only |
+| 8 | `solver.batch:25` | `1/3 * sin(3x) - 1/3 = 0` | `x = (2/3) * pi * n + pi / 6` | /set approximation exact; /set fr 2 | inventory-only |
+| 9 | `solver.batch:28` | `2/3 * sin(3x) - 1/3 = 0` | `x = (2/3) * pi * n + (5/18) * pi or x = (2/3) * pi * n + pi / 18` | /set approximation exact; /set fr 2 | inventory-only |
+| 10 | `solver.batch:31` | `sin(x) + cos(x) = 1` | `x = 2 pi * n or x = 2 pi * n + pi / 2` | /set approximation exact; /set fr 2 | inventory-only |
+| 11 | `solver.batch:34` | `sin(x) = 1 + cos(x)` | `x = 2 pi * n + pi or x = 2 pi * n + pi / 2` | /set approximation exact; /set fr 2 | inventory-only |
+| 12 | `solver.batch:37` | `sqrt(2) * cos(3x + pi/6) = 1` | `x = (2/3) * pi * n + pi / 36 or x = (2/3) * pi * n - (5/36) * pi` | /set approximation exact; /set fr 2 | inventory-only |
+| 13 | `solver.batch:40` | `2 * sin(3x/4) = 1` | `x = (8/3) * pi * n + (10/9) * pi or x = (8/3) * pi * n + (2/9) * pi` | /set approximation exact; /set fr 2 | inventory-only |
+| 14 | `solver.batch:43` | `tan(x/4 + pi/3) = sqrt(3)` | `x = 4 pi * n` | /set approximation exact; /set fr 2 | inventory-only |
+| 15 | `solver.batch:46` | `sqrt(3) * sin(x) + cos(x) = sqrt(3)` | `x = 2 pi * n + pi / 2 or x = 2 pi * n + pi / 6` | /set approximation exact; /set fr 2 | inventory-only |
+| 16 | `solver.batch:49` | `sin(x)^2 = sin(x)^3` | `x = pi * n or x = 2 pi * n + pi / 2` | /set approximation exact; /set fr 2 | inventory-only |
+| 17 | `solver.batch:52` | `sin(x) = sin(x/2)` | `x = 2 pi * n or x = 4 pi * n + (2/3) * pi or x = 4 pi * n - (2/3) * pi` | /set approximation exact; /set fr 2 | inventory-only |
+| 18 | `solver.batch:55` | `sin(4x) + cos(2x) = 0` | `x = pi * n + (7/12) * pi or x = pi * n - pi / 12 or x = (pi * n) / 2 - pi / 4` | /set approximation exact; /set fr 2 | inventory-only |
+| 19 | `solver.batch:60` | `newtonsolve(Ei(x) = 3, 1)` | `1.397510842` | /set approximation exact; /set fr 2; /set approximation try exact | inventory-only |
+| 20 | `solver.batch:63` | `secantsolve(Ei(x) = 3, 1, 4)` | `1.397510842` | /set approximation exact; /set fr 2; /set approximation try exact | inventory-only |
+| 21 | `solver.batch:66` | `newtonsolve(Ei(x) = 3i, 1)` | `-1.160849461 + 1.034283360i` | /set approximation exact; /set fr 2; /set approximation try exact | inventory-only |
+| 22 | `solver.batch:71` | `x^7 - x^5 + 3x^2 + 5x = 3` | `x ≈ 0.4706753153` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | inventory-only |
+| 23 | `solver.batch:74` | `x^(5x) = 5` | `x ≈ 1.284730245` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | inventory-only |
+| 24 | `solver.batch:77` | `1 * 2^(3x) + 4x = 5` | `x ≈ 0.5171781450` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | inventory-only |
+| 25 | `solver.batch:80` | `x^(-3x) = 2` | `x ≈ 0.7280844118 or x ≈ 0.1006083268` | /set approximation exact; /set fr 2; /set approximation try exact; /set unicode 1 | inventory-only |
 
 ---
 
@@ -862,45 +878,45 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `stats.batch:1` | `mean(5; 6; 4; 2; 3; 7)` | `4.5` | — | untested |
-| 2 | `stats.batch:3` | `stdev(5; 6; 4; 2; 3; 7)` | `1.870828693` | — | untested |
-| 3 | `stats.batch:5` | `quartile((5; 6; 4; 2; 3; 7); 1; 8)` | `2.916666667` | — | untested |
-| 4 | `stats.batch:7` | `percentile([5 6 4 2 3 7]; 25; 8)` | `2.916666667` | — | untested |
-| 5 | `stats.batch:9` | `normdist(7; 5)` | `0.05399096651` | — | untested |
-| 6 | `stats.batch:11` | `quadraticfit([5 3 4 5 6 7 13 24])` | `0.7797619048x^2 - 4.720238095x + 9.732142857` | — | untested |
-| 7 | `stats.batch:13` | `cubicfit([5 3 4 5 6 7 13 24])` | `0.1489898990x^3 - 1.231601732x^2 + 2.952741703x + 2.357142857` | — | untested |
-| 8 | `stats.batch:15` | `fdist(5, 2, 3, 0)` | `0.02558260445` | — | untested |
-| 9 | `stats.batch:17` | `fdist(5, 2, 3, 1)` | `0.8891420474` | — | untested |
-| 10 | `stats.batch:19` | `normdistinv(0.2, 5, 2)` | `3.316757533` | — | untested |
-| 11 | `stats.batch:21` | `chisqdistinv(0.9, 3)` | `6.251388631` | — | untested |
-| 12 | `stats.batch:23` | `mode([1 3 7 5 1 1 1 3])` | `1` | — | untested |
-| 13 | `stats.batch:25` | `median([1 3 7 5 1 1 1 3])` | `2` | — | untested |
-| 14 | `stats.batch:28` | `mean(libqalculate_tests_vector)` | `6.530919283` | — | untested |
-| 15 | `stats.batch:30` | `geomean(abs(libqalculate_tests_vector))` | `14.25624271` | — | untested |
-| 16 | `stats.batch:32` | `harmmean(abs(libqalculate_tests_vector))` | `5.691924037` | — | untested |
-| 17 | `stats.batch:34` | `rms(libqalculate_tests_vector)` | `24.22585458` | — | untested |
-| 18 | `stats.batch:36` | `trimmean(libqalculate_tests_vector, 10)` | `6.788959652` | — | untested |
-| 19 | `stats.batch:38` | `winsormean(libqalculate_tests_vector, 10)` | `6.774860902` | — | untested |
-| 20 | `stats.batch:40` | `weighmean(libqalculate_tests_vector, genvector(2;1;100))` | `6.530919283` | — | untested |
-| 21 | `stats.batch:42` | `stdev(libqalculate_tests_vector)` | `23.44646004` | — | untested |
-| 22 | `stats.batch:44` | `stderr(libqalculate_tests_vector)` | `2.344646004` | — | untested |
-| 23 | `stats.batch:46` | `meandev(libqalculate_tests_vector)` | `19.20169382` | — | untested |
-| 24 | `stats.batch:48` | `quartile(libqalculate_tests_vector, 1, 7)` | `-10.48274166` | — | untested |
-| 25 | `stats.batch:50` | `percentile(libqalculate_tests_vector, 25, 7)` | `-10.48274166` | — | untested |
-| 26 | `stats.batch:52` | `decile(libqalculate_tests_vector, 9, 7)` | `38.27474287` | — | untested |
-| 27 | `stats.batch:54` | `min(libqalculate_tests_vector)` | `-43.38345286` | — | untested |
-| 28 | `stats.batch:56` | `max(libqalculate_tests_vector)` | `54.40816396` | — | untested |
-| 29 | `stats.batch:58` | `number(libqalculate_tests_vector)` | `100` | — | untested |
-| 30 | `stats.batch:60` | `range(libqalculate_tests_vector)` | `97.79161682` | — | untested |
-| 31 | `stats.batch:62` | `median(libqalculate_tests_vector)` | `8.084203925` | — | untested |
-| 32 | `stats.batch:64` | `total(libqalculate_tests_vector)` | `653.0919283` | — | untested |
-| 33 | `stats.batch:66` | `iqr(libqalculate_tests_vector)` | `33.42899060` | — | untested |
-| 34 | `stats.batch:69` | `ttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.3493127334` | — | untested |
-| 35 | `stats.batch:71` | `pttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `1.583214005` | — | untested |
-| 36 | `stats.batch:73` | `pearson(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9519790480` | — | untested |
-| 37 | `stats.batch:75` | `spearman(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9742094209` | — | untested |
-| 38 | `stats.batch:77` | `covar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `499.1760404` | — | untested |
-| 39 | `stats.batch:79` | `poolvar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `530.0195143` | — | untested |
+| 1 | `stats.batch:1` | `mean(5; 6; 4; 2; 3; 7)` | `4.5` | — | inventory-only |
+| 2 | `stats.batch:3` | `stdev(5; 6; 4; 2; 3; 7)` | `1.870828693` | — | inventory-only |
+| 3 | `stats.batch:5` | `quartile((5; 6; 4; 2; 3; 7); 1; 8)` | `2.916666667` | — | inventory-only |
+| 4 | `stats.batch:7` | `percentile([5 6 4 2 3 7]; 25; 8)` | `2.916666667` | — | inventory-only |
+| 5 | `stats.batch:9` | `normdist(7; 5)` | `0.05399096651` | — | inventory-only |
+| 6 | `stats.batch:11` | `quadraticfit([5 3 4 5 6 7 13 24])` | `0.7797619048x^2 - 4.720238095x + 9.732142857` | — | inventory-only |
+| 7 | `stats.batch:13` | `cubicfit([5 3 4 5 6 7 13 24])` | `0.1489898990x^3 - 1.231601732x^2 + 2.952741703x + 2.357142857` | — | inventory-only |
+| 8 | `stats.batch:15` | `fdist(5, 2, 3, 0)` | `0.02558260445` | — | inventory-only |
+| 9 | `stats.batch:17` | `fdist(5, 2, 3, 1)` | `0.8891420474` | — | inventory-only |
+| 10 | `stats.batch:19` | `normdistinv(0.2, 5, 2)` | `3.316757533` | — | inventory-only |
+| 11 | `stats.batch:21` | `chisqdistinv(0.9, 3)` | `6.251388631` | — | inventory-only |
+| 12 | `stats.batch:23` | `mode([1 3 7 5 1 1 1 3])` | `1` | — | inventory-only |
+| 13 | `stats.batch:25` | `median([1 3 7 5 1 1 1 3])` | `2` | — | inventory-only |
+| 14 | `stats.batch:28` | `mean(libqalculate_tests_vector)` | `6.530919283` | — | inventory-only |
+| 15 | `stats.batch:30` | `geomean(abs(libqalculate_tests_vector))` | `14.25624271` | — | inventory-only |
+| 16 | `stats.batch:32` | `harmmean(abs(libqalculate_tests_vector))` | `5.691924037` | — | inventory-only |
+| 17 | `stats.batch:34` | `rms(libqalculate_tests_vector)` | `24.22585458` | — | inventory-only |
+| 18 | `stats.batch:36` | `trimmean(libqalculate_tests_vector, 10)` | `6.788959652` | — | inventory-only |
+| 19 | `stats.batch:38` | `winsormean(libqalculate_tests_vector, 10)` | `6.774860902` | — | inventory-only |
+| 20 | `stats.batch:40` | `weighmean(libqalculate_tests_vector, genvector(2;1;100))` | `6.530919283` | — | inventory-only |
+| 21 | `stats.batch:42` | `stdev(libqalculate_tests_vector)` | `23.44646004` | — | inventory-only |
+| 22 | `stats.batch:44` | `stderr(libqalculate_tests_vector)` | `2.344646004` | — | inventory-only |
+| 23 | `stats.batch:46` | `meandev(libqalculate_tests_vector)` | `19.20169382` | — | inventory-only |
+| 24 | `stats.batch:48` | `quartile(libqalculate_tests_vector, 1, 7)` | `-10.48274166` | — | inventory-only |
+| 25 | `stats.batch:50` | `percentile(libqalculate_tests_vector, 25, 7)` | `-10.48274166` | — | inventory-only |
+| 26 | `stats.batch:52` | `decile(libqalculate_tests_vector, 9, 7)` | `38.27474287` | — | inventory-only |
+| 27 | `stats.batch:54` | `min(libqalculate_tests_vector)` | `-43.38345286` | — | inventory-only |
+| 28 | `stats.batch:56` | `max(libqalculate_tests_vector)` | `54.40816396` | — | inventory-only |
+| 29 | `stats.batch:58` | `number(libqalculate_tests_vector)` | `100` | — | inventory-only |
+| 30 | `stats.batch:60` | `range(libqalculate_tests_vector)` | `97.79161682` | — | inventory-only |
+| 31 | `stats.batch:62` | `median(libqalculate_tests_vector)` | `8.084203925` | — | inventory-only |
+| 32 | `stats.batch:64` | `total(libqalculate_tests_vector)` | `653.0919283` | — | inventory-only |
+| 33 | `stats.batch:66` | `iqr(libqalculate_tests_vector)` | `33.42899060` | — | inventory-only |
+| 34 | `stats.batch:69` | `ttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.3493127334` | — | inventory-only |
+| 35 | `stats.batch:71` | `pttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `1.583214005` | — | inventory-only |
+| 36 | `stats.batch:73` | `pearson(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9519790480` | — | inventory-only |
+| 37 | `stats.batch:75` | `spearman(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9742094209` | — | inventory-only |
+| 38 | `stats.batch:77` | `covar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `499.1760404` | — | inventory-only |
+| 39 | `stats.batch:79` | `poolvar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `530.0195143` | — | inventory-only |
 
 ---
 
@@ -922,30 +938,30 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `strings.batch:1` | `""` | `""` | — | untested |
-| 2 | `strings.batch:3` | `"x"` | `'x'` | — | untested |
-| 3 | `strings.batch:5` | `"xx"` | `"xx"` | — | untested |
-| 4 | `strings.batch:7` | `"meters"` | `"meters"` | — | untested |
-| 5 | `strings.batch:9` | `'12'` | `"12"` | — | untested |
-| 6 | `strings.batch:11` | `"12"` | `"12"` | — | untested |
-| 7 | `strings.batch:14` | `concatenate("a", "bc", 'defg')` | `"abcdefg"` | — | untested |
-| 8 | `strings.batch:16` | `concatenate("", "c", '', 'd')` | `"cd"` | — | untested |
-| 9 | `strings.batch:18` | `concatenate(1,2)` | `"12"` | — | untested |
-| 10 | `strings.batch:20` | `concatenate(1*2, 5)` | `"1*25"` | — | untested |
-| 11 | `strings.batch:22` | `dec(concatenate(4*2, 5))` | `100` | — | untested |
-| 12 | `strings.batch:26` | `concatenate(concatenate(a, b), alpha, d, dec(123, 1), beta)` | `"abcd123beta"` | — | untested |
-| 13 | `strings.batch:29` | `len("")` | `0` | — | untested |
-| 14 | `strings.batch:31` | `len(" ")` | `1` | — | untested |
-| 15 | `strings.batch:33` | `len(5)` | `1` | — | untested |
-| 16 | `strings.batch:35` | `len(5/6)` | `3` | — | untested |
-| 17 | `strings.batch:37` | `len(concatenate("a", "bc"))` | `3` | — | untested |
-| 18 | `strings.batch:41` | `0xD8 to unicode` | `Ø` | /set unicode 1 | untested |
-| 19 | `strings.batch:43` | `char(0xD8)` | `'Ø'` | /set unicode 1 | untested |
-| 20 | `strings.batch:45` | `char([0xD8, 0x61])` | `['Ø'  'a']` | /set unicode 1 | untested |
-| 21 | `strings.batch:47` | `code(Ø) to hex` | `0xD8` | /set unicode 1 | untested |
-| 22 | `strings.batch:49` | `code(😀) to hex` | `0x1F600` | /set unicode 1 | untested |
-| 23 | `strings.batch:51` | `code(🍉, utf-8, 0) to hex` | `0xF09F8D89` | /set unicode 1 | untested |
-| 24 | `strings.batch:53` | `code(abc)` | `[97  98  99]` | /set unicode 1 | untested |
+| 1 | `strings.batch:1` | `""` | `""` | — | inventory-only |
+| 2 | `strings.batch:3` | `"x"` | `'x'` | — | inventory-only |
+| 3 | `strings.batch:5` | `"xx"` | `"xx"` | — | inventory-only |
+| 4 | `strings.batch:7` | `"meters"` | `"meters"` | — | inventory-only |
+| 5 | `strings.batch:9` | `'12'` | `"12"` | — | inventory-only |
+| 6 | `strings.batch:11` | `"12"` | `"12"` | — | inventory-only |
+| 7 | `strings.batch:14` | `concatenate("a", "bc", 'defg')` | `"abcdefg"` | — | inventory-only |
+| 8 | `strings.batch:16` | `concatenate("", "c", '', 'd')` | `"cd"` | — | inventory-only |
+| 9 | `strings.batch:18` | `concatenate(1,2)` | `"12"` | — | inventory-only |
+| 10 | `strings.batch:20` | `concatenate(1*2, 5)` | `"1*25"` | — | inventory-only |
+| 11 | `strings.batch:22` | `dec(concatenate(4*2, 5))` | `100` | — | inventory-only |
+| 12 | `strings.batch:26` | `concatenate(concatenate(a, b), alpha, d, dec(123, 1), beta)` | `"abcd123beta"` | — | inventory-only |
+| 13 | `strings.batch:29` | `len("")` | `0` | — | inventory-only |
+| 14 | `strings.batch:31` | `len(" ")` | `1` | — | inventory-only |
+| 15 | `strings.batch:33` | `len(5)` | `1` | — | inventory-only |
+| 16 | `strings.batch:35` | `len(5/6)` | `3` | — | inventory-only |
+| 17 | `strings.batch:37` | `len(concatenate("a", "bc"))` | `3` | — | inventory-only |
+| 18 | `strings.batch:41` | `0xD8 to unicode` | `Ø` | /set unicode 1 | inventory-only |
+| 19 | `strings.batch:43` | `char(0xD8)` | `'Ø'` | /set unicode 1 | inventory-only |
+| 20 | `strings.batch:45` | `char([0xD8, 0x61])` | `['Ø'  'a']` | /set unicode 1 | inventory-only |
+| 21 | `strings.batch:47` | `code(Ø) to hex` | `0xD8` | /set unicode 1 | inventory-only |
+| 22 | `strings.batch:49` | `code(😀) to hex` | `0x1F600` | /set unicode 1 | inventory-only |
+| 23 | `strings.batch:51` | `code(🍉, utf-8, 0) to hex` | `0xF09F8D89` | /set unicode 1 | inventory-only |
+| 24 | `strings.batch:53` | `code(abc)` | `[97  98  99]` | /set unicode 1 | inventory-only |
 
 ---
 
@@ -961,19 +977,19 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `units.batch:1` | `5 dm3 to L` | `5 L` | — | untested |
-| 2 | `units.batch:3` | `25 dm^3 to L` | `25 L` | — | untested |
-| 3 | `units.batch:5` | `20 miles / 2h to km/h` | `16.09344 km/h` | — | untested |
-| 4 | `units.batch:8` | `1.74 to ft` | `5 ft + 8.503937008 in` | — | untested |
-| 5 | `units.batch:10` | `1.74 m to ft` | `5 ft + 8.503937008 in` | — | untested |
-| 6 | `units.batch:13` | `1.74 m to -ft` | `5.708661417 ft` | — | untested |
-| 7 | `units.batch:16` | `100 lbf * 60 mph to hp` | `15.99999752 hp` | — | untested |
-| 8 | `units.batch:19` | `50 Ω * 2 A` | `100 V` | — | untested |
-| 9 | `units.batch:22` | `50 Ω * 2 A to base` | `100 kg*m^2/(A*s^3)` | — | untested |
-| 10 | `units.batch:25` | `10 N / 5 Pa` | `2 m^2` | — | untested |
-| 11 | `units.batch:27` | `(10 N)/(5 Pa)` | `2 m^2` | — | untested |
-| 12 | `units.batch:30` | `5 m/s to s/m` | `0.2 s/m` | — | untested |
-| 13 | `units.batch:33` | `500 megabit/s * 2 h to b?byte` | `419.0951586 GiB` | — | untested |
+| 1 | `units.batch:1` | `5 dm3 to L` | `5 L` | — | inventory-only |
+| 2 | `units.batch:3` | `25 dm^3 to L` | `25 L` | — | inventory-only |
+| 3 | `units.batch:5` | `20 miles / 2h to km/h` | `16.09344 km/h` | — | inventory-only |
+| 4 | `units.batch:8` | `1.74 to ft` | `5 ft + 8.503937008 in` | — | inventory-only |
+| 5 | `units.batch:10` | `1.74 m to ft` | `5 ft + 8.503937008 in` | — | inventory-only |
+| 6 | `units.batch:13` | `1.74 m to -ft` | `5.708661417 ft` | — | inventory-only |
+| 7 | `units.batch:16` | `100 lbf * 60 mph to hp` | `15.99999752 hp` | — | inventory-only |
+| 8 | `units.batch:19` | `50 Ω * 2 A` | `100 V` | — | inventory-only |
+| 9 | `units.batch:22` | `50 Ω * 2 A to base` | `100 kg*m^2/(A*s^3)` | — | inventory-only |
+| 10 | `units.batch:25` | `10 N / 5 Pa` | `2 m^2` | — | inventory-only |
+| 11 | `units.batch:27` | `(10 N)/(5 Pa)` | `2 m^2` | — | inventory-only |
+| 12 | `units.batch:30` | `5 m/s to s/m` | `0.2 s/m` | — | inventory-only |
+| 13 | `units.batch:33` | `500 megabit/s * 2 h to b?byte` | `419.0951586 GiB` | — | inventory-only |
 
 ---
 
@@ -989,17 +1005,17 @@ directory before editing or reviewing this file.
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `variables.batch:1` | `alpha := 5` | `5` | — | untested |
-| 2 | `variables.batch:3` | `alpha` | `5` | — | untested |
-| 3 | `variables.batch:5` | `beta := 2+1` | `3` | — | untested |
-| 4 | `variables.batch:7` | `beta` | `3` | — | untested |
-| 5 | `variables.batch:9` | `alpha + beta` | `8` | — | untested |
-| 6 | `variables.batch:11` | `alpha:= alpha + beta` | `8` | — | untested |
-| 7 | `variables.batch:13` | `alpha:= alpha + beta` | `11` | — | untested |
-| 8 | `variables.batch:15` | `alpha` | `11` | — | untested |
-| 9 | `variables.batch:17` | `alpha^2 + 3beta` | `130` | — | untested |
-| 10 | `variables.batch:20` | `beta:=[1,2,3]` | `[1  2  3]` | — | untested |
-| 11 | `variables.batch:22` | `beta*2` | `[2  4  6]` | — | untested |
+| 1 | `variables.batch:1` | `alpha := 5` | `5` | — | inventory-only |
+| 2 | `variables.batch:3` | `alpha` | `5` | — | inventory-only |
+| 3 | `variables.batch:5` | `beta := 2+1` | `3` | — | inventory-only |
+| 4 | `variables.batch:7` | `beta` | `3` | — | inventory-only |
+| 5 | `variables.batch:9` | `alpha + beta` | `8` | — | inventory-only |
+| 6 | `variables.batch:11` | `alpha:= alpha + beta` | `8` | — | inventory-only |
+| 7 | `variables.batch:13` | `alpha:= alpha + beta` | `11` | — | inventory-only |
+| 8 | `variables.batch:15` | `alpha` | `11` | — | inventory-only |
+| 9 | `variables.batch:17` | `alpha^2 + 3beta` | `130` | — | inventory-only |
+| 10 | `variables.batch:20` | `beta:=[1,2,3]` | `[1  2  3]` | — | inventory-only |
+| 11 | `variables.batch:22` | `beta*2` | `[2  4  6]` | — | inventory-only |
 
 ---
 
@@ -1715,6 +1731,6 @@ directory before editing or reviewing this file.
 | `expected_status` | `pass` — all cases are expected to pass in upstream |
 | `normalization` | `exact-utf8` — exact UTF-8 string comparison |
 | `deviation_id` | `none` — no known deviations |
-| `parity_status` | `untested` — not yet validated in Rust port |
+| `parity_status` | `inventory-only` — cataloged from upstream but not native Rust parity evidence |
 | `owner` | `unassigned` — no owner assigned yet |
 | `last_checked_upstream_version` | `5.11.0` |
