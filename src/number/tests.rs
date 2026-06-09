@@ -825,3 +825,152 @@ fn test_complex_arithmetic() {
     assert_eq!(imag_quot, NumberValue::Rational(Rational::new(2, 25)));
 }
 
+#[test]
+fn test_new_rational_arithmetic_and_comparisons() {
+    // 1. checked_add, checked_sub, checked_mul, checked_div
+    let half = Rational::try_new(1, 2).unwrap();
+    let third = Rational::try_new(1, 3).unwrap();
+
+    assert_eq!(half.checked_add(&third), Rational::try_new(5, 6));
+    assert_eq!(half.checked_sub(&third), Rational::try_new(1, 6));
+    assert_eq!(half.checked_mul(&third), Rational::try_new(1, 6));
+    assert_eq!(half.checked_div(&third), Rational::try_new(3, 2));
+
+    // Overflows
+    let max_rat = Rational::try_new(i128::MAX, 1).unwrap();
+    let one_rat = Rational::try_new(1, 1).unwrap();
+    assert_eq!(max_rat.checked_add(&one_rat), None);
+
+    let min_rat = Rational::try_new(i128::MIN, 1).unwrap();
+    assert_eq!(min_rat.checked_sub(&one_rat), None);
+
+    // Regression tests for premature overflow
+    let max_over_2 = Rational::try_new(i128::MAX, 2).unwrap();
+    assert_eq!(
+        max_over_2.checked_add(&max_over_2),
+        Some(Rational::new(i128::MAX, 1))
+    );
+
+    let min_plus_1_over_2 = Rational::try_new(i128::MIN + 1, 2).unwrap();
+    assert_eq!(
+        min_plus_1_over_2.checked_sub(&max_over_2),
+        Some(Rational::new(i128::MIN + 1, 1))
+    );
+
+    // Cross-GCD multiplication/division to avoid premature overflow
+    let large_a = Rational::try_new(1 << 120, 1 << 100).unwrap();
+    let large_b = Rational::try_new(1 << 100, 1 << 120).unwrap();
+    assert_eq!(large_a.checked_mul(&large_b), Some(Rational::new(1, 1)));
+    assert_eq!(large_a.checked_div(&large_a), Some(Rational::new(1, 1)));
+
+    // Division by zero
+    let zero_rat = Rational::try_new(0, 1).unwrap();
+    assert_eq!(half.checked_div(&zero_rat), None);
+
+    // 2. Ordering comparisons
+    assert!(half > third);
+    assert!(Rational::try_new(-1, 2).unwrap() < Rational::try_new(-1, 3).unwrap());
+    assert!(half > Rational::try_new(-1, 2).unwrap());
+    assert!(zero_rat < half);
+    assert!(zero_rat > Rational::try_new(-1, 2).unwrap());
+    assert!(max_rat > Rational::try_new(i128::MAX - 1, 1).unwrap());
+
+    // 3. NumberValue promotions and arithmetic
+    let nv_half = NumberValue::Rational(half.clone());
+    let nv_third = NumberValue::Rational(third.clone());
+    let nv_float = NumberValue::Float(Float::from_f64(0.5, 53));
+    let nv_float_two = NumberValue::Float(Float::from_f64(2.0, 53));
+
+    // sub
+    assert_eq!(
+        nv_half.sub(&nv_third),
+        NumberValue::Rational(Rational::new(1, 6))
+    );
+    assert!(nv_half.sub(&nv_float).is_real_zero());
+
+    // mul
+    assert_eq!(
+        nv_half.mul(&nv_third),
+        NumberValue::Rational(Rational::new(1, 6))
+    );
+    assert_eq!(
+        nv_half.mul(&nv_float_two),
+        NumberValue::Float(Float::from_f64(1.0, 53))
+    );
+
+    // div
+    assert_eq!(
+        nv_half.div(&nv_third),
+        NumberValue::Rational(Rational::new(3, 2))
+    );
+    assert_eq!(
+        nv_half.div(&nv_float),
+        NumberValue::Float(Float::from_f64(1.0, 53))
+    );
+    assert!(nv_half
+        .div(&NumberValue::Rational(zero_rat.clone()))
+        .is_nan());
+
+    // Interval promotions
+    let interval = NumberValue::Interval {
+        lower: Float::from_f64(0.0, 53),
+        upper: Float::from_f64(2.0, 53),
+    };
+    // nv_half (0.5) - [0, 2] = [0.5 - 2, 0.5 - 0] = [-1.5, 0.5]
+    if let NumberValue::Interval { lower, upper } = nv_half.sub(&interval) {
+        assert!(lower.value() < -1.5);
+        assert!(upper.value() > 0.5);
+    } else {
+        panic!("Expected interval");
+    }
+
+    // [0, 2] - nv_half (0.5) = [-0.5, 1.5]
+    if let NumberValue::Interval { lower, upper } = interval.sub(&nv_half) {
+        assert!(lower.value() < -0.5);
+        assert!(upper.value() > 1.5);
+    } else {
+        panic!("Expected interval");
+    }
+
+    // Uncertainty promotions
+    let uncertainty = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Rational(Rational::new(5, 1))),
+        uncertainty: Box::new(NumberValue::Rational(Rational::new(1, 2))),
+    };
+    // nv_half (0.5) - (5 +/- 0.5) = -4.5 +/- 0.5
+    if let NumberValue::Uncertainty {
+        value,
+        uncertainty: unc,
+    } = nv_half.sub(&uncertainty)
+    {
+        assert_eq!(value.as_ref(), &NumberValue::Rational(Rational::new(-9, 2)));
+        assert_eq!(unc.as_ref(), &NumberValue::Rational(Rational::new(1, 2)));
+    } else {
+        panic!("Expected uncertainty");
+    }
+
+    // 4. Number comparisons and promotions
+    let n_half = Number::from_rational(half.clone());
+    let n_third = Number::from_rational(third.clone());
+    let n_float = Number::from_float(Float::from_f64(0.5, 53));
+
+    assert!(n_half > n_third);
+    assert_eq!(
+        n_half.partial_cmp(&n_float),
+        Some(std::cmp::Ordering::Equal)
+    );
+    assert!(n_half > Number::from_float(Float::from_f64(0.4, 53)));
+
+    // Complex promotions
+    let c = Number::new_complex(
+        Number::from_rational(Rational::new(2, 1)),
+        Number::from_rational(Rational::new(3, 1)),
+    );
+    // n_half (0.5) - (2 + 3i) = -1.5 - 3i
+    let diff = n_half.sub(&c);
+    assert_eq!(diff.value(), &NumberValue::Rational(Rational::new(-3, 2)));
+    assert_eq!(
+        diff.imaginary().unwrap().value(),
+        &NumberValue::Rational(Rational::new(-3, 1))
+    );
+}
