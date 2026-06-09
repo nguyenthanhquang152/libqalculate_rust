@@ -30,7 +30,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use libqalculate_rust::batch::{is_session_command, read_batch_cases};
+use libqalculate_rust::batch::{batch_case_ids, is_session_command, read_batch_cases};
 use libqalculate_rust::ffi::FallbackState;
 
 #[path = "oracle/fallback_gate.rs"]
@@ -399,7 +399,9 @@ fn run_rust_expression(
         .arg(expression)
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs);
+        .env("QALCULATE_DEFINITIONS_DIR", defs)
+        .env_remove("QALCULATE_DISABLE_FALLBACK")
+        .env_remove("QALCULATE_REPORT_FALLBACK");
 
     if disable_fallback {
         cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
@@ -468,7 +470,12 @@ fn differential_oracle_batch(
         .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", batch_path.display()));
 
     let settings_per_case = accumulated_settings_for_cases(&input, cases.len());
-    let case_ids = oracle_manifest::case_ids(&batch_name, &input);
+    let case_ids = batch_case_ids(&batch_name, &input).unwrap_or_else(|e| {
+        panic!(
+            "Failed to derive case IDs for {}: {e}",
+            batch_path.display()
+        )
+    });
     let parity_map = oracle_manifest::load_parity_statuses();
 
     let mut mismatches = Vec::new();
@@ -480,11 +487,10 @@ fn differential_oracle_batch(
             .map(|setting| setting.raw.clone())
             .collect::<Vec<_>>();
 
-        let case_id = case_ids.get(i).cloned().unwrap_or_default();
-        let parity_status = parity_map
-            .get(&case_id)
-            .map(|s| s.as_str())
-            .unwrap_or("inventory-only");
+        let case_id = case_ids
+            .get(i)
+            .unwrap_or_else(|| panic!("missing case ID for {} case index {i}", batch_name));
+        let parity_status = oracle_manifest::status_for_case(&parity_map, case_id);
 
         let (disable_fallback, report_fallback) = if parity_status == "native-pass" {
             (true, true)

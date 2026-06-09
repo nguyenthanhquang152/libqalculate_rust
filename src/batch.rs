@@ -13,6 +13,15 @@ pub struct BatchCase {
     pub expected: Vec<String>,
 }
 
+/// A parsed batch case plus the one-based source line of its expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocatedBatchCase {
+    /// One-based source line where the expression appears in the upstream fixture.
+    pub source_line: usize,
+    /// Parsed expression and expected output.
+    pub case: BatchCase,
+}
+
 impl BatchCase {
     /// Create a batch case after trimming only trailing carriage returns.
     pub fn new(expression: impl Into<String>, expected: Vec<String>) -> Self {
@@ -67,8 +76,18 @@ impl From<std::io::Error> for BatchError {
 /// The upstream format is line-oriented: an expression line is followed by one or more
 /// tab-prefixed expected-output lines. Blank lines separate cases and comments start with `#`.
 pub fn parse_batch_cases(input: &str) -> Result<Vec<BatchCase>, BatchError> {
+    Ok(parse_batch_cases_with_source_lines(input)?
+        .into_iter()
+        .map(|located| located.case)
+        .collect())
+}
+
+/// Parse a libqalculate `.batch` fixture and retain expression source lines.
+pub fn parse_batch_cases_with_source_lines(
+    input: &str,
+) -> Result<Vec<LocatedBatchCase>, BatchError> {
     let mut cases = Vec::new();
-    let mut current_expression: Option<String> = None;
+    let mut current_expression: Option<(usize, String)> = None;
     let mut current_expected = Vec::new();
 
     for (index, raw_line) in input.lines().enumerate() {
@@ -79,7 +98,7 @@ pub fn parse_batch_cases(input: &str) -> Result<Vec<BatchCase>, BatchError> {
             || line.trim_start().starts_with('#')
             || is_session_command(line.trim())
         {
-            flush_case(&mut cases, &mut current_expression, &mut current_expected)?;
+            flush_located_case(&mut cases, &mut current_expression, &mut current_expected)?;
             continue;
         }
 
@@ -91,12 +110,65 @@ pub fn parse_batch_cases(input: &str) -> Result<Vec<BatchCase>, BatchError> {
             continue;
         }
 
-        flush_case(&mut cases, &mut current_expression, &mut current_expected)?;
-        current_expression = Some(line.to_owned());
+        flush_located_case(&mut cases, &mut current_expression, &mut current_expected)?;
+        current_expression = Some((line_number, line.to_owned()));
     }
 
-    flush_case(&mut cases, &mut current_expression, &mut current_expected)?;
+    flush_located_case(&mut cases, &mut current_expression, &mut current_expected)?;
     Ok(cases)
+}
+
+/// Return `{batch_file}:{source_line}` IDs for every source case with expected output.
+///
+/// The manifest index tracks qalc test cases, not setup/delete lines. Some upstream fixtures
+/// contain unindented setup expressions without expected output, so this scan deliberately
+/// records only expression lines followed by at least one tab-prefixed expected output.
+pub fn batch_case_ids(batch_file: &str, input: &str) -> Result<Vec<String>, BatchError> {
+    let mut ids = Vec::new();
+    let mut current_expression_line = None;
+    let mut has_expected = false;
+
+    for (idx, raw_line) in input.lines().enumerate() {
+        let line_number = idx + 1;
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() || trimmed.starts_with('#') || is_session_command(trimmed) {
+            flush_case_id(
+                batch_file,
+                &mut ids,
+                &mut current_expression_line,
+                has_expected,
+            );
+            has_expected = false;
+            continue;
+        }
+
+        if line.starts_with('\t') {
+            if current_expression_line.is_none() {
+                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            }
+            has_expected = true;
+            continue;
+        }
+
+        flush_case_id(
+            batch_file,
+            &mut ids,
+            &mut current_expression_line,
+            has_expected,
+        );
+        current_expression_line = Some(line_number);
+        has_expected = false;
+    }
+
+    flush_case_id(
+        batch_file,
+        &mut ids,
+        &mut current_expression_line,
+        has_expected,
+    );
+    Ok(ids)
 }
 
 /// Read and parse a libqalculate `.batch` fixture from disk.
@@ -118,19 +190,35 @@ pub fn render_batch_cases(cases: &[BatchCase]) -> String {
     output
 }
 
-fn flush_case(
-    cases: &mut Vec<BatchCase>,
-    current_expression: &mut Option<String>,
+fn flush_located_case(
+    cases: &mut Vec<LocatedBatchCase>,
+    current_expression: &mut Option<(usize, String)>,
     current_expected: &mut Vec<String>,
 ) -> Result<(), BatchError> {
-    let Some(expression) = current_expression.take() else {
+    let Some((source_line, expression)) = current_expression.take() else {
         return Ok(());
     };
     if current_expected.is_empty() {
         return Err(BatchError::MissingExpected { expression });
     }
-    cases.push(BatchCase::new(expression, std::mem::take(current_expected)));
+    cases.push(LocatedBatchCase {
+        source_line,
+        case: BatchCase::new(expression, std::mem::take(current_expected)),
+    });
     Ok(())
+}
+
+fn flush_case_id(
+    batch_file: &str,
+    ids: &mut Vec<String>,
+    current_expression_line: &mut Option<usize>,
+    has_expected: bool,
+) {
+    if let Some(line) = current_expression_line.take() {
+        if has_expected {
+            ids.push(format!("{batch_file}:{line}"));
+        }
+    }
 }
 
 /// Return true for upstream batch session commands that affect later cases.
@@ -193,5 +281,21 @@ mod tests {
         }
         .to_string();
         assert!(missing.contains("1 +"));
+    }
+
+    #[test]
+    fn reports_case_ids_for_source_expression_lines() {
+        let input = "# comment\n/set approximation exact\n1 + 1\n\t2\n\n2 + 2\n\t4\n";
+        let ids = super::batch_case_ids("parser.batch", input).expect("fixture should parse");
+
+        assert_eq!(ids, vec!["parser.batch:3", "parser.batch:6"]);
+    }
+
+    #[test]
+    fn case_ids_skip_setup_lines_without_expected_output() {
+        let input = "values=load(tests/vectordata.csv)\nmean(values)\n\t4.5\ndelete values\n";
+        let ids = super::batch_case_ids("stats.batch", input).expect("fixture should parse");
+
+        assert_eq!(ids, vec!["stats.batch:2"]);
     }
 }

@@ -5,7 +5,7 @@ use tempfile::tempdir;
 
 #[test]
 fn cli_prints_version() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("--version")
         .assert()
         .success()
@@ -14,7 +14,7 @@ fn cli_prints_version() {
 
 #[test]
 fn cli_prints_help() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("--help")
         .assert()
         .success()
@@ -28,7 +28,7 @@ fn cli_self_check_finds_upstream_fixtures() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("--self-check")
         .assert()
         .success()
@@ -38,7 +38,7 @@ fn cli_self_check_finds_upstream_fixtures() {
 #[test]
 fn cli_self_check_uses_configured_upstream_dir() {
     let upstream = fake_upstream();
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("--self-check")
         .env("LIBQALCULATE_UPSTREAM_DIR", upstream.path())
         .assert()
@@ -49,7 +49,7 @@ fn cli_self_check_uses_configured_upstream_dir() {
 #[test]
 fn cli_lists_only_batch_fixtures_from_configured_upstream_dir() {
     let upstream = fake_upstream();
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     let output = cmd
         .arg("--list-upstream-tests")
         .env("LIBQALCULATE_UPSTREAM_DIR", upstream.path())
@@ -65,7 +65,7 @@ fn cli_lists_only_batch_fixtures_from_configured_upstream_dir() {
 
 #[test]
 fn cli_parse_batch_reports_case_count() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("--parse-batch")
         .arg("tests/fixtures/regression/basic_numbers.batch")
         .assert()
@@ -75,7 +75,7 @@ fn cli_parse_batch_reports_case_count() {
 
 #[test]
 fn cli_evaluates_positional_expression_via_fallback() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("1 + 1")
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .assert()
@@ -85,7 +85,7 @@ fn cli_evaluates_positional_expression_via_fallback() {
 
 #[test]
 fn cli_evaluates_negative_expression_after_separator() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.args(["--", "-0"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .assert()
@@ -95,7 +95,7 @@ fn cli_evaluates_negative_expression_after_separator() {
 
 #[test]
 fn cli_evaluates_negative_expression_without_separator() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("-1")
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .assert()
@@ -105,7 +105,7 @@ fn cli_evaluates_negative_expression_without_separator() {
 
 #[test]
 fn cli_evaluates_negative_decimal_without_separator() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("-.5")
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .assert()
@@ -116,7 +116,7 @@ fn cli_evaluates_negative_decimal_without_separator() {
 #[test]
 fn cli_reports_definition_load_failure_for_expressions() {
     let invalid_defs = tempdir().expect("temp dir should be created");
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("1 + 1")
         .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
         .assert()
@@ -127,12 +127,35 @@ fn cli_reports_definition_load_failure_for_expressions() {
 }
 
 #[test]
+fn cli_native_scaffold_does_not_require_definitions_when_fallback_disabled() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.arg("1 + 1")
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("2\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
-    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    let mut cmd = qalc_rs();
     cmd.arg("--definitely-unknown")
         .assert()
         .failure()
         .stderr(predicate::str::contains("unknown argument"));
+}
+
+fn qalc_rs() -> Command {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.env_remove("QALCULATE_DISABLE_FALLBACK")
+        .env_remove("QALCULATE_REPORT_FALLBACK");
+    cmd
 }
 
 fn fake_upstream() -> tempfile::TempDir {

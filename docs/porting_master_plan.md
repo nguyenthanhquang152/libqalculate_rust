@@ -122,7 +122,7 @@ Acceptance criteria:
 - Public API families from `../libqalculate/libqalculate/qalculate.h` are listed.
 - All 17 upstream `.batch` files and CSV assets are listed.
 - All 9 definition data files are listed.
-- Each entry has status: `unstarted`, `scaffold`, `native-pass`, `fallback-only`,
+- Each entry has status: `unstarted`, `scaffold`, `native-pass`, `tooling-pass`, `fallback-only`,
   `approved-deviation`, or `out-of-scope`.
 
 ### Task 0.2: public-api-parity-matrix (Size: M | Priority: High)

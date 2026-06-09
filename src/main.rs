@@ -83,11 +83,12 @@ fn join_expression(first: String, rest: impl Iterator<Item = String>) -> String 
 }
 
 fn evaluate_expression(expression: String) -> Result<(), String> {
+    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
     let mut calc = Calculator::new();
-    if !calc.load_global_definitions() {
+    if !fallback_disabled && !calc.load_global_definitions() {
         return Err("failed to load global definitions".to_owned());
     }
-    let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
 
     match calc.calculate_and_print_qalc_with_fallback_state(&expression, 1000) {
         Ok(result) => {

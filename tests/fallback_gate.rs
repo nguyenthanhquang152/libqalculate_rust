@@ -28,7 +28,9 @@ fn run_qalc_rs(
         .arg(expression)
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs_dir());
+        .env("QALCULATE_DEFINITIONS_DIR", defs_dir())
+        .env_remove("QALCULATE_DISABLE_FALLBACK")
+        .env_remove("QALCULATE_REPORT_FALLBACK");
 
     if let Some(df) = disable_fallback {
         cmd.env("QALCULATE_DISABLE_FALLBACK", df);

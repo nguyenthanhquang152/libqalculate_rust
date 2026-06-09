@@ -12,6 +12,7 @@ const VALID_STATUSES: &[&str] = &[
     "unstarted",
     "scaffold",
     "native-pass",
+    "tooling-pass",
     "fallback-only",
     "approved-deviation",
     "out-of-scope",
