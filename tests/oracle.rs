@@ -31,6 +31,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use libqalculate_rust::batch::{is_session_command, read_batch_cases};
+use libqalculate_rust::ffi::FallbackState;
+
+#[path = "oracle/fallback_gate.rs"]
+mod oracle_fallback_gate;
+#[path = "oracle/manifest.rs"]
+mod oracle_manifest;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +69,7 @@ pub enum MismatchField {
     Stdout,
     Stderr,
     ExitCode,
+    FallbackState,
 }
 
 impl fmt::Display for MismatchField {
@@ -71,6 +78,7 @@ impl fmt::Display for MismatchField {
             Self::Stdout => write!(f, "stdout"),
             Self::Stderr => write!(f, "stderr"),
             Self::ExitCode => write!(f, "exit_code"),
+            Self::FallbackState => write!(f, "fallback_state"),
         }
     }
 }
@@ -129,6 +137,7 @@ struct CapturedOutput {
     stdout: String,
     stderr: String,
     exit_code: i32,
+    fallback_state: Option<FallbackState>,
 }
 
 // ── Oracle binary detection ───────────────────────────────────────────────────
@@ -336,6 +345,7 @@ fn run_oracle_expression(
         stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         exit_code: output.status.code().unwrap_or(-1),
+        fallback_state: None,
     }
 }
 
@@ -353,6 +363,8 @@ fn run_rust_expression(
     expression: &str,
     settings: &[SessionCommand],
     defs: &Path,
+    disable_fallback: bool,
+    report_fallback: bool,
 ) -> CapturedOutput {
     if !settings.is_empty() {
         return CapturedOutput {
@@ -366,6 +378,7 @@ fn run_rust_expression(
                     .join("; ")
             ),
             exit_code: -1,
+            fallback_state: None,
         };
     }
 
@@ -374,8 +387,8 @@ fn run_rust_expression(
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    let output = Command::new(&cargo)
-        .arg("run")
+    let mut cmd = Command::new(&cargo);
+    cmd.arg("run")
         .arg("--quiet")
         .arg("--bin")
         .arg("qalc-rs")
@@ -386,19 +399,43 @@ fn run_rust_expression(
         .arg(expression)
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs)
-        .output();
+        .env("QALCULATE_DEFINITIONS_DIR", defs);
+
+    if disable_fallback {
+        cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
+    }
+    if report_fallback {
+        cmd.env("QALCULATE_REPORT_FALLBACK", "1");
+    }
+
+    let output = cmd.output();
 
     match output {
-        Ok(out) => CapturedOutput {
-            stdout: String::from_utf8_lossy(&out.stdout).trim().to_string(),
-            stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
-            exit_code: out.status.code().unwrap_or(-1),
-        },
+        Ok(out) => {
+            let stderr_str = String::from_utf8_lossy(&out.stderr);
+            let mut clean_stderr = Vec::new();
+            let mut fallback_state = None;
+
+            for line in stderr_str.lines() {
+                if line.starts_with("[qalc-rs-metadata]") {
+                    fallback_state = FallbackState::from_marker(line);
+                } else {
+                    clean_stderr.push(line.to_string());
+                }
+            }
+
+            CapturedOutput {
+                stdout: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+                stderr: clean_stderr.join("\n").trim().to_string(),
+                exit_code: out.status.code().unwrap_or(-1),
+                fallback_state,
+            }
+        }
         Err(e) => CapturedOutput {
             stdout: String::new(),
             stderr: format!("Failed to run qalc-rs: {e}"),
             exit_code: -1,
+            fallback_state: None,
         },
     }
 }
@@ -431,6 +468,8 @@ fn differential_oracle_batch(
         .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", batch_path.display()));
 
     let settings_per_case = accumulated_settings_for_cases(&input, cases.len());
+    let case_ids = oracle_manifest::case_ids(&batch_name, &input);
+    let parity_map = oracle_manifest::load_parity_statuses();
 
     let mut mismatches = Vec::new();
 
@@ -440,17 +479,35 @@ fn differential_oracle_batch(
             .iter()
             .map(|setting| setting.raw.clone())
             .collect::<Vec<_>>();
-        let fallback_state = if settings.is_empty() {
-            "cpp-fallback-enabled"
+
+        let case_id = case_ids.get(i).cloned().unwrap_or_default();
+        let parity_status = parity_map
+            .get(&case_id)
+            .map(|s| s.as_str())
+            .unwrap_or("inventory-only");
+
+        let (disable_fallback, report_fallback) = if parity_status == "native-pass" {
+            (true, true)
         } else {
-            "unsupported-session-settings"
+            (false, true)
         };
 
         // Run C++ oracle
         let cpp_out = run_oracle_expression(qalc_path, defs, &case.expression, settings);
 
         // Run Rust implementation
-        let rust_out = run_rust_expression(&case.expression, settings, defs);
+        let rust_out = run_rust_expression(
+            &case.expression,
+            settings,
+            defs,
+            disable_fallback,
+            report_fallback,
+        );
+
+        let fallback_state = oracle_fallback_gate::fallback_state_label(
+            rust_out.fallback_state,
+            !settings.is_empty(),
+        );
 
         // Compare stdout (primary comparison)
         if cpp_out.stdout != rust_out.stdout {
@@ -463,7 +520,7 @@ fn differential_oracle_batch(
                 rust_value: rust_out.stdout.clone(),
                 deviation_id: None,
                 normalization_policy: "exact-utf8".to_string(),
-                fallback_state: fallback_state.to_string(),
+                fallback_state: fallback_state.clone(),
                 session_commands: session_commands.clone(),
             });
         }
@@ -479,7 +536,7 @@ fn differential_oracle_batch(
                 rust_value: rust_out.stderr.clone(),
                 deviation_id: None,
                 normalization_policy: "exact-utf8".to_string(),
-                fallback_state: fallback_state.to_string(),
+                fallback_state: fallback_state.clone(),
                 session_commands: session_commands.clone(),
             });
         }
@@ -495,9 +552,20 @@ fn differential_oracle_batch(
                 rust_value: rust_out.exit_code.to_string(),
                 deviation_id: None,
                 normalization_policy: "exact-utf8".to_string(),
-                fallback_state: fallback_state.to_string(),
+                fallback_state: fallback_state.clone(),
                 session_commands: session_commands.clone(),
             });
+        }
+
+        if let Some(mismatch) = oracle_fallback_gate::native_pass_fallback_mismatch(
+            &batch_name,
+            i,
+            &case.expression,
+            parity_status,
+            &fallback_state,
+            &session_commands,
+        ) {
+            mismatches.push(mismatch);
         }
     }
 
@@ -715,7 +783,7 @@ mod infrastructure_tests {
             rust_value: "3".to_string(),
             deviation_id: None,
             normalization_policy: "exact-utf8".to_string(),
-            fallback_state: "cpp-fallback-enabled".to_string(),
+            fallback_state: FallbackState::CppFallbackEnabled.label().to_string(),
             session_commands: Vec::new(),
         };
         let display = m.to_string();
@@ -742,7 +810,7 @@ mod infrastructure_tests {
             rust_value: "3.14160".to_string(),
             deviation_id: Some("PRECISION-001".to_string()),
             normalization_policy: "exact-utf8".to_string(),
-            fallback_state: "native".to_string(),
+            fallback_state: FallbackState::Native.label().to_string(),
             session_commands: vec!["/set precision 10".to_string()],
         };
         let display = m.to_string();
@@ -780,7 +848,7 @@ mod infrastructure_tests {
         let settings = vec![SessionCommand {
             raw: "set input base 16".to_string(),
         }];
-        let out = run_rust_expression("5p10+AEp-2*p23", &settings, Path::new("."));
+        let out = run_rust_expression("5p10+AEp-2*p23", &settings, Path::new("."), false, false);
 
         assert_eq!(out.stdout, "");
         assert_eq!(out.exit_code, -1);
@@ -838,6 +906,7 @@ sqrt(x)
         assert_eq!(MismatchField::Stdout.to_string(), "stdout");
         assert_eq!(MismatchField::Stderr.to_string(), "stderr");
         assert_eq!(MismatchField::ExitCode.to_string(), "exit_code");
+        assert_eq!(MismatchField::FallbackState.to_string(), "fallback_state");
     }
 
     #[test]

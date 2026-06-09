@@ -1,10 +1,21 @@
 use libqalculate_rust::ffi::Calculator;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, Once};
 use tempfile::tempdir;
 
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
+static DEFINITIONS_DIR: Once = Once::new();
+
+fn configure_definitions_dir() {
+    DEFINITIONS_DIR.call_once(|| {
+        let path = Path::new("../libqalculate/data")
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from("../libqalculate/data"));
+        std::env::set_var("QALCULATE_DEFINITIONS_DIR", path);
+    });
+}
 
 // Helper to get Resident Set Size (RSS) in bytes on Linux.
 fn get_rss() -> usize {
@@ -22,6 +33,8 @@ fn get_rss() -> usize {
 #[test]
 fn test_memory_cleanup_and_drop() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    configure_definitions_dir();
+
     // Warm up phase to settle static / initial library allocations (e.g. static C++ data)
     for _ in 0..100 {
         let mut calc = Calculator::new();
@@ -65,6 +78,8 @@ fn test_memory_cleanup_and_drop() {
 #[test]
 fn test_exception_safety_invalid_inputs() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    configure_definitions_dir();
+
     let mut calc = Calculator::new();
     calc.load_global_definitions();
 

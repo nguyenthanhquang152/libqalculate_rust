@@ -87,11 +87,23 @@ fn evaluate_expression(expression: String) -> Result<(), String> {
     if !calc.load_global_definitions() {
         return Err("failed to load global definitions".to_owned());
     }
-    let result = calc
-        .calculate_and_print_qalc(&expression, 1000)
-        .map_err(|error| format!("calculation failed: {error}"))?;
-    println!("{result}");
-    Ok(())
+    let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
+
+    match calc.calculate_and_print_qalc_with_fallback_state(&expression, 1000) {
+        Ok(result) => {
+            if report_fallback {
+                eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());
+            }
+            println!("{}", result.output);
+            Ok(())
+        }
+        Err(err) => {
+            if report_fallback {
+                eprintln!("[qalc-rs-metadata] {}", err.fallback_state().marker());
+            }
+            Err(format!("calculation failed: {err}"))
+        }
+    }
 }
 
 fn upstream_batch_files() -> Result<Vec<PathBuf>, String> {

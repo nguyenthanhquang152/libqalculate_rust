@@ -2,8 +2,8 @@
 
 > **Upstream version**: libqalculate 5.11.0
 > **Inventory date**: 2026-06-09
-> **Epic**: 0 — Project Bootstrap & Inventory
-> **Tasks**: 0.1 (Source Inventory), 0.2 (Public API Parity Matrix)
+> **Epics**: 0 — Project Bootstrap & Inventory; 1 — Workspace Foundation and Optional C++ Oracle/FFI
+> **Tasks**: 0.1/0.2 inventory baseline; 1.1 (hybrid-build-inventory), 1.2 (ffi-sys-bindings), 1.3 (safe-ffi-calculator-wrapper), 1.4 (no-cpp-fallback-gate)
 
 ---
 
@@ -19,7 +19,7 @@
 | CLI Behaviors | 10 | 5 | 0 | 1 | 4 | 0 |
 | Core Class API Groups | 59 | 0 | 6 | 1 | 52 | 0 |
 
-**Overall porting progress**: Early stage. Only the `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has native batch-parsing and self-check support. All core computation, definition loading, and evaluation paths are either unstarted or fallback-only.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for future native evidence. The `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has native batch-parsing and self-check support. Core computation, definition loading, and expression evaluation remain unstarted or fallback-only until native tests run with fallback disabled.
 
 ---
 
@@ -268,7 +268,7 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 | 3 | `--self-check` | — | Runs self-diagnostics | `native-pass` | Rust-only addition |
 | 4 | `--list-upstream-tests` | — | Lists upstream batch files | `native-pass` | Rust-only addition |
 | 5 | `--parse-batch` | — | Parses batch file structure | `native-pass` | Native batch parser; no evaluation |
-| 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge | `fallback-only` | Delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output |
+| 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge or explicit no-fallback scaffold | `fallback-only` | Delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output; `QALCULATE_DISABLE_FALLBACK=1` rejects unported expressions and only allows named scaffold cases |
 | 7 | `-defaults` | Reset to default settings | — | `unstarted` | |
 | 8 | `-set <option> <value>` | Set calculator option | — | `unstarted` | |
 | 9 | `--test-file <path>` | Run batch test file | — | `unstarted` | `qalc-rs` has `--parse-batch` but no evaluation |
@@ -295,7 +295,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | 1 | Construction / destruction | 2 | `scaffold` | `Calculator::new()` creates C++ instance via FFI |
 | 2 | Definition loading | 3 | `scaffold` | `load_global_definitions()`, `load_local_definitions()`, and `load_exchange_rates()` exposed via FFI |
 | 3 | Expression parsing | 5 | `unstarted` | No direct `parse()` / `parseNumber()` wrapper yet |
-| 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI |
+| 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI; tracked variants report fallback state for oracle evidence |
 | 5 | Conversion | 6 | `unstarted` | No direct `convert()` / `convertToBaseUnits()` wrapper yet |
 | 6 | Settings / options | 15+ | `unstarted` | No public settings/options wrapper yet; qalc-style fallback uses fixed bridge defaults |
 | 7 | Messages | 4 | `unstarted` | No `message()` / `nextMessage()` wrapper yet |

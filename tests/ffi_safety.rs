@@ -1,10 +1,21 @@
 use libqalculate_rust::ffi::Calculator;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, Once};
 
 // Static mutex to serialize test execution because the C++ libqalculate library
 // is not thread-safe to initialize/load definitions concurrently within the same process.
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
+static DEFINITIONS_DIR: Once = Once::new();
+
+fn configure_definitions_dir() {
+    DEFINITIONS_DIR.call_once(|| {
+        let path = Path::new("../libqalculate/data")
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from("../libqalculate/data"));
+        std::env::set_var("QALCULATE_DEFINITIONS_DIR", path);
+    });
+}
 
 // Helper to get RSS memory usage in KB on Linux
 fn get_vm_rss() -> Option<usize> {
@@ -25,6 +36,7 @@ fn get_vm_rss() -> Option<usize> {
 #[test]
 fn test_memory_cleanup_calculations_loop() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    configure_definitions_dir();
 
     let mut calc = Calculator::new();
     calc.load_global_definitions();
@@ -61,6 +73,15 @@ fn test_memory_cleanup_calculations_loop() {
 #[test]
 fn test_memory_cleanup_calculator_creation_loop() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    configure_definitions_dir();
+
+    for _ in 0..10 {
+        let mut calc = Calculator::new();
+        calc.load_global_definitions();
+        let _ = calc
+            .calculate_and_print("sin(pi/2)", 1000)
+            .expect("warm-up calculation failed");
+    }
 
     let start_rss = get_vm_rss();
 
@@ -101,6 +122,7 @@ fn test_memory_cleanup_calculator_creation_loop() {
 #[test]
 fn test_exception_safety_invalid_inputs() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    configure_definitions_dir();
 
     let mut calc = Calculator::new();
     calc.load_global_definitions();
