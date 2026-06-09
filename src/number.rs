@@ -29,6 +29,57 @@ fn gcd(a: i128, b: i128) -> u128 {
     ua
 }
 
+/// A private helper to compare positive rationals without overflow using continued fractions.
+fn cmp_u128_rational(a: u128, b: u128, c: u128, d: u128, invert: bool) -> std::cmp::Ordering {
+    let q1 = a / b;
+    let q2 = c / d;
+    if q1 != q2 {
+        let ord = q1.cmp(&q2);
+        return if invert { ord.reverse() } else { ord };
+    }
+    let r1 = a % b;
+    let r2 = c % d;
+    if r1 == 0 && r2 == 0 {
+        return std::cmp::Ordering::Equal;
+    }
+    if r1 == 0 {
+        return if invert {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        };
+    }
+    if r2 == 0 {
+        return if invert {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        };
+    }
+    cmp_u128_rational(b, r1, d, r2, !invert)
+}
+
+/// A private helper to determine if a value is negative.
+fn is_negative_value(val: &NumberValue) -> Option<bool> {
+    match val {
+        NumberValue::Rational(r) => Some(r.num < 0),
+        NumberValue::Float(f) => Some(f.value < 0.0),
+        NumberValue::PlusInfinity => Some(false),
+        NumberValue::MinusInfinity => Some(true),
+        NumberValue::Interval { lower, upper } => {
+            if upper.value < 0.0 {
+                Some(true)
+            } else if lower.value > 0.0 {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        NumberValue::Uncertainty { value, .. } => is_negative_value(value),
+        NumberValue::NaN => None,
+    }
+}
+
 /// A placeholder for GMP rational representation.
 ///
 /// # Invariants (post-canonicalization)
@@ -49,11 +100,103 @@ pub struct Rational {
 }
 
 impl Rational {
+    /// Try to create a new rational number, returning None on overflow or division by zero.
+    pub fn try_new(num: i128, den: i128) -> Option<Self> {
+        if den == 0 {
+            return None;
+        }
+        if num == 0 {
+            return Some(Self { num: 0, den: 1 });
+        }
+
+        let u_num = num.unsigned_abs();
+        let u_den = den.unsigned_abs();
+        let g = gcd(num, den);
+
+        let reduced_u_num = u_num / g;
+        let reduced_u_den = u_den / g;
+
+        let num_neg = num < 0;
+        let den_neg = den < 0;
+        let result_neg = num_neg ^ den_neg;
+
+        let num_limit = if result_neg {
+            i128::MIN.unsigned_abs()
+        } else {
+            i128::MAX as u128
+        };
+        if reduced_u_num > num_limit {
+            return None;
+        }
+        if reduced_u_den > i128::MAX as u128 {
+            return None;
+        }
+
+        let mut reduced_num = if result_neg && reduced_u_num == i128::MIN.unsigned_abs() {
+            i128::MIN
+        } else {
+            reduced_u_num as i128
+        };
+        let reduced_den = reduced_u_den as i128;
+
+        if result_neg && reduced_num != i128::MIN {
+            reduced_num = -reduced_num;
+        }
+
+        Some(Self {
+            num: reduced_num,
+            den: reduced_den,
+        })
+    }
+
     /// Create a new rational number, reducing it to lowest terms.
     pub fn new(num: i128, den: i128) -> Self {
-        let mut r = Self { num, den };
-        r.canonicalize();
-        r
+        assert!(den != 0, "Rational denominator must not be zero");
+        if num == 0 {
+            return Self { num: 0, den: 1 };
+        }
+
+        let u_num = num.unsigned_abs();
+        let u_den = den.unsigned_abs();
+        let g = gcd(num, den);
+
+        let reduced_u_num = u_num / g;
+        let reduced_u_den = u_den / g;
+        let num_neg = num < 0;
+        let den_neg = den < 0;
+        let result_neg = num_neg ^ den_neg;
+
+        let num_limit = if result_neg {
+            i128::MIN.unsigned_abs()
+        } else {
+            i128::MAX as u128
+        };
+        assert!(
+            reduced_u_num <= num_limit,
+            "Rational numerator overflow: {} cannot be represented as i128",
+            reduced_u_num
+        );
+        assert!(
+            reduced_u_den <= i128::MAX as u128,
+            "Rational denominator overflow: {} cannot be represented as i128",
+            reduced_u_den
+        );
+
+        let mut reduced_num = if result_neg && reduced_u_num == i128::MIN.unsigned_abs() {
+            i128::MIN
+        } else {
+            reduced_u_num as i128
+        };
+        let reduced_den = reduced_u_den as i128;
+
+        if result_neg && reduced_num != i128::MIN {
+            reduced_num = -reduced_num;
+        }
+
+        Self {
+            num: reduced_num,
+            den: reduced_den,
+        }
     }
 
     /// Create a rational from an i32.
@@ -76,57 +219,11 @@ impl Rational {
     /// # Panics
     /// Panics if `den == 0` (undefined value) or if the reduced numerator or
     /// denominator overflows `i128` (e.g., `i128::MIN / -1`).
+    #[allow(dead_code)]
     fn canonicalize(&mut self) {
-        assert!(self.den != 0, "Rational denominator must not be zero");
-        if self.num == 0 {
-            self.den = 1;
-            return;
-        }
-
-        let u_num = self.num.unsigned_abs();
-        let u_den = self.den.unsigned_abs();
-        let g = gcd(self.num, self.den);
-
-        let reduced_u_num = u_num / g;
-        let reduced_u_den = u_den / g;
-        // Determine the final sign: negative if exactly one of num/den is negative
-        let num_neg = self.num < 0;
-        let den_neg = self.den < 0;
-        let result_neg = num_neg ^ den_neg;
-
-        // Guard against overflow: if the reduced value exceeds the representable
-        // range for i128 with the given sign, we cannot represent it.
-        // i128 range: -2^127 to 2^127-1, so negative values allow one more magnitude.
-        let num_limit = if result_neg {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        assert!(
-            reduced_u_num <= num_limit,
-            "Rational numerator overflow: {} cannot be represented as i128",
-            reduced_u_num
-        );
-        // Denominator is always positive after canonicalization
-        assert!(
-            reduced_u_den <= i128::MAX as u128,
-            "Rational denominator overflow: {} cannot be represented as i128",
-            reduced_u_den
-        );
-
-        let mut reduced_num = if result_neg && reduced_u_num == i128::MIN.unsigned_abs() {
-            i128::MIN
-        } else {
-            reduced_u_num as i128
-        };
-        let reduced_den = reduced_u_den as i128;
-
-        if result_neg && reduced_num != i128::MIN {
-            reduced_num = -reduced_num;
-        }
-
-        self.num = reduced_num;
-        self.den = reduced_den;
+        let r = Self::new(self.num, self.den);
+        self.num = r.num;
+        self.den = r.den;
     }
 
     /// Returns the numerator.
@@ -137,6 +234,232 @@ impl Rational {
     /// Returns the denominator.
     pub fn den(&self) -> i128 {
         self.den
+    }
+
+    /// GCD-optimized checked addition.
+    pub fn checked_add(&self, other: &Self) -> Option<Self> {
+        let a = self.num;
+        let b = self.den;
+        let c = other.num;
+        let d = other.den;
+
+        let g = gcd(b, d);
+        let b_prime = (b as u128) / g;
+        let d_prime = (d as u128) / g;
+
+        let neg1 = a < 0;
+        let abs1 = U256::mul_u128(a.unsigned_abs(), d_prime);
+
+        let neg2 = c < 0;
+        let abs2 = U256::mul_u128(c.unsigned_abs(), b_prime);
+
+        let (neg_t, abs_t) = if neg1 == neg2 {
+            (neg1, abs1.add(abs2))
+        } else {
+            if abs1 >= abs2 {
+                (neg1, abs1.sub(abs2))
+            } else {
+                (neg2, abs2.sub(abs1))
+            }
+        };
+
+        let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
+        let g2 = gcd_u128(g, abs_rem);
+
+        let num_u256 = abs_t.div_rem(U256::from_u128(g2)).0;
+
+        let limit = if neg_t {
+            i128::MIN.unsigned_abs()
+        } else {
+            i128::MAX as u128
+        };
+        if !num_u256.fits_in_u128() || num_u256.as_u128() > limit {
+            return None;
+        }
+
+        let num = if neg_t {
+            let val = num_u256.as_u128();
+            if val == i128::MIN.unsigned_abs() {
+                i128::MIN
+            } else {
+                -(val as i128)
+            }
+        } else {
+            num_u256.as_u128() as i128
+        };
+
+        let g_i128 = g as i128;
+        let g2_i128 = g2 as i128;
+        let b_prime_i128 = b_prime as i128;
+        let d_prime_i128 = d_prime as i128;
+
+        let den = g_i128
+            .checked_div(g2_i128)?
+            .checked_mul(b_prime_i128)?
+            .checked_mul(d_prime_i128)?;
+
+        Self::try_new(num, den)
+    }
+
+    /// GCD-optimized checked subtraction.
+    pub fn checked_sub(&self, other: &Self) -> Option<Self> {
+        let a = self.num;
+        let b = self.den;
+        let c = other.num;
+        let d = other.den;
+
+        let g = gcd(b, d);
+        let b_prime = (b as u128) / g;
+        let d_prime = (d as u128) / g;
+
+        let neg1 = a < 0;
+        let abs1 = U256::mul_u128(a.unsigned_abs(), d_prime);
+
+        let neg2 = c >= 0;
+        let abs2 = U256::mul_u128(c.unsigned_abs(), b_prime);
+
+        let (neg_t, abs_t) = if neg1 == neg2 {
+            (neg1, abs1.add(abs2))
+        } else {
+            if abs1 >= abs2 {
+                (neg1, abs1.sub(abs2))
+            } else {
+                (neg2, abs2.sub(abs1))
+            }
+        };
+
+        let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
+        let g2 = gcd_u128(g, abs_rem);
+
+        let num_u256 = abs_t.div_rem(U256::from_u128(g2)).0;
+
+        let limit = if neg_t {
+            i128::MIN.unsigned_abs()
+        } else {
+            i128::MAX as u128
+        };
+        if !num_u256.fits_in_u128() || num_u256.as_u128() > limit {
+            return None;
+        }
+
+        let num = if neg_t {
+            let val = num_u256.as_u128();
+            if val == i128::MIN.unsigned_abs() {
+                i128::MIN
+            } else {
+                -(val as i128)
+            }
+        } else {
+            num_u256.as_u128() as i128
+        };
+
+        let g_i128 = g as i128;
+        let g2_i128 = g2 as i128;
+        let b_prime_i128 = b_prime as i128;
+        let d_prime_i128 = d_prime as i128;
+
+        let den = g_i128
+            .checked_div(g2_i128)?
+            .checked_mul(b_prime_i128)?
+            .checked_mul(d_prime_i128)?;
+
+        Self::try_new(num, den)
+    }
+
+    /// GCD-optimized checked multiplication.
+    pub fn checked_mul(&self, other: &Self) -> Option<Self> {
+        let a = self.num;
+        let b = self.den;
+        let c = other.num;
+        let d = other.den;
+
+        let g1 = gcd(a, d) as i128;
+        let g2 = gcd(c, b) as i128;
+
+        let a_prime = a / g1;
+        let d_prime = d / g1;
+        let c_prime = c / g2;
+        let b_prime = b / g2;
+
+        let num = a_prime.checked_mul(c_prime)?;
+        let den = b_prime.checked_mul(d_prime)?;
+
+        Self::try_new(num, den)
+    }
+
+    /// GCD-optimized checked division.
+    pub fn checked_div(&self, other: &Self) -> Option<Self> {
+        let a = self.num;
+        let b = self.den;
+        let c = other.num;
+        let d = other.den;
+
+        if c == 0 {
+            return None;
+        }
+
+        let g1 = gcd(a, c) as i128;
+        let g2 = gcd(d, b) as i128;
+
+        let a_prime = a / g1;
+        let c_prime = c / g1;
+        let d_prime = d / g2;
+        let b_prime = b / g2;
+
+        let num = a_prime.checked_mul(d_prime)?;
+        let den = b_prime.checked_mul(c_prime)?;
+
+        Self::try_new(num, den)
+    }
+}
+
+impl Ord for Rational {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.num == 0 && other.num == 0 {
+            return std::cmp::Ordering::Equal;
+        }
+        if self.num == 0 {
+            return if other.num > 0 {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
+        if other.num == 0 {
+            return if self.num > 0 {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            };
+        }
+
+        let self_pos = self.num > 0;
+        let other_pos = other.num > 0;
+
+        match (self_pos, other_pos) {
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (true, true) => cmp_u128_rational(
+                self.num as u128,
+                self.den as u128,
+                other.num as u128,
+                other.den as u128,
+                false,
+            ),
+            (false, false) => cmp_u128_rational(
+                self.num.unsigned_abs(),
+                self.den as u128,
+                other.num.unsigned_abs(),
+                other.den as u128,
+                true,
+            ),
+        }
+    }
+}
+
+impl PartialOrd for Rational {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -393,7 +716,8 @@ impl NumberValue {
                     }
                 }
                 _ => match (self, other) {
-                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => add_rationals(r1, r2)
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
+                        .checked_add(r2)
                         .map(NumberValue::Rational)
                         .unwrap_or(NumberValue::NaN),
                     (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
@@ -457,6 +781,461 @@ impl NumberValue {
             }
         }
     }
+
+    /// Returns the absolute value.
+    pub fn abs_value(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let num = r.num.checked_abs().unwrap_or(i128::MAX);
+                NumberValue::Rational(Rational::new(num, r.den))
+            }
+            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(f.value.abs(), f.prec)),
+            NumberValue::Interval { lower, upper } => {
+                let v1 = lower.value.abs();
+                let v2 = upper.value.abs();
+                NumberValue::Interval {
+                    lower: Float::from_f64(f64::min(v1, v2), lower.prec),
+                    upper: Float::from_f64(f64::max(v1, v2), upper.prec),
+                }
+            }
+            NumberValue::Uncertainty { value, uncertainty } => NumberValue::Uncertainty {
+                value: Box::new(value.abs_value()),
+                uncertainty: Box::new((**uncertainty).clone()),
+            },
+            NumberValue::PlusInfinity | NumberValue::MinusInfinity => NumberValue::PlusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Subtract two values mathematically.
+    pub fn sub(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return NumberValue::NaN;
+        }
+
+        if self.is_infinite() || other.is_infinite() {
+            let s1 = get_infinity_sign(self);
+            let s2 = get_infinity_sign(other).map(|b| !b);
+            match (s1, s2) {
+                (Some(true), Some(false)) | (Some(false), Some(true)) => NumberValue::NaN,
+                (Some(true), _) | (_, Some(true)) => NumberValue::PlusInfinity,
+                (Some(false), _) | (_, Some(false)) => NumberValue::MinusInfinity,
+                _ => NumberValue::NaN,
+            }
+        } else {
+            match (self, other) {
+                (
+                    NumberValue::Uncertainty {
+                        value: v1,
+                        uncertainty: u1,
+                    },
+                    NumberValue::Uncertainty {
+                        value: v2,
+                        uncertainty: u2,
+                    },
+                ) => NumberValue::Uncertainty {
+                    value: Box::new(v1.sub(v2)),
+                    uncertainty: Box::new(u1.add(u2)),
+                },
+                (NumberValue::Uncertainty { value, uncertainty }, other) => {
+                    NumberValue::Uncertainty {
+                        value: Box::new(value.sub(other)),
+                        uncertainty: Box::new((**uncertainty).clone()),
+                    }
+                }
+                (self_val, NumberValue::Uncertainty { value, uncertainty }) => {
+                    NumberValue::Uncertainty {
+                        value: Box::new(self_val.sub(value)),
+                        uncertainty: Box::new((**uncertainty).clone()),
+                    }
+                }
+                _ => match (self, other) {
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
+                        .checked_sub(r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
+                        Float::from_f64(f1.value - f2.value, std::cmp::max(f1.prec, f2.prec)),
+                    ),
+                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                        let val = (r.num as f64 / r.den as f64) - f.value;
+                        NumberValue::Float(Float::from_f64(val, f.prec))
+                    }
+                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                        let val = f.value - (r.num as f64 / r.den as f64);
+                        NumberValue::Float(Float::from_f64(val, f.prec))
+                    }
+                    (
+                        NumberValue::Interval {
+                            lower: l1,
+                            upper: u1,
+                        },
+                        NumberValue::Interval {
+                            lower: l2,
+                            upper: u2,
+                        },
+                    ) => NumberValue::Interval {
+                        lower: Float::from_f64(
+                            l1.value - u2.value,
+                            std::cmp::max(l1.prec, u2.prec),
+                        ),
+                        upper: Float::from_f64(
+                            u1.value - l2.value,
+                            std::cmp::max(u1.prec, l2.prec),
+                        ),
+                    },
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        let other_f = to_float_val(other_val);
+                        NumberValue::Interval {
+                            lower: Float::from_f64(
+                                lower.value - other_f.value,
+                                std::cmp::max(lower.prec, other_f.prec),
+                            ),
+                            upper: Float::from_f64(
+                                upper.value - other_f.value,
+                                std::cmp::max(upper.prec, other_f.prec),
+                            ),
+                        }
+                    }
+                    (self_val, NumberValue::Interval { lower, upper }) => {
+                        let self_f = to_float_val(self_val);
+                        NumberValue::Interval {
+                            lower: Float::from_f64(
+                                self_f.value - upper.value,
+                                std::cmp::max(self_f.prec, upper.prec),
+                            ),
+                            upper: Float::from_f64(
+                                self_f.value - lower.value,
+                                std::cmp::max(self_f.prec, lower.prec),
+                            ),
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                },
+            }
+        }
+    }
+
+    /// Multiply two values mathematically.
+    pub fn mul(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return NumberValue::NaN;
+        }
+
+        if self.is_infinite() || other.is_infinite() {
+            if self.is_real_zero() || other.is_real_zero() {
+                return NumberValue::NaN;
+            }
+            let self_neg = is_negative_value(self);
+            let other_neg = is_negative_value(other);
+            match (self_neg, other_neg) {
+                (Some(n1), Some(n2)) => {
+                    if n1 ^ n2 {
+                        NumberValue::MinusInfinity
+                    } else {
+                        NumberValue::PlusInfinity
+                    }
+                }
+                _ => NumberValue::NaN,
+            }
+        } else {
+            match (self, other) {
+                (
+                    NumberValue::Uncertainty {
+                        value: v1,
+                        uncertainty: u1,
+                    },
+                    NumberValue::Uncertainty {
+                        value: v2,
+                        uncertainty: u2,
+                    },
+                ) => {
+                    let val = v1.mul(v2);
+                    let term1 = v1.abs_value().mul(u2);
+                    let term2 = v2.abs_value().mul(u1);
+                    let term3 = u1.mul(u2);
+                    let unc = term1.add(&term2).add(&term3);
+                    NumberValue::Uncertainty {
+                        value: Box::new(val),
+                        uncertainty: Box::new(unc),
+                    }
+                }
+                (NumberValue::Uncertainty { value, uncertainty }, other) => {
+                    let val = value.mul(other);
+                    let unc = uncertainty.mul(&other.abs_value());
+                    NumberValue::Uncertainty {
+                        value: Box::new(val),
+                        uncertainty: Box::new(unc),
+                    }
+                }
+                (self_val, NumberValue::Uncertainty { value, uncertainty }) => {
+                    let val = self_val.mul(value);
+                    let unc = self_val.abs_value().mul(uncertainty);
+                    NumberValue::Uncertainty {
+                        value: Box::new(val),
+                        uncertainty: Box::new(unc),
+                    }
+                }
+                _ => match (self, other) {
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
+                        .checked_mul(r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
+                        Float::from_f64(f1.value * f2.value, std::cmp::max(f1.prec, f2.prec)),
+                    ),
+                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                        let val = (r.num as f64 / r.den as f64) * f.value;
+                        NumberValue::Float(Float::from_f64(val, f.prec))
+                    }
+                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                        let val = f.value * (r.num as f64 / r.den as f64);
+                        NumberValue::Float(Float::from_f64(val, f.prec))
+                    }
+                    (
+                        NumberValue::Interval {
+                            lower: l1,
+                            upper: u1,
+                        },
+                        NumberValue::Interval {
+                            lower: l2,
+                            upper: u2,
+                        },
+                    ) => {
+                        let p1 = l1.value * l2.value;
+                        let p2 = l1.value * u2.value;
+                        let p3 = u1.value * l2.value;
+                        let p4 = u1.value * u2.value;
+                        let vals = [p1, p2, p3, p4];
+                        let min_val = vals.iter().copied().fold(f64::INFINITY, f64::min);
+                        let max_val = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                        NumberValue::Interval {
+                            lower: Float::from_f64(min_val, std::cmp::max(l1.prec, l2.prec)),
+                            upper: Float::from_f64(max_val, std::cmp::max(u1.prec, u2.prec)),
+                        }
+                    }
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        let other_f = to_float_val(other_val);
+                        let p1 = lower.value * other_f.value;
+                        let p2 = upper.value * other_f.value;
+                        let min_val = f64::min(p1, p2);
+                        let max_val = f64::max(p1, p2);
+                        NumberValue::Interval {
+                            lower: Float::from_f64(
+                                min_val,
+                                std::cmp::max(lower.prec, other_f.prec),
+                            ),
+                            upper: Float::from_f64(
+                                max_val,
+                                std::cmp::max(upper.prec, other_f.prec),
+                            ),
+                        }
+                    }
+                    (self_val, NumberValue::Interval { lower, upper }) => {
+                        let self_f = to_float_val(self_val);
+                        let p1 = self_f.value * lower.value;
+                        let p2 = self_f.value * upper.value;
+                        let min_val = f64::min(p1, p2);
+                        let max_val = f64::max(p1, p2);
+                        NumberValue::Interval {
+                            lower: Float::from_f64(min_val, std::cmp::max(self_f.prec, lower.prec)),
+                            upper: Float::from_f64(max_val, std::cmp::max(self_f.prec, upper.prec)),
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                },
+            }
+        }
+    }
+
+    /// Divide two values mathematically.
+    pub fn div(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return NumberValue::NaN;
+        }
+
+        if other.is_real_zero() {
+            return NumberValue::NaN;
+        }
+
+        if self.is_infinite() || other.is_infinite() {
+            if self.is_infinite() && other.is_infinite() {
+                return NumberValue::NaN;
+            }
+            if self.is_infinite() {
+                let s1 = get_infinity_sign(self);
+                let other_neg = is_negative_value(other);
+                match (s1, other_neg) {
+                    (Some(pos), Some(neg)) => {
+                        if pos ^ neg {
+                            NumberValue::MinusInfinity
+                        } else {
+                            NumberValue::PlusInfinity
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                }
+            } else {
+                NumberValue::Rational(Rational::from_i32(0))
+            }
+        } else {
+            match (self, other) {
+                (
+                    NumberValue::Uncertainty {
+                        value: v1,
+                        uncertainty: u1,
+                    },
+                    NumberValue::Uncertainty {
+                        value: v2,
+                        uncertainty: u2,
+                    },
+                ) => {
+                    if v2.is_real_zero() {
+                        return NumberValue::NaN;
+                    }
+                    let val = v1.div(v2);
+                    let term1 = v1.abs_value().mul(u2);
+                    let term2 = v2.abs_value().mul(u1);
+                    let num_unc = term1.add(&term2);
+                    let den_unc = v2.mul(v2);
+                    let unc = num_unc.div(&den_unc);
+                    NumberValue::Uncertainty {
+                        value: Box::new(val),
+                        uncertainty: Box::new(unc),
+                    }
+                }
+                (NumberValue::Uncertainty { value, uncertainty }, other) => {
+                    if other.is_real_zero() {
+                        return NumberValue::NaN;
+                    }
+                    let val = value.div(other);
+                    let unc = uncertainty.div(&other.abs_value());
+                    NumberValue::Uncertainty {
+                        value: Box::new(val),
+                        uncertainty: Box::new(unc),
+                    }
+                }
+                (self_val, NumberValue::Uncertainty { value, uncertainty }) => {
+                    if value.is_real_zero() {
+                        return NumberValue::NaN;
+                    }
+                    let val = self_val.div(value);
+                    let num_unc = self_val.abs_value().mul(uncertainty);
+                    let den_unc = value.mul(value);
+                    let unc = num_unc.div(&den_unc);
+                    NumberValue::Uncertainty {
+                        value: Box::new(val),
+                        uncertainty: Box::new(unc),
+                    }
+                }
+                _ => match (self, other) {
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
+                        .checked_div(r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                        if f2.value == 0.0 {
+                            NumberValue::NaN
+                        } else {
+                            NumberValue::Float(Float::from_f64(
+                                f1.value / f2.value,
+                                std::cmp::max(f1.prec, f2.prec),
+                            ))
+                        }
+                    }
+                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                        if f.value == 0.0 {
+                            NumberValue::NaN
+                        } else {
+                            let val = (r.num as f64 / r.den as f64) / f.value;
+                            NumberValue::Float(Float::from_f64(val, f.prec))
+                        }
+                    }
+                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                        if r.is_zero() {
+                            NumberValue::NaN
+                        } else {
+                            let val = f.value / (r.num as f64 / r.den as f64);
+                            NumberValue::Float(Float::from_f64(val, f.prec))
+                        }
+                    }
+                    (
+                        NumberValue::Interval {
+                            lower: l1,
+                            upper: u1,
+                        },
+                        NumberValue::Interval {
+                            lower: l2,
+                            upper: u2,
+                        },
+                    ) => {
+                        if l2.value <= 0.0 && u2.value >= 0.0 {
+                            NumberValue::NaN
+                        } else {
+                            let inv_lower = 1.0 / u2.value;
+                            let inv_upper = 1.0 / l2.value;
+                            let p1 = l1.value * inv_lower;
+                            let p2 = l1.value * inv_upper;
+                            let p3 = u1.value * inv_lower;
+                            let p4 = u1.value * inv_upper;
+                            let vals = [p1, p2, p3, p4];
+                            let min_val = vals.iter().copied().fold(f64::INFINITY, f64::min);
+                            let max_val = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                            NumberValue::Interval {
+                                lower: Float::from_f64(min_val, std::cmp::max(l1.prec, l2.prec)),
+                                upper: Float::from_f64(max_val, std::cmp::max(u1.prec, u2.prec)),
+                            }
+                        }
+                    }
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        let other_f = to_float_val(other_val);
+                        if other_f.value == 0.0 {
+                            NumberValue::NaN
+                        } else {
+                            let p1 = lower.value / other_f.value;
+                            let p2 = upper.value / other_f.value;
+                            let min_val = f64::min(p1, p2);
+                            let max_val = f64::max(p1, p2);
+                            NumberValue::Interval {
+                                lower: Float::from_f64(
+                                    min_val,
+                                    std::cmp::max(lower.prec, other_f.prec),
+                                ),
+                                upper: Float::from_f64(
+                                    max_val,
+                                    std::cmp::max(upper.prec, other_f.prec),
+                                ),
+                            }
+                        }
+                    }
+                    (self_val, NumberValue::Interval { lower, upper }) => {
+                        let self_f = to_float_val(self_val);
+                        if lower.value <= 0.0 && upper.value >= 0.0 {
+                            NumberValue::NaN
+                        } else {
+                            let inv_lower = 1.0 / upper.value;
+                            let inv_upper = 1.0 / lower.value;
+                            let p1 = self_f.value * inv_lower;
+                            let p2 = self_f.value * inv_upper;
+                            let min_val = f64::min(p1, p2);
+                            let max_val = f64::max(p1, p2);
+                            NumberValue::Interval {
+                                lower: Float::from_f64(
+                                    min_val,
+                                    std::cmp::max(self_f.prec, lower.prec),
+                                ),
+                                upper: Float::from_f64(
+                                    max_val,
+                                    std::cmp::max(self_f.prec, upper.prec),
+                                ),
+                            }
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                },
+            }
+        }
+    }
 }
 
 fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
@@ -475,14 +1254,6 @@ fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
         NumberValue::Uncertainty { value, .. } => get_infinity_sign(value),
         _ => None,
     }
-}
-
-fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
-    let lhs_num = lhs.num.checked_mul(rhs.den)?;
-    let rhs_num = rhs.num.checked_mul(lhs.den)?;
-    let num = lhs_num.checked_add(rhs_num)?;
-    let den = lhs.den.checked_mul(rhs.den)?;
-    Some(Rational::new(num, den))
 }
 
 fn to_float_val(val: &NumberValue) -> Float {
@@ -561,6 +1332,100 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
             },
         ) => eq_values(v1, v2) && eq_values(u1, u2),
         _ => false,
+    }
+}
+
+impl PartialOrd for NumberValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.is_nan() || other.is_nan() {
+            return None;
+        }
+        if let Some(unwrapped_lhs) = try_unwrap_single_val(self) {
+            return unwrapped_lhs.partial_cmp(other);
+        }
+        if let Some(unwrapped_rhs) = try_unwrap_single_val(other) {
+            return self.partial_cmp(&unwrapped_rhs);
+        }
+
+        match (self, other) {
+            (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1.partial_cmp(r2),
+            (NumberValue::Float(f1), NumberValue::Float(f2)) => f1.value.partial_cmp(&f2.value),
+            (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                let r_f = r.num as f64 / r.den as f64;
+                r_f.partial_cmp(&f.value)
+            }
+            (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                let r_f = r.num as f64 / r.den as f64;
+                f.value.partial_cmp(&r_f)
+            }
+            (NumberValue::PlusInfinity, NumberValue::PlusInfinity) => {
+                Some(std::cmp::Ordering::Equal)
+            }
+            (NumberValue::PlusInfinity, _) => Some(std::cmp::Ordering::Greater),
+            (_, NumberValue::PlusInfinity) => Some(std::cmp::Ordering::Less),
+            (NumberValue::MinusInfinity, NumberValue::MinusInfinity) => {
+                Some(std::cmp::Ordering::Equal)
+            }
+            (NumberValue::MinusInfinity, _) => Some(std::cmp::Ordering::Less),
+            (_, NumberValue::MinusInfinity) => Some(std::cmp::Ordering::Greater),
+            (
+                NumberValue::Interval {
+                    lower: l1,
+                    upper: u1,
+                },
+                NumberValue::Interval {
+                    lower: l2,
+                    upper: u2,
+                },
+            ) => {
+                if u1.value < l2.value {
+                    Some(std::cmp::Ordering::Less)
+                } else if l1.value > u2.value {
+                    Some(std::cmp::Ordering::Greater)
+                } else if l1.value == l2.value && u1.value == u2.value {
+                    Some(std::cmp::Ordering::Equal)
+                } else {
+                    None
+                }
+            }
+            (NumberValue::Interval { lower, upper }, other_val) => {
+                let other_f = to_float_val(other_val);
+                if upper.value < other_f.value {
+                    Some(std::cmp::Ordering::Less)
+                } else if lower.value > other_f.value {
+                    Some(std::cmp::Ordering::Greater)
+                } else {
+                    None
+                }
+            }
+            (self_val, NumberValue::Interval { lower, upper }) => {
+                let self_f = to_float_val(self_val);
+                if self_f.value < lower.value {
+                    Some(std::cmp::Ordering::Less)
+                } else if self_f.value > upper.value {
+                    Some(std::cmp::Ordering::Greater)
+                } else {
+                    None
+                }
+            }
+            (
+                NumberValue::Uncertainty {
+                    value: v1,
+                    uncertainty: _,
+                },
+                NumberValue::Uncertainty {
+                    value: v2,
+                    uncertainty: _,
+                },
+            ) => v1.as_ref().partial_cmp(v2.as_ref()),
+            (NumberValue::Uncertainty { value, .. }, other_val) => {
+                value.as_ref().partial_cmp(other_val)
+            }
+            (self_val, NumberValue::Uncertainty { value, .. }) => {
+                self_val.partial_cmp(value.as_ref())
+            }
+            _ => None,
+        }
     }
 }
 
@@ -808,6 +1673,379 @@ impl PartialEq for Number {
         let (rhs_real, rhs_imag) = other.to_canonical_real_imag();
         lhs_real == rhs_real && lhs_imag == rhs_imag
     }
+}
+
+impl PartialOrd for Number {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let (lhs_real, lhs_imag) = self.to_canonical_real_imag();
+        let (rhs_real, rhs_imag) = other.to_canonical_real_imag();
+        if lhs_imag.is_real_zero() && rhs_imag.is_real_zero() {
+            lhs_real.partial_cmp(&rhs_real)
+        } else {
+            None
+        }
+    }
+}
+
+impl Number {
+    /// Add two numbers mathematically.
+    pub fn add(&self, other: &Self) -> Self {
+        let (lhs_real, lhs_imag) = self.to_canonical_real_imag();
+        let (rhs_real, rhs_imag) = other.to_canonical_real_imag();
+
+        let new_real = lhs_real.add(&rhs_real);
+        let new_imag = lhs_imag.add(&rhs_imag);
+
+        if new_imag.is_real_zero() {
+            Self {
+                value: new_real,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        } else {
+            let imag_num = Self {
+                value: new_imag,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: true,
+            };
+            Self {
+                value: new_real,
+                imaginary: Some(Box::new(imag_num)),
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        }
+    }
+
+    /// Subtract two numbers mathematically.
+    pub fn sub(&self, other: &Self) -> Self {
+        let (lhs_real, lhs_imag) = self.to_canonical_real_imag();
+        let (rhs_real, rhs_imag) = other.to_canonical_real_imag();
+
+        let new_real = lhs_real.sub(&rhs_real);
+        let new_imag = lhs_imag.sub(&rhs_imag);
+
+        if new_imag.is_real_zero() {
+            Self {
+                value: new_real,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        } else {
+            let imag_num = Self {
+                value: new_imag,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: true,
+            };
+            Self {
+                value: new_real,
+                imaginary: Some(Box::new(imag_num)),
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        }
+    }
+
+    /// Multiply two numbers mathematically.
+    pub fn mul(&self, other: &Self) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+
+        let ac = a.mul(&c);
+        let bd = b.mul(&d);
+        let ad = a.mul(&d);
+        let bc = b.mul(&c);
+
+        let new_real = ac.sub(&bd);
+        let new_imag = ad.add(&bc);
+
+        if new_imag.is_real_zero() {
+            Self {
+                value: new_real,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        } else {
+            let imag_num = Self {
+                value: new_imag,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: true,
+            };
+            Self {
+                value: new_real,
+                imaginary: Some(Box::new(imag_num)),
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        }
+    }
+
+    /// Divide two numbers mathematically.
+    pub fn div(&self, other: &Self) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+
+        let c2 = c.mul(&c);
+        let d2 = d.mul(&d);
+        let denom = c2.add(&d2);
+
+        if denom.is_real_zero() {
+            return Self::from_float(Float::from_f64(f64::NAN, 53));
+        }
+
+        let ac = a.mul(&c);
+        let bd = b.mul(&d);
+        let bc = b.mul(&c);
+        let ad = a.mul(&d);
+
+        let real_num = ac.add(&bd);
+        let imag_num_val = bc.sub(&ad);
+
+        let new_real = real_num.div(&denom);
+        let new_imag = imag_num_val.div(&denom);
+
+        if new_imag.is_real_zero() {
+            Self {
+                value: new_real,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        } else {
+            let imag_num = Self {
+                value: new_imag,
+                imaginary: None,
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: true,
+            };
+            Self {
+                value: new_real,
+                imaginary: Some(Box::new(imag_num)),
+                precision: std::cmp::max(self.precision, other.precision),
+                approximate: self.approximate || other.approximate,
+                is_imaginary: false,
+            }
+        }
+    }
+}
+
+/// A 256-bit unsigned integer helper struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct U256 {
+    /// The four 64-bit limbs of the integer, in little-endian order.
+    pub parts: [u64; 4],
+}
+
+impl U256 {
+    /// Create a U256 from a u128.
+    pub fn from_u128(val: u128) -> Self {
+        Self {
+            parts: [val as u64, (val >> 64) as u64, 0, 0],
+        }
+    }
+
+    /// Check if the value is zero.
+    pub fn is_zero(&self) -> bool {
+        self.parts.iter().all(|&x| x == 0)
+    }
+
+    /// Add two U256 values.
+    pub fn add(self, other: Self) -> Self {
+        let mut parts = [0u64; 4];
+        let mut carry = 0u128;
+        for i in 0..4 {
+            let sum = (self.parts[i] as u128) + (other.parts[i] as u128) + carry;
+            parts[i] = sum as u64;
+            carry = sum >> 64;
+        }
+        Self { parts }
+    }
+
+    /// Subtract a U256 value from this one, assuming self >= other.
+    pub fn sub(self, other: Self) -> Self {
+        let mut parts = [0u64; 4];
+        let mut borrow = 0i128;
+        for i in 0..4 {
+            let diff = (self.parts[i] as i128) - (other.parts[i] as i128) - borrow;
+            if diff < 0 {
+                parts[i] = (diff + (1i128 << 64)) as u64;
+                borrow = 1;
+            } else {
+                parts[i] = diff as u64;
+                borrow = 0;
+            }
+        }
+        Self { parts }
+    }
+
+    /// Multiply two u128 values, returning a U256.
+    pub fn mul_u128(x: u128, y: u128) -> Self {
+        let x0 = x as u64 as u128;
+        let x1 = (x >> 64) as u128;
+        let y0 = y as u64 as u128;
+        let y1 = (y >> 64) as u128;
+
+        let w0 = x0 * y0;
+        let w1 = x0 * y1;
+        let w2 = x1 * y0;
+        let w3 = x1 * y1;
+
+        let mut parts = [0u64; 4];
+        let carry = w0 >> 64;
+        parts[0] = w0 as u64;
+
+        let sum = w1 + w2 + carry;
+        parts[1] = sum as u64;
+        let carry = sum >> 64;
+
+        let sum2 = w3 + carry;
+        parts[2] = sum2 as u64;
+        parts[3] = (sum2 >> 64) as u64;
+
+        Self { parts }
+    }
+
+    /// Divide this U256 by another, returning (quotient, remainder).
+    pub fn div_rem(self, other: Self) -> (Self, Self) {
+        if other.is_zero() {
+            panic!("division by zero");
+        }
+        let mut quotient = Self { parts: [0; 4] };
+        let mut remainder = self;
+        let mut other_msb = 0;
+        for i in (0..4).rev() {
+            if other.parts[i] != 0 {
+                other_msb = i * 64 + (63 - other.parts[i].leading_zeros()) as usize;
+                break;
+            }
+        }
+        let mut rem_msb = 0;
+        let mut found_rem = false;
+        for i in (0..4).rev() {
+            if remainder.parts[i] != 0 {
+                rem_msb = i * 64 + (63 - remainder.parts[i].leading_zeros()) as usize;
+                found_rem = true;
+                break;
+            }
+        }
+        if !found_rem || remainder < other {
+            return (quotient, remainder);
+        }
+        let mut shift = rem_msb - other_msb;
+        let mut temp = other << shift;
+        loop {
+            if remainder >= temp {
+                remainder = remainder.sub(temp);
+                let word = shift / 64;
+                let bit = shift % 64;
+                quotient.parts[word] |= 1u64 << bit;
+            }
+            if shift == 0 {
+                break;
+            }
+            shift -= 1;
+            temp = temp >> 1;
+        }
+        (quotient, remainder)
+    }
+
+    /// Check if the value fits in a u128.
+    pub fn fits_in_u128(&self) -> bool {
+        self.parts[2] == 0 && self.parts[3] == 0
+    }
+
+    /// Convert the value to a u128.
+    pub fn as_u128(&self) -> u128 {
+        (self.parts[0] as u128) | ((self.parts[1] as u128) << 64)
+    }
+}
+
+impl Ord for U256 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        for i in (0..4).rev() {
+            let ord = self.parts[i].cmp(&other.parts[i]);
+            if ord != std::cmp::Ordering::Equal {
+                return ord;
+            }
+        }
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl PartialOrd for U256 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::ops::Shl<usize> for U256 {
+    type Output = Self;
+    fn shl(self, shift: usize) -> Self {
+        if shift == 0 {
+            return self;
+        }
+        if shift >= 256 {
+            return Self { parts: [0; 4] };
+        }
+        let word_shift = shift / 64;
+        let bit_shift = shift % 64;
+        let mut parts = [0u64; 4];
+        for i in word_shift..4 {
+            parts[i] = self.parts[i - word_shift] << bit_shift;
+            if bit_shift > 0 && i - word_shift > 0 {
+                parts[i] |= self.parts[i - word_shift - 1] >> (64 - bit_shift);
+            }
+        }
+        Self { parts }
+    }
+}
+
+impl std::ops::Shr<usize> for U256 {
+    type Output = Self;
+    fn shr(self, shift: usize) -> Self {
+        if shift == 0 {
+            return self;
+        }
+        if shift >= 256 {
+            return Self { parts: [0; 4] };
+        }
+        let word_shift = shift / 64;
+        let bit_shift = shift % 64;
+        let mut parts = [0u64; 4];
+        for i in 0..(4 - word_shift) {
+            parts[i] = self.parts[i + word_shift] >> bit_shift;
+            if bit_shift > 0 && i + word_shift + 1 < 4 {
+                parts[i] |= self.parts[i + word_shift + 1] << (64 - bit_shift);
+            }
+        }
+        Self { parts }
+    }
+}
+
+fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        let temp = b;
+        b = a % b;
+        a = temp;
+    }
+    a
 }
 
 #[cfg(test)]
