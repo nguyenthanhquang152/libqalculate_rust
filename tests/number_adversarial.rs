@@ -116,6 +116,7 @@ fn test_float_and_rational_equality() {
     let unc_zero = Number::new_uncertainty(
         NumberValue::Rational(Rational::new(2, 1)),
         NumberValue::Rational(Rational::new(0, 1)),
+        false,
     );
     let scalar_rational_2 = Number::from_rational(Rational::new(2, 1));
     assert_eq!(unc_zero, scalar_rational_2);

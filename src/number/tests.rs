@@ -206,10 +206,13 @@ fn test_rational_normalization() {
 fn test_uncertainty_modeling() {
     let val = NumberValue::Rational(Rational::new(5, 1));
     let unc = NumberValue::Rational(Rational::new(1, 2));
-    let n = Number::new_uncertainty(val, unc);
+    let n = Number::new_uncertainty(val, unc, false);
 
     assert!(n.approximate());
-    if let NumberValue::Uncertainty { value, uncertainty } = n.value() {
+    if let NumberValue::Uncertainty {
+        value, uncertainty, ..
+    } = n.value()
+    {
         if let NumberValue::Rational(r_val) = &**value {
             assert_eq!(r_val.num, 5);
         } else {
@@ -283,6 +286,7 @@ fn test_predicates_hardening() {
     let unc_zero = NumberValue::Uncertainty {
         value: Box::new(rat_zero.clone()),
         uncertainty: Box::new(rat_zero.clone()),
+        is_relative: false,
     };
     assert!(rat_zero.is_real_zero());
     assert!(fl_zero.is_real_zero());
@@ -299,6 +303,7 @@ fn test_predicates_hardening() {
     let unc_one = NumberValue::Uncertainty {
         value: Box::new(rat_one.clone()),
         uncertainty: Box::new(rat_zero.clone()),
+        is_relative: false,
     };
     assert!(rat_one.is_real_one());
     assert!(fl_one.is_real_one());
@@ -310,6 +315,7 @@ fn test_predicates_hardening() {
     let unc_inf = NumberValue::Uncertainty {
         value: Box::new(inf_val.clone()),
         uncertainty: Box::new(rat_zero.clone()),
+        is_relative: false,
     };
     assert!(inf_val.is_infinite());
     assert!(unc_inf.is_infinite());
@@ -326,6 +332,7 @@ fn test_predicates_hardening() {
     let unc_nan = NumberValue::Uncertainty {
         value: Box::new(nan_val.clone()),
         uncertainty: Box::new(rat_zero.clone()),
+        is_relative: false,
     };
     assert!(nan_val.is_nan());
     assert!(unc_nan.is_nan());
@@ -430,7 +437,7 @@ fn test_deep_cloning_semantics() {
     // 2. Uncertainty deep clone check (Box<NumberValue> deep clone)
     let val = NumberValue::Rational(Rational::new(5, 1));
     let unc = NumberValue::Rational(Rational::new(1, 2));
-    let orig_unc = Number::new_uncertainty(val, unc);
+    let orig_unc = Number::new_uncertainty(val, unc, false);
     let cloned_unc = orig_unc.clone();
 
     assert_eq!(orig_unc, cloned_unc);
@@ -439,10 +446,12 @@ fn test_deep_cloning_semantics() {
         NumberValue::Uncertainty {
             value: orig_v,
             uncertainty: orig_u,
+            ..
         },
         NumberValue::Uncertainty {
             value: cloned_v,
             uncertainty: cloned_u,
+            ..
         },
     ) = (orig_unc.value(), cloned_unc.value())
     {
@@ -522,11 +531,12 @@ fn test_numeric_variants_invariants_and_constructors() {
     // 5. Uncertainty invariants
     let val_val = NumberValue::Float(Float::from_f64(10.0, 53));
     let unc_val = NumberValue::Float(Float::from_f64(0.5, 53));
-    let unc = Number::new_uncertainty(val_val, unc_val);
+    let unc = Number::new_uncertainty(val_val, unc_val, false);
     assert!(unc.approximate());
     if let NumberValue::Uncertainty {
         value: v,
         uncertainty: u,
+        ..
     } = unc.value()
     {
         if let NumberValue::Float(vf) = &**v {
@@ -614,6 +624,7 @@ fn test_adversarial_challenger_cases() {
         current_val = NumberValue::Uncertainty {
             value: Box::new(current_val),
             uncertainty: Box::new(unc_val.clone()),
+            is_relative: false,
         };
     }
     assert!(current_val.approximate());
@@ -631,7 +642,45 @@ fn test_adversarial_challenger_cases() {
         current_val2 = NumberValue::Uncertainty {
             value: Box::new(current_val2),
             uncertainty: Box::new(unc_val.clone()),
+            is_relative: false,
         };
     }
     assert_eq!(current_val, current_val2);
+}
+
+#[test]
+fn test_native_uncertainty_behavior() {
+    // 1. Parsing +/- and ±
+    let n1 = "5 +/- 1".parse::<Number>().unwrap();
+    assert_eq!(n1.to_string(), "5.0±1.0");
+
+    let n2 = "5 ± 0.5".parse::<Number>().unwrap();
+    assert_eq!(n2.to_string(), "5.00±0.50");
+
+    // 2. Parsing relative percentage uncertainty
+    let n3 = "100 +/- 5%".parse::<Number>().unwrap();
+    assert_eq!(n3.to_string(), "100.0±5.0%");
+
+    // 3. Parsing parenthesis form
+    let n4 = "1.23(4)".parse::<Number>().unwrap();
+    assert_eq!(n4.to_string(), "1.230±0.040");
+
+    let n5 = "123.4(15)".parse::<Number>().unwrap();
+    assert_eq!(n5.to_string(), "123.4±1.5");
+
+    // 4. Mathematical operations propagation
+    let a = "5 +/- 3".parse::<Number>().unwrap();
+    let b = "10 +/- 4".parse::<Number>().unwrap();
+    let sum = a.add(&b);
+    assert_eq!(sum.to_string(), "15.0±5.0");
+
+    let c = "3 +/- 0.1".parse::<Number>().unwrap();
+    let d = "4 +/- 0.1".parse::<Number>().unwrap();
+    let prod = c.mul(&d);
+    assert_eq!(prod.to_string(), "12.00±0.50");
+
+    let e = "12 +/- 5".parse::<Number>().unwrap();
+    let f = "3 +/- 0".parse::<Number>().unwrap();
+    let div = e.div(&f);
+    assert_eq!(div.to_string(), "4.0±1.7");
 }

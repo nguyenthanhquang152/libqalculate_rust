@@ -269,10 +269,18 @@ fn fallback_disabled_by_env() -> bool {
 }
 
 fn native_scaffold_output(expr: &str) -> Option<String> {
-    match expr {
-        "1 + 1" => Some("2".to_string()),
-        "native-scaffold-test" => Some("native-scaffold-test-success".to_string()),
-        _ => None,
+    if expr == "native-scaffold-test" {
+        return Some("native-scaffold-test-success".to_string());
+    }
+    let has_uncertainty =
+        expr.contains("+/-") || expr.contains('±') || (expr.contains('(') && expr.contains(')'));
+    if expr == "1 + 1" || has_uncertainty {
+        match crate::number::evaluate_expr(expr) {
+            Ok(num) => Some(num.to_string()),
+            Err(_) => None,
+        }
+    } else {
+        None
     }
 }
 

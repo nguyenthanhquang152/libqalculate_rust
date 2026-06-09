@@ -67,6 +67,7 @@ fn uncertainty_addition_combines_value_and_uncertainty() {
     let unc1 = NumberValue::Uncertainty {
         value: Box::new(v1),
         uncertainty: Box::new(u1),
+        is_relative: false,
     };
 
     let v2 = NumberValue::Rational(Rational::new(10, 1));
@@ -74,10 +75,14 @@ fn uncertainty_addition_combines_value_and_uncertainty() {
     let unc2 = NumberValue::Uncertainty {
         value: Box::new(v2),
         uncertainty: Box::new(u2),
+        is_relative: false,
     };
 
     let sum = unc1.add(&unc2);
-    if let NumberValue::Uncertainty { value, uncertainty } = sum {
+    if let NumberValue::Uncertainty {
+        value, uncertainty, ..
+    } = sum
+    {
         if let NumberValue::Rational(r_val) = &*value {
             assert_eq!(r_val.num(), 15);
             assert_eq!(r_val.den(), 1);
@@ -85,11 +90,10 @@ fn uncertainty_addition_combines_value_and_uncertainty() {
             panic!("Expected rational value");
         }
 
-        if let NumberValue::Rational(r_unc) = &*uncertainty {
-            assert_eq!(r_unc.num(), 2);
-            assert_eq!(r_unc.den(), 1);
+        if let NumberValue::Float(f_unc) = &*uncertainty {
+            assert!((f_unc.value() - 1.58113883).abs() < 1e-6);
         } else {
-            panic!("Expected rational uncertainty");
+            panic!("Expected float uncertainty");
         }
     } else {
         panic!("Expected uncertainty result");

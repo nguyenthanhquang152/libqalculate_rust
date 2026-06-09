@@ -38,6 +38,7 @@ fn number_value_strategy() -> impl Strategy<Value = NumberValue> {
         (inner.clone(), inner).prop_map(|(v, u)| NumberValue::Uncertainty {
             value: Box::new(v),
             uncertainty: Box::new(u),
+            is_relative: false,
         })
     })
 }
@@ -48,7 +49,7 @@ fn base_number_strategy() -> impl Strategy<Value = Number> {
         float_strategy().prop_map(Number::from_float),
         (float_strategy(), float_strategy()).prop_map(|(l, u)| Number::new_interval(l, u)),
         (number_value_strategy(), number_value_strategy())
-            .prop_map(|(v, u)| Number::new_uncertainty(v, u)),
+            .prop_map(|(v, u)| Number::new_uncertainty(v, u, false)),
         any::<f64>().prop_map(Number::from_f64),
     ]
 }
@@ -113,7 +114,7 @@ fn test_getter_consistency_via_uncertainty() {
     // value precision = 0 (Rational), uncertainty precision = 100 (Float)
     let val = NumberValue::Rational(Rational::new(1, 1));
     let unc = NumberValue::Float(Float::from_f64(1.0, 100));
-    let n = Number::new_uncertainty(val, unc);
+    let n = Number::new_uncertainty(val, unc, false);
 
     // Number::precision() is computed as max(value.precision(), uncertainty.precision()) = 100
     assert_eq!(n.precision(), 100);
