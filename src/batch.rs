@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::fmt::{self, Write as _};
 use std::fs;
 use std::path::Path;
@@ -75,8 +77,7 @@ pub fn parse_batch_cases(input: &str) -> Result<Vec<BatchCase>, BatchError> {
 
         if line.trim().is_empty()
             || line.trim_start().starts_with('#')
-            || line.starts_with("set ")
-            || line.starts_with("/set ")
+            || is_session_command(line.trim())
         {
             flush_case(&mut cases, &mut current_expression, &mut current_expected)?;
             continue;
@@ -132,6 +133,11 @@ fn flush_case(
     Ok(())
 }
 
+/// Return true for upstream batch session commands that affect later cases.
+pub fn is_session_command(line: &str) -> bool {
+    line.starts_with("set ") || line.starts_with("/set ") || line.starts_with("/assume ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_batch_cases, render_batch_cases, BatchCase, BatchError};
@@ -147,6 +153,15 @@ mod tests {
         let cases = parse_batch_cases("# heading\n\n2 + 2\n\t4\n\n").expect("fixture should parse");
         assert_eq!(cases.len(), 1);
         assert_eq!(cases[0].expression, "2 + 2");
+    }
+
+    #[test]
+    fn skips_session_assume_commands() {
+        let input = "/assume positive\nsqrt(x)\n\tsqrt(x)\n/assume unknown\nx\n\tx\n";
+        let cases = parse_batch_cases(input).expect("fixture should parse");
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[0].expression, "sqrt(x)");
+        assert_eq!(cases[1].expression, "x");
     }
 
     #[test]

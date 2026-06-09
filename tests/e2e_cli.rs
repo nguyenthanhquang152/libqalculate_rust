@@ -74,6 +74,59 @@ fn cli_parse_batch_reports_case_count() {
 }
 
 #[test]
+fn cli_evaluates_positional_expression_via_fallback() {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.arg("1 + 1")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("2\n");
+}
+
+#[test]
+fn cli_evaluates_negative_expression_after_separator() {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.args(["--", "-0"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("0\n");
+}
+
+#[test]
+fn cli_evaluates_negative_expression_without_separator() {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.arg("-1")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("\u{2212}1\n");
+}
+
+#[test]
+fn cli_evaluates_negative_decimal_without_separator() {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.arg("-.5")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("\u{2212}0.5\n");
+}
+
+#[test]
+fn cli_reports_definition_load_failure_for_expressions() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.arg("1 + 1")
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "failed to load global definitions",
+        ));
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
     let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
     cmd.arg("--definitely-unknown")
@@ -90,4 +143,8 @@ fn fake_upstream() -> tempfile::TempDir {
     std::fs::write(tests.join("notes.txt"), "not a batch\n")
         .expect("non-batch file should be written");
     dir
+}
+
+fn definitions_dir() -> &'static str {
+    "../libqalculate/data"
 }

@@ -96,3 +96,19 @@ repository-local review skills above.
 | Port `/set unicode 1` session behavior | `domain-cli`, `m06-error-handling`, `code-review-testing` |
 | Port XML units loader | `m09-domain`, `m13-domain-error`, `code-review-context`, fuzzing skill if available |
 | Change public Rust API | `rust-router`, `code-review-breaking-changes`, `codex-pr-body` |
+
+## Agent Task Templates
+
+Reusable templates for standardized task execution and handoff:
+
+| Template | Path | Purpose |
+| --- | --- | --- |
+| Task Packet | `docs/templates/task_packet.md` | Scope, references, and acceptance criteria for a porting task |
+| Oracle Evidence | `docs/templates/oracle_evidence.md` | Record C++ vs Rust differential comparison results |
+| Slop Cleaner Report | `docs/templates/slop_cleaner_report.md` | Document removal of scaffolding or fallback code |
+| PR Closure | `docs/templates/pr_closure.md` | PR description and issue closure checklist |
+
+When starting a new porting task, copy `docs/templates/task_packet.md` and fill in the fields.
+When completing oracle verification, copy `docs/templates/oracle_evidence.md` and attach to the PR.
+When cleaning up scaffold code, use `docs/templates/slop_cleaner_report.md` to document the transition.
+When opening a PR, use `docs/templates/pr_closure.md` as the PR body template.
