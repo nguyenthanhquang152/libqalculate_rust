@@ -559,3 +559,79 @@ fn test_numeric_variants_invariants_and_constructors() {
     assert!(nan_val.is_nan());
     assert_eq!(nan_val.value(), &NumberValue::NaN);
 }
+
+#[test]
+fn test_adversarial_challenger_cases() {
+    // 1. Extreme Rational Values and Boundary Conditions
+    let r_max = Rational::new(i128::MAX, 1);
+    assert_eq!(r_max.num(), i128::MAX);
+    assert_eq!(r_max.den(), 1);
+
+    let r_min = Rational::new(i128::MIN, 1);
+    assert_eq!(r_min.num(), i128::MIN);
+    assert_eq!(r_min.den(), 1);
+
+    // Rational close to limits but representable: i128::MIN + 1 / -1 should reduce to i128::MAX
+    let r_neg_to_pos_limit = Rational::new(i128::MIN + 1, -1);
+    assert_eq!(r_neg_to_pos_limit.num(), i128::MAX);
+    assert_eq!(r_neg_to_pos_limit.den(), 1);
+
+    // 2. Extremely large values in add_rationals and negate causing NaN
+    let max_rat = NumberValue::Rational(Rational::new(i128::MAX, 1));
+    let two_rat = NumberValue::Rational(Rational::new(2, 1));
+    assert!(max_rat.add(&two_rat).is_nan());
+
+    // 3. Float extremes and bounds
+    let f_max = Float::from_f64(f64::MAX, 53);
+    let f_min = Float::from_f64(f64::MIN, 53);
+    let f_neg_zero = Float::from_f64(-0.0, 53);
+
+    assert!(f_neg_zero.is_zero());
+    assert!(!f_max.is_infinite());
+    assert!(!f_min.is_infinite());
+
+    // 4. Nested complex structures
+    // Construct (1 + 2i) + (3 + 4i)i = 1 + 2i + 3i - 4 = -3 + 5i
+    let real_complex = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
+    let imag_complex = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
+    let nested_complex = Number::new_complex(real_complex, imag_complex);
+
+    assert!(nested_complex.is_complex());
+    assert_eq!(
+        nested_complex.value(),
+        &NumberValue::Rational(Rational::new(-3, 1))
+    );
+    assert_eq!(
+        nested_complex.imaginary().unwrap().value(),
+        &NumberValue::Rational(Rational::new(5, 1))
+    );
+    assert!(nested_complex.imaginary().unwrap().imaginary().is_none());
+
+    // 5. Deeply nested uncertainty structure
+    let mut current_val = NumberValue::Float(Float::from_f64(1.0, 53));
+    let unc_val = NumberValue::Float(Float::from_f64(0.01, 53));
+    for _ in 0..100 {
+        current_val = NumberValue::Uncertainty {
+            value: Box::new(current_val),
+            uncertainty: Box::new(unc_val.clone()),
+        };
+    }
+    assert!(current_val.approximate());
+    assert!(!current_val.is_real_zero());
+    assert!(!current_val.is_nan());
+    assert!(!current_val.is_infinite());
+    assert_eq!(current_val.precision(), 53);
+
+    let negated_deep = current_val.negate();
+    assert!(negated_deep.approximate());
+
+    // Test equality between two identical deeply nested uncertainty values
+    let mut current_val2 = NumberValue::Float(Float::from_f64(1.0, 53));
+    for _ in 0..100 {
+        current_val2 = NumberValue::Uncertainty {
+            value: Box::new(current_val2),
+            uncertainty: Box::new(unc_val.clone()),
+        };
+    }
+    assert_eq!(current_val, current_val2);
+}
