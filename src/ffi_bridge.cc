@@ -1,5 +1,48 @@
 #include "ffi_bridge.h"
 
+namespace {
+
+class CalculatorStateGuard {
+public:
+    explicit CalculatorStateGuard(Calculator &calculator)
+        : calc(calculator),
+          precision(calculator.getPrecision()),
+          interval_arithmetic(calculator.usesIntervalArithmetic()),
+          temperature_mode(calculator.getTemperatureCalculationMode()),
+          decimal_point(calculator.getDecimalPoint()),
+          comma(calculator.getComma()) {}
+
+    ~CalculatorStateGuard() noexcept {
+        restore_decimal_mode();
+        calc.setPrecision(precision);
+        calc.useIntervalArithmetic(interval_arithmetic);
+        calc.setTemperatureCalculationMode(temperature_mode);
+    }
+
+    CalculatorStateGuard(const CalculatorStateGuard&) = delete;
+    CalculatorStateGuard& operator=(const CalculatorStateGuard&) = delete;
+
+private:
+    void restore_decimal_mode() noexcept {
+        if(decimal_point == "," && comma == ";") {
+            calc.useDecimalComma();
+        } else if(decimal_point == "." && comma == ";") {
+            calc.useDecimalPoint(true);
+        } else {
+            calc.useDecimalPoint(false);
+        }
+    }
+
+    Calculator &calc;
+    int precision;
+    bool interval_arithmetic;
+    TemperatureCalculationMode temperature_mode;
+    std::string decimal_point;
+    std::string comma;
+};
+
+} // namespace
+
 std::unique_ptr<Calculator> new_calculator() {
     return std::make_unique<Calculator>();
 }
@@ -54,6 +97,7 @@ rust::String calculate_and_print_qalc(
 ) {
     try {
         std::string expr_str(expr.data(), expr.size());
+        CalculatorStateGuard state_guard(calc);
 
         bool is_approximate = false;
         PrintOptions po;

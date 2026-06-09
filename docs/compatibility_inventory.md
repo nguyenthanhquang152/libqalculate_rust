@@ -9,17 +9,17 @@
 
 ## Summary Statistics
 
-| Category | Total | native-pass | scaffold | fallback-only | unstarted | out-of-scope |
-|---|---|---|---|---|---|---|
-| Public Headers | 22 | 0 | 3 | 1 | 14 | 4 |
-| Implementation Files | 41 | 0 | 1 | 3 | 37 | 0 |
-| Definition Data Files | 9 | 0 | 0 | 0 | 9 | 0 |
-| Batch Test Files | 17 | 0 | 0 | 0 | 17 | 0 |
-| Batch Test Cases | 656 | 0 | 0 | 0 | 656 | 0 |
-| CLI Behaviors | 10 | 5 | 0 | 1 | 4 | 0 |
-| Core Class API Groups | 59 | 0 | 6 | 1 | 52 | 0 |
+| Category | Total | native-pass | tooling-pass | scaffold | fallback-only | unstarted | out-of-scope |
+|---|---|---|---|---|---|---|---|
+| Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
+| Implementation Files | 41 | 0 | 0 | 1 | 3 | 37 | 0 |
+| Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
+| Batch Test Files | 17 | 0 | 0 | 0 | 0 | 17 | 0 |
+| Batch Test Cases | 656 | 0 | 0 | 0 | 0 | 656 | 0 |
+| CLI Behaviors | 10 | 2 | 3 | 0 | 1 | 4 | 0 |
+| Core Class API Groups | 59 | 0 | 0 | 6 | 1 | 52 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for future native evidence. The `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has native batch-parsing and self-check support. Core computation, definition loading, and expression evaluation remain unstarted or fallback-only until native tests run with fallback disabled.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for future native evidence. The `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has Rust-only tooling for batch parsing and self-checks. Core computation, definition loading, and expression evaluation remain unstarted or fallback-only until native tests run with fallback disabled.
 
 ---
 
@@ -28,6 +28,7 @@
 | Status | Meaning |
 |---|---|
 | `native-pass` | Fully ported to Rust; passes relevant upstream tests natively |
+| `tooling-pass` | Rust-only tooling or inventory checks pass their own tests; no upstream native parity is claimed |
 | `scaffold` | Rust types/module exist but functionality is incomplete |
 | `fallback-only` | Functionality provided via FFI call to upstream C++ |
 | `approved-deviation` | Intentionally differs from C++; user-visible behavior preserved |
@@ -165,10 +166,34 @@ Maps the upstream command-line and test harness sources inspected for Epic 0. Th
 | 3 | `../libqalculate/src/unittest.cc` | `tests/oracle.rs`, `tests/e2e_batch_runner.rs` | `scaffold` | none | #4 |
 | 4 | `../libqalculate/libqalculate/Makefile.am` | `.github/workflows/rust.yml`, `build.rs` | `scaffold` | none | #6 |
 | 5 | `../libqalculate/src/Makefile.am` | `.github/workflows/rust.yml`, `scripts/oracle.sh` | `scaffold` | none | #66 |
-| 6 | `../libqalculate/tests/Makefile.am` | `docs/batch_manifest.md`, `tests/batch_manifest_validation.rs` | `native-pass` | none | #3 |
+| 6 | `../libqalculate/tests/Makefile.am` | `docs/batch_manifest.md`, `tests/batch_manifest_validation.rs` | `tooling-pass` | none | #3 |
 | 7 | `../libqalculate/data/Makefile.am` | `docs/compatibility_inventory.md` | `unstarted` | none | #41 |
 
-All rows use exact upstream paths, an owner artifact in this repository, a parity status, a deviation value, and a next-task reference. No native parity is claimed for CLI expression evaluation because it still routes through the C++ fallback bridge.
+All rows use exact upstream paths, an owner artifact in this repository, a status, a deviation value, and a next-task reference. No native parity is claimed for CLI expression evaluation because it still routes through the C++ fallback bridge.
+
+## 2.2 Build and Configure Feature Mapping
+
+Maps upstream `configure.ac` / `Makefile.am` dependencies to the current Rust build script. This section is oracle/fallback infrastructure evidence only; it does not prove native Rust parity.
+
+| Upstream feature or dependency | Upstream evidence | Rust build behavior | Status | Notes |
+|---|---|---|---|---|
+| Core C++ source list | `libqalculate_la_SOURCES` in `../libqalculate/libqalculate/Makefile.am` | `build.rs` compiles the 41 current `.cc` files into the static `qalculate` archive | `tooling-pass` | `tests/inventory_validation.rs` asserts the upstream `.cc` count and inventory coverage |
+| GMP | `AC_CHECK_HEADER(gmp.h)`, `AC_CHECK_LIB(gmp, __gmpz_init)` | Links `-lgmp` | `fallback-only` | Required for the C++ fallback/oracle build |
+| MPFR | `AC_CHECK_HEADERS(mpfr.h)`, `AC_CHECK_LIB(mpfr, mpfr_get_version)` | Links `-lmpfr` | `fallback-only` | Required for the C++ fallback/oracle build |
+| libxml2 | `PKG_CHECK_MODULES(LIBXML, libxml-2.0 >= 2.3.8)` | Uses `pkg-config` for include paths and link metadata | `fallback-only` | Required for C++ definition XML loading |
+| pthread/threading | `AC_CHECK_LIB(pthread, pthread_create)`, `HAVE_PTHREADS` | Not explicitly linked or defined by `build.rs` | `scaffold` | Current Rust tests serialize in-process FFI access with mutexes; cross-thread fallback/oracle behavior remains platform-sensitive |
+| libcurl exchange-rate fetch | `--without-libcurl`, `PKG_CHECK_MODULES(LIBCURL, libcurl)`, `HAVE_LIBCURL` | Not probed; `HAVE_LIBCURL` is not defined | `unstarted` | Network exchange-rate fetching is not supported by the Rust build; local/static rate data remains data-directory dependent |
+| ICU localization | `--without-icu`, `PKG_CHECK_MODULES(ICU, icu-uc)`, `HAVE_ICU` | Not probed; `HAVE_ICU` is not defined | `unstarted` | Case-insensitive Unicode/localization support is not enabled in the Rust fallback build |
+| iconv / gettext / NLS | `AM_ICONV`, `LTLIBINTL`, `LTLIBICONV` | Not probed or linked directly | `unstarted` | Localized message catalogs are not part of the Rust build evidence |
+| Platform C++ runtime | Autotools/libtool platform link | Links `c++` on Apple/FreeBSD, `stdc++` on non-MSVC targets | `fallback-only` | MSVC is not supported by this build script |
+| Compiled definitions | `--enable-compiled-definitions`, `COMPILED_DEFINITIONS` | Not defined | `unstarted` | Rust fallback uses external data files instead of embedding definitions |
+| Insecure functions switch | `--disable-insecure`, `DISABLE_INSECURE` | Not defined | `unstarted` | No Rust-side feature flag exists yet |
+| Gnuplot call support | `--without-gnuplot-call`, `HAVE_GNUPLOT_CALL`, `HAVE_BYO_GNUPLOT` | Not defined | `unstarted` | Plot support is not exposed through the Rust wrapper |
+| Textport/readline/test programs/docs generators | `--disable-textport`, `--enable-tests`, `--enable-defs2doc`, readline checks, doxygen checks | Out of the Rust library build | `out-of-scope` | Rust owns its own CLI/test harness; upstream helper binaries are not built by `build.rs` |
+
+### Data and Locale Directories
+
+`build.rs` defines `PACKAGE_DATA_DIR` as `/usr/share` and `PACKAGE_LOCALE_DIR` as `/usr/share/locale` to satisfy upstream compile-time constants. The local test/oracle path sets `QALCULATE_DEFINITIONS_DIR` to the adjacent `../libqalculate/data` checkout so definition loading is deterministic. A missing or invalid definitions directory is an expression-evaluation failure when C++ fallback is enabled; fallback-disabled native scaffold cases do not require C++ definitions.
 
 ---
 
@@ -265,9 +290,9 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 |---|---|---|---|---|---|
 | 1 | `--version` | Prints version | Prints version | `native-pass` | |
 | 2 | `--help` | Prints usage | Prints usage | `native-pass` | |
-| 3 | `--self-check` | — | Runs self-diagnostics | `native-pass` | Rust-only addition |
-| 4 | `--list-upstream-tests` | — | Lists upstream batch files | `native-pass` | Rust-only addition |
-| 5 | `--parse-batch` | — | Parses batch file structure | `native-pass` | Native batch parser; no evaluation |
+| 3 | `--self-check` | — | Runs self-diagnostics | `tooling-pass` | Rust-only addition; no upstream parity claim |
+| 4 | `--list-upstream-tests` | — | Lists upstream batch files | `tooling-pass` | Rust-only addition; no upstream parity claim |
+| 5 | `--parse-batch` | — | Parses batch file structure | `tooling-pass` | Native batch parser tooling; no expression evaluation |
 | 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge or explicit no-fallback scaffold | `fallback-only` | Delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output; `QALCULATE_DISABLE_FALLBACK=1` rejects unported expressions and only allows named scaffold cases |
 | 7 | `-defaults` | Reset to default settings | — | `unstarted` | |
 | 8 | `-set <option> <value>` | Set calculator option | — | `unstarted` | |
@@ -278,7 +303,8 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 
 | Status | Count |
 |---|---|
-| `native-pass` | 5 |
+| `native-pass` | 2 |
+| `tooling-pass` | 3 |
 | `fallback-only` | 1 |
 | `unstarted` | 4 |
 
@@ -418,7 +444,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | `src/lib.rs` | `includes.h` (partial), crate root | `scaffold` |
 | `src/ffi.rs` | `Calculator.h`, `Calculator.cc`, `Calculator-calculate.cc`, `Calculator-definitions.cc` (partial) | `fallback-only` |
 | `src/number.rs` | `Number.h`, `Number.cc` | `scaffold` |
-| `src/batch.rs` | — (no upstream equivalent; native batch parser) | `native-pass` |
+| `src/batch.rs` | — (no upstream equivalent; native batch parser) | `tooling-pass` |
 | `src/main.rs` | `../src/qalc.cc` (partial CLI parity) | mixed |
 
 ### Upstream Files with No Rust Counterpart
@@ -468,36 +494,42 @@ counts:
 status_summary:
   headers:
     native_pass: 0
+    tooling_pass: 0
     scaffold: 3
     fallback_only: 1
     unstarted: 14
     out_of_scope: 4
   implementation_files:
     native_pass: 0
+    tooling_pass: 0
     scaffold: 1
     fallback_only: 3
     unstarted: 37
     out_of_scope: 0
   definition_data:
     native_pass: 0
+    tooling_pass: 0
     scaffold: 0
     fallback_only: 0
     unstarted: 9
     out_of_scope: 0
   batch_tests:
     native_pass: 0
+    tooling_pass: 0
     scaffold: 0
     fallback_only: 0
     unstarted: 17
     out_of_scope: 0
   cli_behaviors:
-    native_pass: 5
+    native_pass: 2
+    tooling_pass: 3
     scaffold: 0
     fallback_only: 1
     unstarted: 4
     out_of_scope: 0
   api_categories:
     native_pass: 0
+    tooling_pass: 0
     scaffold: 6
     fallback_only: 1
     unstarted: 52
