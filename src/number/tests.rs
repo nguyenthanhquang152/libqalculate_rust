@@ -406,3 +406,232 @@ fn test_canonicalize_den_zero_panics() {
     let mut r = Rational { num: 5, den: 0 };
     r.canonicalize();
 }
+
+#[test]
+fn test_deep_cloning_semantics() {
+    // 1. Complex deep clone check (Option<Box<Number>> deep clone)
+    let real = Number::from_i32(3);
+    let imag = Number::from_i32(4);
+    let orig_complex = Number::new_complex(real, imag);
+    let cloned_complex = orig_complex.clone();
+
+    assert_eq!(orig_complex, cloned_complex);
+
+    let orig_imag = orig_complex.imaginary().expect("Expected imaginary part");
+    let cloned_imag = cloned_complex.imaginary().expect("Expected imaginary part");
+
+    let addr_orig_imag = orig_imag as *const Number;
+    let addr_cloned_imag = cloned_imag as *const Number;
+    assert_ne!(
+        addr_orig_imag, addr_cloned_imag,
+        "Imaginary part heap address must be different after cloning (deep clone)"
+    );
+
+    // 2. Uncertainty deep clone check (Box<NumberValue> deep clone)
+    let val = NumberValue::Rational(Rational::new(5, 1));
+    let unc = NumberValue::Rational(Rational::new(1, 2));
+    let orig_unc = Number::new_uncertainty(val, unc);
+    let cloned_unc = orig_unc.clone();
+
+    assert_eq!(orig_unc, cloned_unc);
+
+    if let (
+        NumberValue::Uncertainty {
+            value: orig_v,
+            uncertainty: orig_u,
+        },
+        NumberValue::Uncertainty {
+            value: cloned_v,
+            uncertainty: cloned_u,
+        },
+    ) = (orig_unc.value(), cloned_unc.value())
+    {
+        let addr_orig_v = &**orig_v as *const NumberValue;
+        let addr_cloned_v = &**cloned_v as *const NumberValue;
+        assert_ne!(
+            addr_orig_v, addr_cloned_v,
+            "Uncertainty value heap address must be different after cloning"
+        );
+
+        let addr_orig_u = &**orig_u as *const NumberValue;
+        let addr_cloned_u = &**cloned_u as *const NumberValue;
+        assert_ne!(
+            addr_orig_u, addr_cloned_u,
+            "Uncertainty uncertainty heap address must be different after cloning"
+        );
+    } else {
+        panic!("Expected Uncertainty variant");
+    }
+}
+
+#[test]
+fn test_numeric_variants_invariants_and_constructors() {
+    // 1. Finite exact rational invariants
+    let r_pos = Rational::new(6, 8);
+    assert_eq!(r_pos.num(), 3);
+    assert_eq!(r_pos.den(), 4);
+    assert!(r_pos.num() > 0);
+    assert!(r_pos.den() > 0);
+
+    let r_neg = Rational::new(6, -8);
+    assert_eq!(r_neg.num(), -3);
+    assert_eq!(r_neg.den(), 4);
+
+    let r_zero = Rational::new(0, 5);
+    assert_eq!(r_zero.num(), 0);
+    assert_eq!(r_zero.den(), 1);
+    assert!(r_zero.is_zero());
+
+    // 2. Arbitrary float invariants
+    let f1 = Float::from_f64(3.15, 128);
+    assert_eq!(f1.value(), 3.15);
+    assert_eq!(f1.prec(), 128);
+    assert!(!f1.is_zero());
+    assert!(!f1.is_one());
+    assert!(!f1.is_nan());
+    assert!(!f1.is_infinite());
+
+    let f_zero = Float::from_f64(0.0, 64);
+    assert!(f_zero.is_zero());
+
+    // 3. Complex invariants
+    let c_real = Number::from_i32(1);
+    let c_imag = Number::from_i32(2);
+    let c = Number::new_complex(c_real, c_imag);
+    assert!(c.is_complex());
+    assert!(c.has_real_part());
+    assert!(c.has_imaginary_part());
+    assert_eq!(c.value(), &NumberValue::Rational(Rational::new(1, 1)));
+    assert_eq!(
+        c.imaginary().unwrap().value(),
+        &NumberValue::Rational(Rational::new(2, 1))
+    );
+
+    // 4. Interval invariants
+    let lower = Float::from_f64(-1.0, 53);
+    let upper = Float::from_f64(1.0, 53);
+    let interval = Number::new_interval(lower, upper);
+    assert!(interval.is_interval());
+    if let NumberValue::Interval { lower: l, upper: u } = interval.value() {
+        assert_eq!(l.value(), -1.0);
+        assert_eq!(u.value(), 1.0);
+    } else {
+        panic!("Expected Interval variant");
+    }
+
+    // 5. Uncertainty invariants
+    let val_val = NumberValue::Float(Float::from_f64(10.0, 53));
+    let unc_val = NumberValue::Float(Float::from_f64(0.5, 53));
+    let unc = Number::new_uncertainty(val_val, unc_val);
+    assert!(unc.approximate());
+    if let NumberValue::Uncertainty {
+        value: v,
+        uncertainty: u,
+    } = unc.value()
+    {
+        if let NumberValue::Float(vf) = &**v {
+            assert_eq!(vf.value(), 10.0);
+        } else {
+            panic!("Expected Float value");
+        }
+        if let NumberValue::Float(uf) = &**u {
+            assert_eq!(uf.value(), 0.5);
+        } else {
+            panic!("Expected Float uncertainty");
+        }
+    } else {
+        panic!("Expected Uncertainty variant");
+    }
+
+    // 6. Infinity variants
+    let plus_inf = Number::from_f64(f64::INFINITY);
+    assert!(plus_inf.is_infinite());
+    assert!(plus_inf.includes_infinity());
+    assert_eq!(plus_inf.value(), &NumberValue::PlusInfinity);
+
+    let minus_inf = Number::from_f64(f64::NEG_INFINITY);
+    assert!(minus_inf.is_infinite());
+    assert!(minus_inf.includes_infinity());
+    assert_eq!(minus_inf.value(), &NumberValue::MinusInfinity);
+
+    // 7. NaN variant
+    let nan_val = Number::from_f64(f64::NAN);
+    assert!(nan_val.is_nan());
+    assert_eq!(nan_val.value(), &NumberValue::NaN);
+}
+
+#[test]
+fn test_adversarial_challenger_cases() {
+    // 1. Extreme Rational Values and Boundary Conditions
+    let r_max = Rational::new(i128::MAX, 1);
+    assert_eq!(r_max.num(), i128::MAX);
+    assert_eq!(r_max.den(), 1);
+
+    let r_min = Rational::new(i128::MIN, 1);
+    assert_eq!(r_min.num(), i128::MIN);
+    assert_eq!(r_min.den(), 1);
+
+    // Rational close to limits but representable: i128::MIN + 1 / -1 should reduce to i128::MAX
+    let r_neg_to_pos_limit = Rational::new(i128::MIN + 1, -1);
+    assert_eq!(r_neg_to_pos_limit.num(), i128::MAX);
+    assert_eq!(r_neg_to_pos_limit.den(), 1);
+
+    // 2. Extremely large values in add_rationals and negate causing NaN
+    let max_rat = NumberValue::Rational(Rational::new(i128::MAX, 1));
+    let two_rat = NumberValue::Rational(Rational::new(2, 1));
+    assert!(max_rat.add(&two_rat).is_nan());
+
+    // 3. Float extremes and bounds
+    let f_max = Float::from_f64(f64::MAX, 53);
+    let f_min = Float::from_f64(f64::MIN, 53);
+    let f_neg_zero = Float::from_f64(-0.0, 53);
+
+    assert!(f_neg_zero.is_zero());
+    assert!(!f_max.is_infinite());
+    assert!(!f_min.is_infinite());
+
+    // 4. Nested complex structures
+    // Construct (1 + 2i) + (3 + 4i)i = 1 + 2i + 3i - 4 = -3 + 5i
+    let real_complex = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
+    let imag_complex = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
+    let nested_complex = Number::new_complex(real_complex, imag_complex);
+
+    assert!(nested_complex.is_complex());
+    assert_eq!(
+        nested_complex.value(),
+        &NumberValue::Rational(Rational::new(-3, 1))
+    );
+    assert_eq!(
+        nested_complex.imaginary().unwrap().value(),
+        &NumberValue::Rational(Rational::new(5, 1))
+    );
+    assert!(nested_complex.imaginary().unwrap().imaginary().is_none());
+
+    // 5. Deeply nested uncertainty structure
+    let mut current_val = NumberValue::Float(Float::from_f64(1.0, 53));
+    let unc_val = NumberValue::Float(Float::from_f64(0.01, 53));
+    for _ in 0..100 {
+        current_val = NumberValue::Uncertainty {
+            value: Box::new(current_val),
+            uncertainty: Box::new(unc_val.clone()),
+        };
+    }
+    assert!(current_val.approximate());
+    assert!(!current_val.is_real_zero());
+    assert!(!current_val.is_nan());
+    assert!(!current_val.is_infinite());
+    assert_eq!(current_val.precision(), 53);
+
+    let negated_deep = current_val.negate();
+    assert!(negated_deep.approximate());
+
+    // Test equality between two identical deeply nested uncertainty values
+    let mut current_val2 = NumberValue::Float(Float::from_f64(1.0, 53));
+    for _ in 0..100 {
+        current_val2 = NumberValue::Uncertainty {
+            value: Box::new(current_val2),
+            uncertainty: Box::new(unc_val.clone()),
+        };
+    }
+    assert_eq!(current_val, current_val2);
+}

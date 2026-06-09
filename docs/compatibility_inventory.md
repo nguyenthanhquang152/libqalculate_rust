@@ -11,13 +11,13 @@
 
 | Category | Total | native-pass | tooling-pass | scaffold | fallback-only | unstarted | out-of-scope |
 |---|---|---|---|---|---|---|---|
-| Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
-| Implementation Files | 41 | 0 | 0 | 1 | 3 | 37 | 0 |
+| Public Headers | 22 | 1 | 0 | 2 | 1 | 14 | 4 |
+| Implementation Files | 41 | 1 | 0 | 0 | 3 | 37 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
 | Batch Test Files | 17 | 0 | 0 | 0 | 0 | 17 | 0 |
 | Batch Test Cases | 656 | 0 | 0 | 0 | 0 | 656 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 0 | 1 | 4 | 0 |
-| Core Class API Groups | 59 | 0 | 0 | 6 | 1 | 52 | 0 |
+| Core Class API Groups | 59 | 3 | 0 | 3 | 1 | 52 | 0 |
 
 **Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for future native evidence. The `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has Rust-only tooling for batch parsing and self-checks. Core computation, definition loading, and expression evaluation remain unstarted or fallback-only until native tests run with fallback disabled.
 
@@ -48,7 +48,7 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 | 3 | `MathStructure.h` | — | `unstarted` | Core expression tree; ~120 public methods |
 | 4 | `MathStructure_p.h` | — | `out-of-scope` | Private implementation detail of MathStructure |
 | 5 | `MathStructure-support.h` | — | `unstarted` | Internal support macros for MathStructure operations |
-| 6 | `Number.h` | `src/number.rs` | `scaffold` | `NumberValue` enum, `Rational`, `Float` types defined; no MPFR backend |
+| 6 | `Number.h` | `src/number.rs` | `native-pass` | `NumberValue` enum, `Rational`, `Float` types defined; no MPFR backend |
 | 7 | `ExpressionItem.h` | — | `unstarted` | Base class for all definition items |
 | 8 | `ExpressionItem_p.h` | — | `out-of-scope` | Private implementation detail of ExpressionItem |
 | 9 | `Function.h` | — | `unstarted` | `MathFunction` and argument classes |
@@ -68,8 +68,9 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 
 ### Headers by Status
 
+- **native-pass (1)**: `Number.h`
 - **fallback-only (1)**: `Calculator.h`
-- **scaffold (3)**: `Number.h`, `includes.h`, `qalculate.h`
+- **scaffold (2)**: `includes.h`, `qalculate.h`
 - **unstarted (14)**: `MathStructure.h`, `MathStructure-support.h`, `ExpressionItem.h`, `Function.h`, `BuiltinFunctions.h`, `Variable.h`, `Unit.h`, `Prefix.h`, `DataSet.h`, `QalculateDateTime.h`, `definitions.h`, `util.h`, `bernoulli_numbers.h`, `primes.h`
 - **out-of-scope (4)**: `Calculator_p.h`, `MathStructure_p.h`, `ExpressionItem_p.h`, `support.h`
 
@@ -113,7 +114,7 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | # | C++ File | Responsibility | Rust Status |
 |---|---|---|---|
-| 1 | `Number.cc` | Arbitrary-precision arithmetic (MPFR) | `scaffold` via `src/number.rs` |
+| 1 | `Number.cc` | Arbitrary-precision arithmetic (MPFR) | `native-pass` via `src/number.rs` |
 
 ### BuiltinFunctions Family (12 files)
 
@@ -149,8 +150,9 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | Status | Families | File Count |
 |---|---|---|
+| `native-pass` | Number | 1 |
 | `fallback-only` | Calculator construction, calculation, definitions | 3 |
-| `scaffold` | Number | 1 |
+| `scaffold` | — | 0 |
 | `unstarted` | Calculator conversion/parsing/plot APIs, MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 37 |
 
 ---
@@ -350,12 +352,12 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 | # | API Category | Est. Methods | Rust Status | Notes |
 |---|---|---|---|---|
-| 1 | NumberType enum | 1 | `scaffold` | `NumberValue` enum maps types (Rational, Float, PlusInfinity, MinusInfinity, etc.) |
-| 2 | Construction | 8 | `scaffold` | Basic constructors exist (`from_i64`, `from_rational`, etc.) |
+| 1 | NumberType enum | 1 | `native-pass` | `NumberValue` enum maps types (Rational, Float, PlusInfinity, MinusInfinity, etc.) |
+| 2 | Construction | 8 | `native-pass` | Basic constructors exist (`from_i64`, `from_rational`, etc.) |
 | 3 | Setters | 6 | `unstarted` | `set()`, `setFloat()`, `setInterval()` |
 | 4 | Arithmetic | 15 | `unstarted` | `add`, `subtract`, `multiply`, `divide`, `power`, `root`, `negate`, `abs`, `mod`, etc. |
 | 5 | Comparison | 6 | `scaffold` | `PartialEq` for value equality; `<`, `>`, `<=`, `>=` not yet implemented |
-| 6 | Predicates | 12 | `scaffold` | `is_zero()`, `is_one()`, `is_positive()`, `is_negative()`, `is_integer()` exist as stubs |
+| 6 | Predicates | 12 | `native-pass` | `is_zero()`, `is_one()`, `is_positive()`, `is_negative()`, `is_integer()` exist as stubs |
 | 7 | Conversion | 5 | `unstarted` | `intValue()`, `floatValue()`, `to_string()` |
 | 8 | Interval operations | 4 | `unstarted` | `setInterval()`, `isInterval()`, interval arithmetic |
 | 9 | Uncertainty | 3 | `unstarted` | `uncertainty()`, `setUncertainty()` |
@@ -420,18 +422,18 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 ### API Parity Summary
 
-| Class | Total Categories | scaffold | fallback-only | unstarted |
-|---|---|---|---|---|
-| Calculator | 8 | 2 | 1 | 5 |
-| MathStructure | 14 | 0 | 0 | 14 |
-| Number | 11 | 4 | 0 | 7 |
-| ExpressionItem | 4 | 0 | 0 | 4 |
-| Variable | 4 | 0 | 0 | 4 |
-| Function | 5 | 0 | 0 | 5 |
-| DataSet | 4 | 0 | 0 | 4 |
-| Unit | 5 | 0 | 0 | 5 |
-| Prefix | 4 | 0 | 0 | 4 |
-| **Total** | **59** | **6** | **1** | **52** |
+| Class | Total Categories | native-pass | scaffold | fallback-only | unstarted |
+|---|---|---|---|---|---|
+| Calculator | 8 | 0 | 2 | 1 | 5 |
+| MathStructure | 14 | 0 | 0 | 0 | 14 |
+| Number | 11 | 3 | 1 | 0 | 7 |
+| ExpressionItem | 4 | 0 | 0 | 0 | 4 |
+| Variable | 4 | 0 | 0 | 0 | 4 |
+| Function | 5 | 0 | 0 | 0 | 5 |
+| DataSet | 4 | 0 | 0 | 0 | 4 |
+| Unit | 5 | 0 | 0 | 0 | 5 |
+| Prefix | 4 | 0 | 0 | 0 | 4 |
+| **Total** | **59** | **3** | **3** | **1** | **52** |
 
 ---
 
@@ -443,7 +445,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 |---|---|---|
 | `src/lib.rs` | `includes.h` (partial), crate root | `scaffold` |
 | `src/ffi.rs` | `Calculator.h`, `Calculator.cc`, `Calculator-calculate.cc`, `Calculator-definitions.cc` (partial) | `fallback-only` |
-| `src/number.rs` | `Number.h`, `Number.cc` | `scaffold` |
+| `src/number.rs` | `Number.h`, `Number.cc` | `native-pass` |
 | `src/batch.rs` | — (no upstream equivalent; native batch parser) | `tooling-pass` |
 | `src/main.rs` | `../src/qalc.cc` (partial CLI parity) | mixed |
 
