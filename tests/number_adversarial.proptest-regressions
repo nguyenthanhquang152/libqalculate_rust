@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1975b65fb9610f3256fbfc8f527708acef7aca183626788ca42850fd5c0f2703 # shrinks to a = Number { value: Rational(Rational { num: 0, den: 1 }), imaginary: None, precision: 0, approximate: false, is_imaginary: false }, b = Number { value: Rational(Rational { num: -1, den: 1 }), imaginary: None, precision: 0, approximate: false, is_imaginary: false }, c = Number { value: Rational(Rational { num: -80244199553476510679928916729354022556, den: 89953810748017025887454761371928918859 }), imaginary: None, precision: 0, approximate: false, is_imaginary: false }, d = Number { value: Rational(Rational { num: 0, den: 1 }), imaginary: None, precision: 0, approximate: false, is_imaginary: false }

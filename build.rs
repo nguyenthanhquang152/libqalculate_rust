@@ -36,7 +36,7 @@ fn main() {
         .define("PACKAGE_LOCALE_DIR", "\"/usr/share/locale\"");
 
     // Add libxml2 include paths
-    for path in xml2.include_paths {
+    for path in &xml2.include_paths {
         build.include(path);
     }
 
@@ -91,6 +91,25 @@ fn main() {
 
     // Compile the static library
     build.compile("qalculate");
+
+    // Compile the C++ FFI bridge separately
+    let mut bridge_build = cxx_build::bridge("src/ffi.rs");
+    bridge_build
+        .file("src/ffi_bridge.cc")
+        .std("c++17")
+        .warnings(false)
+        .include("../libqalculate")
+        .include("../libqalculate/libqalculate");
+
+    for path in &xml2.include_paths {
+        bridge_build.include(path);
+    }
+
+    bridge_build.compile("qalculate_bridge");
+
+    println!("cargo:rerun-if-changed=src/ffi.rs");
+    println!("cargo:rerun-if-changed=src/ffi_bridge.h");
+    println!("cargo:rerun-if-changed=src/ffi_bridge.cc");
 
     // Link necessary system libraries
     println!("cargo:rustc-link-lib=gmp");

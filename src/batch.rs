@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::fmt::{self, Write as _};
 use std::fs;
 use std::path::Path;
