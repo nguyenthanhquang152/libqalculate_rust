@@ -370,27 +370,34 @@ impl NumberValue {
                         }
                     }
                     (NumberValue::Interval { lower, upper }, other_val) => {
-                        let other_f = to_float_val(other_val, lower.prec());
-                        let prec = std::cmp::max(lower.prec(), other_f.prec());
+                        let other_f_l =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Down);
+                        let other_f_u =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(lower.prec(), other_f_l.prec());
                         let mut lower_res = rug::Float::new(prec);
                         lower_res
-                            .assign_round(&lower.value + &other_f.value, rug::float::Round::Down);
+                            .assign_round(&lower.value + &other_f_l.value, rug::float::Round::Down);
                         let mut upper_res = rug::Float::new(prec);
                         upper_res
-                            .assign_round(&upper.value + &other_f.value, rug::float::Round::Up);
+                            .assign_round(&upper.value + &other_f_u.value, rug::float::Round::Up);
                         NumberValue::Interval {
                             lower: Float { value: lower_res },
                             upper: Float { value: upper_res },
                         }
                     }
                     (self_val, NumberValue::Interval { lower, upper }) => {
-                        let self_f = to_float_val(self_val, lower.prec());
-                        let prec = std::cmp::max(self_f.prec(), lower.prec());
+                        let self_f_l =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Down);
+                        let self_f_u =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(self_f_l.prec(), lower.prec());
                         let mut lower_res = rug::Float::new(prec);
                         lower_res
-                            .assign_round(&self_f.value + &lower.value, rug::float::Round::Down);
+                            .assign_round(&self_f_l.value + &lower.value, rug::float::Round::Down);
                         let mut upper_res = rug::Float::new(prec);
-                        upper_res.assign_round(&self_f.value + &upper.value, rug::float::Round::Up);
+                        upper_res
+                            .assign_round(&self_f_u.value + &upper.value, rug::float::Round::Up);
                         NumberValue::Interval {
                             lower: Float { value: lower_res },
                             upper: Float { value: upper_res },
@@ -425,12 +432,14 @@ fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
     })
 }
 
-fn to_float_val(val: &NumberValue, default_prec: u32) -> Float {
+fn to_float_val_rnd(val: &NumberValue, default_prec: u32, rnd: rug::float::Round) -> Float {
     match val {
         NumberValue::Float(f) => f.clone(),
-        NumberValue::Rational(r) => Float {
-            value: rug::Float::with_val(default_prec, &r.value),
-        },
+        NumberValue::Rational(r) => {
+            let mut f = rug::Float::new(default_prec);
+            f.assign_round(&r.value, rnd);
+            Float { value: f }
+        }
         _ => Float::from_f64(f64::NAN, default_prec),
     }
 }

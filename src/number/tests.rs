@@ -378,7 +378,7 @@ fn test_rational_arithmetic_no_overflow() {
     let sum = max.add(&one);
     assert!(!sum.is_nan());
     if let NumberValue::Rational(r) = sum {
-        let expected = rug::Integer::from(rug::Integer::from(i128::MAX) + 1);
+        let expected = rug::Integer::from(i128::MAX) + 1_i32;
         assert_eq!(r.value.numer().to_string(), expected.to_string());
     } else {
         panic!("Expected rational");
@@ -388,7 +388,7 @@ fn test_rational_arithmetic_no_overflow() {
     let negated = min.negate();
     assert!(!negated.is_nan());
     if let NumberValue::Rational(r) = negated {
-        let expected = rug::Integer::from(-rug::Integer::from(i128::MIN));
+        let expected = -rug::Integer::from(i128::MIN);
         assert_eq!(r.value.numer().to_string(), expected.to_string());
     } else {
         panic!("Expected rational");
@@ -399,7 +399,7 @@ fn test_rational_arithmetic_no_overflow() {
 fn test_canonicalize_no_overflow_panics() {
     // i128::MIN / -1 = 2^127 which overflows i128, but fits in rug::Rational
     let r = Rational::new(i128::MIN, -1);
-    let expected = rug::Integer::from(-rug::Integer::from(i128::MIN));
+    let expected = -rug::Integer::from(i128::MIN);
     assert_eq!(r.value.numer().to_string(), expected.to_string());
     assert_eq!(r.value.denom().to_string(), "1");
 }
@@ -753,4 +753,175 @@ fn test_critic_adversarial_precision_rounding_equality() {
         value: rug::Float::with_val(128, rug::Float::parse("1e10000").unwrap()),
     };
     assert_eq!(large_float.value(), f64::INFINITY);
+}
+
+#[test]
+fn test_critic_float_eq_transitivity_adversarial() {
+    use rug::ops::Pow;
+
+    // 1. Float PartialEq Transitivity
+    let precs = [2, 12, 24, 53, 64, 128, 256, 512];
+    for &p1 in &precs {
+        for &p2 in &precs {
+            for &p3 in &precs {
+                let values = [1.0, 0.5, 0.25, 0.0, -0.0, f64::INFINITY, f64::NEG_INFINITY];
+                for &v in &values {
+                    let a = Float::from_f64(v, p1);
+                    let b = Float::from_f64(v, p2);
+                    let c = Float::from_f64(v, p3);
+
+                    assert_eq!(a, b, "a == b for value {} with prec {} and {}", v, p1, p2);
+                    assert_eq!(b, c, "b == c for value {} with prec {} and {}", v, p2, p3);
+                    assert_eq!(a, c, "a == c for value {} with prec {} and {}", v, p1, p3);
+                }
+
+                let a_nan = Float::from_f64(f64::NAN, p1);
+                let b_nan = Float::from_f64(f64::NAN, p2);
+                let c_nan = Float::from_f64(f64::NAN, p3);
+                assert_eq!(a_nan, b_nan);
+                assert_eq!(b_nan, c_nan);
+                assert_eq!(a_nan, c_nan);
+            }
+        }
+    }
+
+    // Pairwise inequalities transitivity: A != B && B == C => A != C
+    let a = Float::from_f64(1.0, 53);
+
+    let mut b_val = rug::Float::with_val(128, 1.0);
+    let diff = rug::Float::with_val(128, rug::Float::with_val(128, 2.0).pow(-100));
+    b_val += diff;
+    let b = Float {
+        value: b_val.clone(),
+    };
+
+    let c = Float {
+        value: rug::Float::with_val(256, &b_val),
+    };
+
+    assert_ne!(a, b);
+    assert_eq!(b, c);
+    assert_ne!(a, c);
+
+    // Subnormals transitivity
+    let sub1 = Float::from_f64(5e-324, 53);
+    let sub2 = Float::from_f64(5e-324, 128);
+    let sub3 = Float::from_f64(5e-324, 256);
+    assert_eq!(sub1, sub2);
+    assert_eq!(sub2, sub3);
+    assert_eq!(sub1, sub3);
+}
+
+#[test]
+fn test_critic_rational_interval_addition_precision_loss() {
+    use rug::ops::AssignRound;
+
+    let precs = [2, 12, 24, 53, 64, 128, 256, 512];
+    for &prec in &precs {
+        let lower = Float {
+            value: rug::Float::with_val(prec, 0.0),
+        };
+        let upper = Float {
+            value: rug::Float::with_val(prec, 0.0),
+        };
+        let interval = NumberValue::Interval { lower, upper };
+        let r_third = NumberValue::Rational(Rational::new(1, 3));
+
+        let res = interval.add(&r_third);
+        if let NumberValue::Interval {
+            lower: res_l,
+            upper: res_u,
+        } = res
+        {
+            // Verify that precision is preserved
+            assert_eq!(res_l.prec(), prec);
+            assert_eq!(res_u.prec(), prec);
+
+            // Compute expected bounds under correct outward rounding (Down for lower, Up for upper)
+            let r = rug::Rational::from((1, 3));
+            let mut expected_lower = rug::Float::new(prec);
+            expected_lower.assign_round(&r, rug::float::Round::Down);
+            let mut expected_upper = rug::Float::new(prec);
+            expected_upper.assign_round(&r, rug::float::Round::Up);
+
+            // Verify that the actual bounds computed by the code match the expected outward-rounded bounds
+            assert_eq!(res_l.value, expected_lower);
+            assert_eq!(res_u.value, expected_upper);
+        } else {
+            panic!("Expected Interval");
+        }
+    }
+}
+
+#[test]
+fn test_critic_no_regressions_float_interval_rational() {
+    // 1. Outward rounding of intervals: verify round Down for lower and Up for upper under addition.
+    let lower1 = Float {
+        value: rug::Float::with_val(12, 0.1),
+    };
+    let upper1 = Float {
+        value: rug::Float::with_val(12, 0.1),
+    };
+    let iv1 = NumberValue::Interval {
+        lower: lower1,
+        upper: upper1,
+    };
+
+    let lower2 = Float {
+        value: rug::Float::with_val(12, 0.2),
+    };
+    let upper2 = Float {
+        value: rug::Float::with_val(12, 0.2),
+    };
+    let iv2 = NumberValue::Interval {
+        lower: lower2,
+        upper: upper2,
+    };
+
+    let sum = iv1.add(&iv2);
+    if let NumberValue::Interval {
+        lower: sum_l,
+        upper: sum_u,
+    } = sum
+    {
+        let exact_sum = rug::Float::with_val(1024, 0.3);
+        let sum_l_high = rug::Float::with_val(1024, &sum_l.value);
+        let sum_u_high = rug::Float::with_val(1024, &sum_u.value);
+
+        assert!(sum_l_high <= exact_sum);
+        assert!(sum_u_high >= exact_sum);
+        assert!(sum_l_high < sum_u_high);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // 2. Rational panic behaviors (overflows, zero denominator)
+    let result = std::panic::catch_unwind(|| {
+        let _ = Rational::new(5, 0);
+    });
+    assert!(result.is_err());
+
+    let r_overflow_num = Rational::new(i128::MIN, -1);
+    let result_num = std::panic::catch_unwind(move || {
+        let _ = r_overflow_num.num();
+    });
+    assert!(result_num.is_err());
+
+    let r_overflow_den = Rational::new(1, i128::MIN);
+    let result_den = std::panic::catch_unwind(move || {
+        let _ = r_overflow_den.den();
+    });
+    assert!(result_den.is_err());
+
+    let r_max = NumberValue::Rational(Rational::new(i128::MAX, 1));
+    let sum_large = r_max.add(&r_max);
+    assert!(!sum_large.is_nan());
+    if let NumberValue::Rational(sum_r) = sum_large {
+        let result_sum_access = std::panic::catch_unwind(move || {
+            let _ = sum_r.num();
+        });
+        assert!(result_sum_access.is_err());
+    } else {
+        panic!("Expected Rational");
+    }
 }
