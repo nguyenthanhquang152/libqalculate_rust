@@ -24,6 +24,30 @@ const BATCH_FILES: &[&str] = &[
     "variables.batch",
 ];
 
+const REQUIRED_CASE_FIELDS: &[&str] = &[
+    "case_id",
+    "source_file",
+    "source_line",
+    "feature_tags",
+    "input_kind",
+    "required_assets",
+    "required_settings",
+    "expected_status",
+    "normalization",
+    "deviation_id",
+    "parity_status",
+    "owner",
+    "last_checked_upstream_version",
+];
+
+const ALLOWED_PARITY_STATUSES: &[&str] = &[
+    "inventory-only",
+    "fallback-only",
+    "native-pass",
+    "approved-deviation",
+    "out-of-scope",
+];
+
 #[test]
 fn batch_manifest_case_index_matches_upstream_fixtures() {
     let manifest = fs::read_to_string("docs/batch_manifest.md")
@@ -66,6 +90,76 @@ fn batch_manifest_case_index_matches_upstream_fixtures() {
         "unexpected upstream batch case count"
     );
     assert!(manifest.contains("Run `just manifest-check`"));
+}
+
+#[test]
+fn batch_manifest_declares_required_case_schema() {
+    let manifest = fs::read_to_string("docs/batch_manifest.md")
+        .expect("docs/batch_manifest.md should be readable");
+
+    for field in REQUIRED_CASE_FIELDS {
+        assert!(
+            manifest.contains(&format!("`{field}`")),
+            "batch manifest should document required field `{field}`"
+        );
+    }
+    assert!(manifest.contains("Allowed `parity_status` values"));
+    assert!(manifest.contains("5.11.0"));
+}
+
+#[test]
+fn batch_manifest_case_rows_use_explicit_parity_statuses() {
+    let manifest = fs::read_to_string("docs/batch_manifest.md")
+        .expect("docs/batch_manifest.md should be readable");
+    let mut invalid_rows = Vec::new();
+    let mut case_rows = 0usize;
+
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('|') || !trimmed.contains(".batch:") {
+            continue;
+        }
+
+        case_rows += 1;
+        let cells = trimmed
+            .split('|')
+            .map(str::trim)
+            .filter(|cell| !cell.is_empty())
+            .collect::<Vec<_>>();
+        let status = cells.last().copied().unwrap_or_default();
+        if !ALLOWED_PARITY_STATUSES.contains(&status) {
+            invalid_rows.push(trimmed.to_string());
+        }
+    }
+
+    assert_eq!(case_rows, 656, "unexpected manifest case row count");
+    assert!(
+        invalid_rows.is_empty(),
+        "case rows with invalid parity status: {invalid_rows:?}"
+    );
+    assert!(
+        !manifest.contains("untested"),
+        "batch manifest should use explicit parity statuses, not `untested`"
+    );
+}
+
+#[test]
+fn batch_manifest_retains_session_commands_and_assets() {
+    let manifest = fs::read_to_string("docs/batch_manifest.md")
+        .expect("docs/batch_manifest.md should be readable");
+
+    for required in [
+        "/set unicode 1",
+        "set input base 16",
+        "/assume positive",
+        "vectordata.csv",
+        "vectordata2.csv",
+    ] {
+        assert!(
+            manifest.contains(required),
+            "batch manifest should retain required setting or asset `{required}`"
+        );
+    }
 }
 
 fn extract_case_index(manifest: &str) -> &str {

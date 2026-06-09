@@ -1,5 +1,8 @@
 # Oracle Evidence: [TASK_ID]
 
+Record one exact Rust-vs-upstream comparison. Inventory-only checks and C++ fallback
+agreement are useful scaffold evidence, but do not prove native parity.
+
 ## Environment
 - **C++ qalc version**: 5.11.0
 - **C++ qalc path**: `../libqalculate/src/qalc`
@@ -10,7 +13,11 @@
 ## Batch Files Tested
 | Batch File | Total Cases | Passed | Failed | Skipped |
 |---|---|---|---|---|
-| [file.batch] | [N] | [N] | [N] | [N] |
+| `parser.batch` | [N] | [N] | [N] | [N] |
+| `operators.batch` | [N] | [N] | [N] | [N] |
+| `numberbase.batch` | [N] | [N] | [N] | [N] |
+| `units.batch` | [N] | [N] | [N] | [N] |
+| `strings.batch` | [N] | [N] | [N] | [N] |
 
 ## Mismatches
 | Case ID | Expression | Field | C++ Output | Rust Output | Deviation |
@@ -19,8 +26,14 @@
 
 ## Commands Run
 ```bash
-# [exact commands run with timestamps]
+QALCULATE_ORACLE=../libqalculate/src/qalc just test-oracle
+ORACLE_BATCH=parser.batch cargo test --test oracle -- --ignored differential_oracle_single --nocapture
 ```
+
+## Fallback Status
+- **C++ fallback enabled**: yes / no
+- **Fallback-disabled native run**: pass / fail / not applicable
+- **Native parity claimed**: yes / no
 
 ## Conclusion
 [Summary: X/Y cases pass, Z known deviations, overall parity status]

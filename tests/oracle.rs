@@ -92,6 +92,12 @@ pub struct DiffMismatch {
     pub rust_value: String,
     /// Optional deviation identifier for known/accepted divergences.
     pub deviation_id: Option<String>,
+    /// Output normalization policy used for comparison.
+    pub normalization_policy: String,
+    /// Whether the Rust subject used native code, C++ fallback, or rejected the case.
+    pub fallback_state: String,
+    /// Accumulated batch session commands active for this case.
+    pub session_commands: Vec<String>,
 }
 
 impl fmt::Display for DiffMismatch {
@@ -106,6 +112,11 @@ impl fmt::Display for DiffMismatch {
             self.cpp_value,
             self.rust_value,
             self.deviation_id.as_deref().unwrap_or("none"),
+        )?;
+        write!(
+            f,
+            " normalization={} fallback={} session={:?}",
+            self.normalization_policy, self.fallback_state, self.session_commands
         )
     }
 }
@@ -298,6 +309,7 @@ fn run_oracle_expression(
 ) -> CapturedOutput {
     let mut cmd = Command::new(qalc_path);
     cmd.env("LC_ALL", "C.UTF-8")
+        .env("TZ", "UTC")
         .env("QALCULATE_DEFINITIONS_DIR", defs);
 
     // Base arguments: reset defaults and set consistent formatting
@@ -373,6 +385,7 @@ fn run_rust_expression(
         .arg("--")
         .arg(expression)
         .env("LC_ALL", "C.UTF-8")
+        .env("TZ", "UTC")
         .env("QALCULATE_DEFINITIONS_DIR", defs)
         .output();
 
@@ -423,6 +436,15 @@ fn differential_oracle_batch(
 
     for (i, case) in cases.iter().enumerate() {
         let settings = &settings_per_case[i];
+        let session_commands = settings
+            .iter()
+            .map(|setting| setting.raw.clone())
+            .collect::<Vec<_>>();
+        let fallback_state = if settings.is_empty() {
+            "cpp-fallback-enabled"
+        } else {
+            "unsupported-session-settings"
+        };
 
         // Run C++ oracle
         let cpp_out = run_oracle_expression(qalc_path, defs, &case.expression, settings);
@@ -440,6 +462,9 @@ fn differential_oracle_batch(
                 cpp_value: cpp_out.stdout.clone(),
                 rust_value: rust_out.stdout.clone(),
                 deviation_id: None,
+                normalization_policy: "exact-utf8".to_string(),
+                fallback_state: fallback_state.to_string(),
+                session_commands: session_commands.clone(),
             });
         }
 
@@ -453,6 +478,9 @@ fn differential_oracle_batch(
                 cpp_value: cpp_out.stderr.clone(),
                 rust_value: rust_out.stderr.clone(),
                 deviation_id: None,
+                normalization_policy: "exact-utf8".to_string(),
+                fallback_state: fallback_state.to_string(),
+                session_commands: session_commands.clone(),
             });
         }
 
@@ -466,6 +494,9 @@ fn differential_oracle_batch(
                 cpp_value: cpp_out.exit_code.to_string(),
                 rust_value: rust_out.exit_code.to_string(),
                 deviation_id: None,
+                normalization_policy: "exact-utf8".to_string(),
+                fallback_state: fallback_state.to_string(),
+                session_commands: session_commands.clone(),
             });
         }
     }
@@ -683,6 +714,9 @@ mod infrastructure_tests {
             cpp_value: "2".to_string(),
             rust_value: "3".to_string(),
             deviation_id: None,
+            normalization_policy: "exact-utf8".to_string(),
+            fallback_state: "cpp-fallback-enabled".to_string(),
+            session_commands: Vec::new(),
         };
         let display = m.to_string();
         assert!(display.contains("MISMATCH"));
@@ -692,6 +726,9 @@ mod infrastructure_tests {
         assert!(display.contains("cpp=\"2\""));
         assert!(display.contains("rust=\"3\""));
         assert!(display.contains("deviation=\"none\""));
+        assert!(display.contains("normalization=exact-utf8"));
+        assert!(display.contains("fallback=cpp-fallback-enabled"));
+        assert!(display.contains("session=[]"));
     }
 
     #[test]
@@ -704,9 +741,14 @@ mod infrastructure_tests {
             cpp_value: "3.14159".to_string(),
             rust_value: "3.14160".to_string(),
             deviation_id: Some("PRECISION-001".to_string()),
+            normalization_policy: "exact-utf8".to_string(),
+            fallback_state: "native".to_string(),
+            session_commands: vec!["/set precision 10".to_string()],
         };
         let display = m.to_string();
         assert!(display.contains("deviation=\"PRECISION-001\""));
+        assert!(display.contains("fallback=native"));
+        assert!(display.contains("/set precision 10"));
     }
 
     #[test]
