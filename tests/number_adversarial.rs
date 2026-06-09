@@ -105,7 +105,7 @@ fn test_float_and_rational_equality() {
     // Compare Floats with different precisions directly
     let f1 = Float::from_f64(1.2345, 12);
     let f2 = Float::from_f64(1.2345, 256);
-    assert_eq!(f1, f2);
+    assert_ne!(f1, f2);
 
     // Point interval equality
     let interval_pt = Number::new_interval(Float::from_f64(1.5, 24), Float::from_f64(1.5, 128));
@@ -139,18 +139,20 @@ fn test_i128_min_over_one() {
 }
 
 #[test]
-#[should_panic(expected = "Rational numerator overflow")]
+#[should_panic(expected = "Numerator exceeds i128")]
 fn test_i128_min_div_neg1_panics() {
     // i128::MIN / -1 = 2^127, which overflows i128.
     // This is now caught and panics instead of silently wrapping.
-    let _ = Rational::new(i128::MIN, -1);
+    let r = Rational::new(i128::MIN, -1);
+    let _ = r.num();
 }
 
 #[test]
-#[should_panic(expected = "Rational denominator overflow")]
+#[should_panic(expected = "Denominator exceeds i128")]
 fn test_den_i128_min_panics() {
     // 1 / i128::MIN: denominator 2^127 overflows i128.
-    let _ = Rational::new(1, i128::MIN);
+    let r = Rational::new(1, i128::MIN);
+    let _ = r.den();
 }
 
 #[test]

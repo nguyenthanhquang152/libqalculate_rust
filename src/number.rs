@@ -17,136 +17,68 @@
 //! These divergences will be resolved when the GMP/MPFR backend replaces this
 //! placeholder implementation.
 
-/// A private helper for Euclidean GCD algorithm.
-fn gcd(a: i128, b: i128) -> u128 {
-    let mut ua = a.unsigned_abs();
-    let mut ub = b.unsigned_abs();
-    while ub != 0 {
-        let temp = ub;
-        ub = ua % ub;
-        ua = temp;
-    }
-    ua
+use rug::ops::AssignRound;
+
+/// A rational number represented using arbitrary precision integers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rational {
+    /// The inner rug::Rational value.
+    pub(crate) value: rug::Rational,
 }
 
-/// A placeholder for GMP rational representation.
-///
-/// # Invariants (post-canonicalization)
-/// - `den > 0`
-/// - `gcd(num.unsigned_abs(), den as u128) == 1`
-///
-/// # Known limitations
-/// This placeholder uses `i128` arithmetic. Values where the reduced numerator
-/// or denominator exceeds `i128::MAX` (e.g., `i128::MIN / -1`) will panic
-/// during canonicalization. These cases will be handled correctly once the
-/// GMP/rug backend replaces this placeholder.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Rational {
-    /// Numerator of the rational number.
-    num: i128,
-    /// Denominator of the rational number.
-    den: i128,
+impl std::hash::Hash for Rational {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.numer().to_string().hash(state);
+        self.value.denom().to_string().hash(state);
+    }
 }
 
 impl Rational {
     /// Create a new rational number, reducing it to lowest terms.
     pub fn new(num: i128, den: i128) -> Self {
-        let mut r = Self { num, den };
-        r.canonicalize();
-        r
+        assert!(den != 0, "Rational denominator must not be zero");
+        let value = rug::Rational::from((rug::Integer::from(num), rug::Integer::from(den)));
+        Self { value }
     }
 
     /// Create a rational from an i32.
     pub fn from_i32(val: i32) -> Self {
-        Self::new(val as i128, 1)
+        Self {
+            value: rug::Rational::from(val),
+        }
     }
 
     /// Returns true if the rational is zero.
     pub fn is_zero(&self) -> bool {
-        self.num == 0
+        self.value.numer() == &0
     }
 
     /// Returns true if the rational is exactly one.
     pub fn is_one(&self) -> bool {
-        self.num == 1 && self.den == 1
+        self.value.numer() == &1 && self.value.denom() == &1
     }
 
-    /// Normalize the sign and reduce the fraction.
-    ///
-    /// # Panics
-    /// Panics if `den == 0` (undefined value) or if the reduced numerator or
-    /// denominator overflows `i128` (e.g., `i128::MIN / -1`).
-    fn canonicalize(&mut self) {
-        assert!(self.den != 0, "Rational denominator must not be zero");
-        if self.num == 0 {
-            self.den = 1;
-            return;
-        }
-
-        let u_num = self.num.unsigned_abs();
-        let u_den = self.den.unsigned_abs();
-        let g = gcd(self.num, self.den);
-
-        let reduced_u_num = u_num / g;
-        let reduced_u_den = u_den / g;
-        // Determine the final sign: negative if exactly one of num/den is negative
-        let num_neg = self.num < 0;
-        let den_neg = self.den < 0;
-        let result_neg = num_neg ^ den_neg;
-
-        // Guard against overflow: if the reduced value exceeds the representable
-        // range for i128 with the given sign, we cannot represent it.
-        // i128 range: -2^127 to 2^127-1, so negative values allow one more magnitude.
-        let num_limit = if result_neg {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        assert!(
-            reduced_u_num <= num_limit,
-            "Rational numerator overflow: {} cannot be represented as i128",
-            reduced_u_num
-        );
-        // Denominator is always positive after canonicalization
-        assert!(
-            reduced_u_den <= i128::MAX as u128,
-            "Rational denominator overflow: {} cannot be represented as i128",
-            reduced_u_den
-        );
-
-        let mut reduced_num = if result_neg && reduced_u_num == i128::MIN.unsigned_abs() {
-            i128::MIN
-        } else {
-            reduced_u_num as i128
-        };
-        let reduced_den = reduced_u_den as i128;
-
-        if result_neg && reduced_num != i128::MIN {
-            reduced_num = -reduced_num;
-        }
-
-        self.num = reduced_num;
-        self.den = reduced_den;
-    }
-
-    /// Returns the numerator.
+    /// Returns the numerator as an i128. Panics if it does not fit.
     pub fn num(&self) -> i128 {
-        self.num
+        self.value
+            .numer()
+            .to_i128()
+            .expect("Numerator exceeds i128")
     }
 
-    /// Returns the denominator.
+    /// Returns the denominator as an i128. Panics if it does not fit.
     pub fn den(&self) -> i128 {
-        self.den
+        self.value
+            .denom()
+            .to_i128()
+            .expect("Denominator exceeds i128")
     }
 }
 
-/// A placeholder for MPFR float representation.
+/// A representation of an arbitrary precision float using MPFR backend.
 #[derive(Debug, Clone)]
 pub struct Float {
-    /// The numeric value as an f64.
-    value: f64,
-    /// The precision in bits.
-    prec: u32,
+    value: rug::Float,
 }
 
 impl PartialEq for Float {
@@ -162,14 +94,14 @@ impl PartialEq for Float {
 impl Float {
     /// Create a float from f64 and precision.
     pub fn from_f64(val: f64, prec: u32) -> Self {
-        Self { value: val, prec }
+        let p = std::cmp::max(prec, 2);
+        Self {
+            value: rug::Float::with_val(p, val),
+        }
     }
     /// Returns true if the float is zero.
-    ///
-    /// Note: treats `-0.0` as zero (matching IEEE 754 semantics).
-    // TODO: replace with MPFR `mpfr_zero_p` when backend is upgraded.
     pub fn is_zero(&self) -> bool {
-        self.value == 0.0
+        self.value.is_zero()
     }
     /// Returns true if the float is exactly one.
     pub fn is_one(&self) -> bool {
@@ -186,12 +118,12 @@ impl Float {
 
     /// Returns the f64 value.
     pub fn value(&self) -> f64 {
-        self.value
+        self.value.to_f64()
     }
 
     /// Returns the precision in bits.
     pub fn prec(&self) -> u32 {
-        self.prec
+        self.value.prec()
     }
 }
 
@@ -234,8 +166,8 @@ impl NumberValue {
     pub fn precision(&self) -> i32 {
         match self {
             NumberValue::Rational(_) => 0,
-            NumberValue::Float(f) => f.prec as i32,
-            NumberValue::Interval { lower, .. } => lower.prec as i32,
+            NumberValue::Float(f) => f.prec() as i32,
+            NumberValue::Interval { lower, .. } => lower.prec() as i32,
             NumberValue::Uncertainty { value, uncertainty } => {
                 std::cmp::max(value.precision(), uncertainty.precision())
             }
@@ -330,16 +262,20 @@ impl NumberValue {
     /// Negate the value mathematically.
     pub fn negate(&self) -> Self {
         match self {
-            NumberValue::Rational(r) => r
-                .num
-                .checked_neg()
-                .map(|num| NumberValue::Rational(Rational::new(num, r.den)))
-                .unwrap_or(NumberValue::NaN),
-            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(-f.value, f.prec)),
-            NumberValue::Interval { lower, upper } => NumberValue::Interval {
-                lower: Float::from_f64(-upper.value, upper.prec),
-                upper: Float::from_f64(-lower.value, lower.prec),
-            },
+            NumberValue::Rational(r) => NumberValue::Rational(Rational {
+                value: rug::Rational::from(-&r.value),
+            }),
+            NumberValue::Float(f) => NumberValue::Float(Float {
+                value: rug::Float::with_val(f.prec(), -&f.value),
+            }),
+            NumberValue::Interval { lower, upper } => {
+                let new_lower = rug::Float::with_val(upper.prec(), -&upper.value);
+                let new_upper = rug::Float::with_val(lower.prec(), -&lower.value);
+                NumberValue::Interval {
+                    lower: Float { value: new_lower },
+                    upper: Float { value: new_upper },
+                }
+            }
             NumberValue::Uncertainty { value, uncertainty } => NumberValue::Uncertainty {
                 value: Box::new(value.negate()),
                 uncertainty: Box::new((**uncertainty).clone()),
@@ -396,16 +332,22 @@ impl NumberValue {
                     (NumberValue::Rational(r1), NumberValue::Rational(r2)) => add_rationals(r1, r2)
                         .map(NumberValue::Rational)
                         .unwrap_or(NumberValue::NaN),
-                    (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
-                        Float::from_f64(f1.value + f2.value, std::cmp::max(f1.prec, f2.prec)),
-                    ),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                        let prec = std::cmp::max(f1.prec(), f2.prec());
+                        let value = rug::Float::with_val(prec, &f1.value + &f2.value);
+                        NumberValue::Float(Float { value })
+                    }
                     (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                        let val = (r.num as f64 / r.den as f64) + f.value;
-                        NumberValue::Float(Float::from_f64(val, f.prec))
+                        let prec = f.prec();
+                        let r_f = rug::Float::with_val(prec, &r.value);
+                        let value = rug::Float::with_val(prec, r_f + &f.value);
+                        NumberValue::Float(Float { value })
                     }
                     (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                        let val = f.value + (r.num as f64 / r.den as f64);
-                        NumberValue::Float(Float::from_f64(val, f.prec))
+                        let prec = f.prec();
+                        let r_f = rug::Float::with_val(prec, &r.value);
+                        let value = rug::Float::with_val(prec, &f.value + r_f);
+                        NumberValue::Float(Float { value })
                     }
                     (
                         NumberValue::Interval {
@@ -416,40 +358,42 @@ impl NumberValue {
                             lower: l2,
                             upper: u2,
                         },
-                    ) => NumberValue::Interval {
-                        lower: Float::from_f64(
-                            l1.value + l2.value,
-                            std::cmp::max(l1.prec, l2.prec),
-                        ),
-                        upper: Float::from_f64(
-                            u1.value + u2.value,
-                            std::cmp::max(u1.prec, u2.prec),
-                        ),
-                    },
-                    (NumberValue::Interval { lower, upper }, other_val) => {
-                        let other_f = to_float_val(other_val);
+                    ) => {
+                        let prec = std::cmp::max(l1.prec(), l2.prec());
+                        let mut lower = rug::Float::new(prec);
+                        lower.assign_round(&l1.value + &l2.value, rug::float::Round::Down);
+                        let mut upper = rug::Float::new(prec);
+                        upper.assign_round(&u1.value + &u2.value, rug::float::Round::Up);
                         NumberValue::Interval {
-                            lower: Float::from_f64(
-                                lower.value + other_f.value,
-                                std::cmp::max(lower.prec, other_f.prec),
-                            ),
-                            upper: Float::from_f64(
-                                upper.value + other_f.value,
-                                std::cmp::max(upper.prec, other_f.prec),
-                            ),
+                            lower: Float { value: lower },
+                            upper: Float { value: upper },
+                        }
+                    }
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        let other_f = to_float_val(other_val, lower.prec());
+                        let prec = std::cmp::max(lower.prec(), other_f.prec());
+                        let mut lower_res = rug::Float::new(prec);
+                        lower_res
+                            .assign_round(&lower.value + &other_f.value, rug::float::Round::Down);
+                        let mut upper_res = rug::Float::new(prec);
+                        upper_res
+                            .assign_round(&upper.value + &other_f.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower_res },
+                            upper: Float { value: upper_res },
                         }
                     }
                     (self_val, NumberValue::Interval { lower, upper }) => {
-                        let self_f = to_float_val(self_val);
+                        let self_f = to_float_val(self_val, lower.prec());
+                        let prec = std::cmp::max(self_f.prec(), lower.prec());
+                        let mut lower_res = rug::Float::new(prec);
+                        lower_res
+                            .assign_round(&self_f.value + &lower.value, rug::float::Round::Down);
+                        let mut upper_res = rug::Float::new(prec);
+                        upper_res.assign_round(&self_f.value + &upper.value, rug::float::Round::Up);
                         NumberValue::Interval {
-                            lower: Float::from_f64(
-                                self_f.value + lower.value,
-                                std::cmp::max(self_f.prec, lower.prec),
-                            ),
-                            upper: Float::from_f64(
-                                self_f.value + upper.value,
-                                std::cmp::max(self_f.prec, upper.prec),
-                            ),
+                            lower: Float { value: lower_res },
+                            upper: Float { value: upper_res },
                         }
                     }
                     _ => NumberValue::NaN,
@@ -464,10 +408,8 @@ fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
         NumberValue::PlusInfinity => Some(true),
         NumberValue::MinusInfinity => Some(false),
         NumberValue::Float(f) => {
-            if f.value == f64::INFINITY {
-                Some(true)
-            } else if f.value == f64::NEG_INFINITY {
-                Some(false)
+            if f.is_infinite() {
+                Some(f.value.is_sign_positive())
             } else {
                 None
             }
@@ -478,25 +420,25 @@ fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
 }
 
 fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
-    let lhs_num = lhs.num.checked_mul(rhs.den)?;
-    let rhs_num = rhs.num.checked_mul(lhs.den)?;
-    let num = lhs_num.checked_add(rhs_num)?;
-    let den = lhs.den.checked_mul(rhs.den)?;
-    Some(Rational::new(num, den))
+    Some(Rational {
+        value: rug::Rational::from(&lhs.value + &rhs.value),
+    })
 }
 
-fn to_float_val(val: &NumberValue) -> Float {
+fn to_float_val(val: &NumberValue, default_prec: u32) -> Float {
     match val {
         NumberValue::Float(f) => f.clone(),
-        NumberValue::Rational(r) => Float::from_f64(r.num as f64 / r.den as f64, 53),
-        _ => Float::from_f64(f64::NAN, 53),
+        NumberValue::Rational(r) => Float {
+            value: rug::Float::with_val(default_prec, &r.value),
+        },
+        _ => Float::from_f64(f64::NAN, default_prec),
     }
 }
 
 fn try_unwrap_single_val(val: &NumberValue) -> Option<NumberValue> {
     match val {
         NumberValue::Interval { lower, upper } => {
-            if lower.value == upper.value {
+            if lower == upper {
                 Some(NumberValue::Float(lower.clone()))
             } else {
                 None
@@ -534,9 +476,7 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
     }
 
     match (lhs, rhs) {
-        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
-            r1.num == r2.num && r1.den == r2.den
-        }
+        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1.value == r2.value,
         (NumberValue::Float(f1), NumberValue::Float(f2)) => f1.value == f2.value,
         (NumberValue::Rational(_), NumberValue::Float(_))
         | (NumberValue::Float(_), NumberValue::Rational(_)) => false,
@@ -549,7 +489,7 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
                 lower: l2,
                 upper: u2,
             },
-        ) => l1.value == l2.value && u1.value == u2.value,
+        ) => l1 == l2 && u1 == u2,
         (
             NumberValue::Uncertainty {
                 value: v1,
@@ -605,7 +545,7 @@ impl Number {
 
     /// Creates a `Number` from a `Float`.
     pub fn from_float(f: Float) -> Self {
-        let prec = f.prec as i32;
+        let prec = f.prec() as i32;
         Self {
             value: NumberValue::Float(f),
             imaginary: None,
@@ -617,7 +557,7 @@ impl Number {
 
     /// Creates a new interval `Number` with given lower and upper bounds.
     pub fn new_interval(lower: Float, upper: Float) -> Self {
-        let prec = lower.prec as i32;
+        let prec = lower.prec() as i32;
         Self {
             value: NumberValue::Interval { lower, upper },
             imaginary: None,
