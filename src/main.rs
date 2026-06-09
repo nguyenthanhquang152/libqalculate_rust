@@ -4,6 +4,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use libqalculate_rust::batch::read_batch_cases;
+use libqalculate_rust::ffi::Calculator;
 use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 
 fn main() {
@@ -27,7 +28,12 @@ fn main() {
             print_help();
             Ok(())
         }
-        Some(other) => Err(format!("unknown argument: {other}")),
+        Some("--") => match args.next() {
+            Some(expression) => evaluate_expression(join_expression(expression, args)),
+            None => Err("-- requires an expression".to_owned()),
+        },
+        Some(other) if other.starts_with('-') => Err(format!("unknown argument: {other}")),
+        Some(expression) => evaluate_expression(join_expression(expression.to_owned(), args)),
     };
 
     if let Err(error) = result {
@@ -41,6 +47,7 @@ fn print_help() {
     println!("  --self-check           Verify upstream fixture inventory is readable");
     println!("  --list-upstream-tests  List upstream .batch fixtures");
     println!("  --parse-batch <path>   Parse a libqalculate .batch fixture");
+    println!("  <expression>           Evaluate through the C++ fallback bridge");
 }
 
 fn self_check() -> Result<(), String> {
@@ -63,6 +70,25 @@ fn list_upstream_tests() -> Result<(), String> {
 fn parse_batch(path: &Path) -> Result<(), String> {
     let cases = read_batch_cases(path).map_err(|error| error.to_string())?;
     println!("cases={}", cases.len());
+    Ok(())
+}
+
+fn join_expression(first: String, rest: impl Iterator<Item = String>) -> String {
+    let mut expression = first;
+    for part in rest {
+        expression.push(' ');
+        expression.push_str(&part);
+    }
+    expression
+}
+
+fn evaluate_expression(expression: String) -> Result<(), String> {
+    let mut calc = Calculator::new();
+    let _ = calc.load_global_definitions();
+    let result = calc
+        .calculate_and_print_qalc(&expression, 1000)
+        .map_err(|error| format!("calculation failed: {error}"))?;
+    println!("{result}");
     Ok(())
 }
 

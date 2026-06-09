@@ -10,9 +10,9 @@
 //!   canonicalization. Upstream uses arbitrary-precision rationals.
 //! - **Float backend**: `Float` uses `f64` instead of MPFR `mpfr_t`. Precision
 //!   is limited to ~53 bits (IEEE 754 double) instead of arbitrary.
-//! - **PartialEq transitivity**: Mixed `Rational`/`Float` comparison converts
-//!   rational to `f64`, losing precision. This violates `PartialEq` transitivity.
-//!   Upstream GMP/MPFR comparisons are exact.
+//! - **Mixed equality**: `Rational` and `Float` values are not compared across
+//!   representations in this scaffold. Upstream GMP/MPFR comparisons can do
+//!   this exactly; the placeholder backend cannot.
 //!
 //! These divergences will be resolved when the GMP/MPFR backend replaces this
 //! placeholder implementation.
@@ -285,11 +285,21 @@ impl NumberValue {
         match self {
             NumberValue::PlusInfinity | NumberValue::MinusInfinity => true,
             NumberValue::Float(f) => f.is_infinite(),
-            NumberValue::Interval { lower, upper } => lower.is_infinite() || upper.is_infinite(),
             NumberValue::Uncertainty { value, uncertainty } => {
                 value.is_infinite() || uncertainty.is_infinite()
             }
             _ => false,
+        }
+    }
+
+    /// Check if this value is or contains infinity.
+    pub fn includes_infinity(&self) -> bool {
+        match self {
+            NumberValue::Interval { lower, upper } => lower.is_infinite() || upper.is_infinite(),
+            NumberValue::Uncertainty { value, uncertainty } => {
+                value.includes_infinity() || uncertainty.includes_infinity()
+            }
+            _ => self.is_infinite(),
         }
     }
 
@@ -320,7 +330,11 @@ impl NumberValue {
     /// Negate the value mathematically.
     pub fn negate(&self) -> Self {
         match self {
-            NumberValue::Rational(r) => NumberValue::Rational(Rational::new(-r.num, r.den)),
+            NumberValue::Rational(r) => r
+                .num
+                .checked_neg()
+                .map(|num| NumberValue::Rational(Rational::new(num, r.den)))
+                .unwrap_or(NumberValue::NaN),
             NumberValue::Float(f) => NumberValue::Float(Float::from_f64(-f.value, f.prec)),
             NumberValue::Interval { lower, upper } => NumberValue::Interval {
                 lower: Float::from_f64(-upper.value, upper.prec),
@@ -379,11 +393,9 @@ impl NumberValue {
                     }
                 }
                 _ => match (self, other) {
-                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
-                        let num = r1.num * r2.den + r2.num * r1.den;
-                        let den = r1.den * r2.den;
-                        NumberValue::Rational(Rational::new(num, den))
-                    }
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => add_rationals(r1, r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
                     (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
                         Float::from_f64(f1.value + f2.value, std::cmp::max(f1.prec, f2.prec)),
                     ),
@@ -460,18 +472,17 @@ fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
                 None
             }
         }
-        NumberValue::Interval { lower, upper } => {
-            if lower.value == f64::INFINITY || upper.value == f64::INFINITY {
-                Some(true)
-            } else if lower.value == f64::NEG_INFINITY || upper.value == f64::NEG_INFINITY {
-                Some(false)
-            } else {
-                None
-            }
-        }
         NumberValue::Uncertainty { value, .. } => get_infinity_sign(value),
         _ => None,
     }
+}
+
+fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
+    let lhs_num = lhs.num.checked_mul(rhs.den)?;
+    let rhs_num = rhs.num.checked_mul(lhs.den)?;
+    let num = lhs_num.checked_add(rhs_num)?;
+    let den = lhs.den.checked_mul(rhs.den)?;
+    Some(Rational::new(num, den))
 }
 
 fn to_float_val(val: &NumberValue) -> Float {
@@ -527,20 +538,8 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
             r1.num == r2.num && r1.den == r2.den
         }
         (NumberValue::Float(f1), NumberValue::Float(f2)) => f1.value == f2.value,
-        (NumberValue::Rational(r), NumberValue::Float(f)) => {
-            if r.den == 0 {
-                false
-            } else {
-                (r.num as f64 / r.den as f64) == f.value
-            }
-        }
-        (NumberValue::Float(f), NumberValue::Rational(r)) => {
-            if r.den == 0 {
-                false
-            } else {
-                f.value == (r.num as f64 / r.den as f64)
-            }
-        }
+        (NumberValue::Rational(_), NumberValue::Float(_))
+        | (NumberValue::Float(_), NumberValue::Rational(_)) => false,
         (
             NumberValue::Interval {
                 lower: l1,
@@ -565,11 +564,6 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
     }
 }
 
-/// Note: `PartialEq` for `NumberValue` is NOT transitive across `Rational`/`Float`
-/// comparisons because cross-type comparison converts rational to `f64`, which
-/// loses precision. This means `x == y && y == z` does NOT guarantee `x == z`
-/// when mixing `Rational` and `Float` variants. This is a known limitation of
-/// the placeholder `f64` backend and will be resolved when GMP/MPFR replaces it.
 impl PartialEq for NumberValue {
     fn eq(&self, other: &Self) -> bool {
         eq_values(self, other)
@@ -795,6 +789,12 @@ impl Number {
         real.is_infinite() || imag.is_infinite()
     }
 
+    /// Returns true if either the real or imaginary part is or contains infinity.
+    pub fn includes_infinity(&self) -> bool {
+        let (real, imag) = self.to_canonical_real_imag();
+        real.includes_infinity() || imag.includes_infinity()
+    }
+
     /// Returns true if either the real or the imaginary part is NaN.
     pub fn is_nan(&self) -> bool {
         let (real, imag) = self.to_canonical_real_imag();
@@ -882,6 +882,11 @@ mod tests {
         assert!(n_interval.is_interval());
         assert!(!n_interval.is_zero());
         assert!(!n_interval.is_one());
+
+        let infinite_interval =
+            Number::new_interval(Float::from_f64(0.0, 53), Float::from_f64(f64::INFINITY, 53));
+        assert!(!infinite_interval.is_infinite());
+        assert!(infinite_interval.includes_infinity());
 
         let real = Number::from_i32(0);
         let imag = Number::new_interval(Float::from_f64(-1.0, 53), Float::from_f64(1.0, 53));
@@ -1038,17 +1043,16 @@ mod tests {
 
     #[test]
     fn test_mathematical_value_equality() {
-        // Ignore metadata like precision and approximate
+        // Mixed exact/inexact equality is intentionally conservative in the scaffold.
         let n1 = Number::from_rational(Rational::new(1, 1));
         let mut n2 = Number::from_float(Float::from_f64(1.0, 53));
         n2.precision = 100;
         n2.approximate = true;
-        assert_eq!(n1, n2);
+        assert_ne!(n1, n2);
 
-        // Compare Rational and Float
         let r_val = Number::from_rational(Rational::new(3, 2));
         let f_val = Number::from_float(Float::from_f64(1.5, 53));
-        assert_eq!(r_val, f_val);
+        assert_ne!(r_val, f_val);
 
         // Point interval equality
         let interval_pt = Number::new_interval(Float::from_f64(2.5, 53), Float::from_f64(2.5, 53));
@@ -1125,6 +1129,13 @@ mod tests {
         assert!(inf_val.is_infinite());
         assert!(unc_inf.is_infinite());
 
+        let interval_inf = NumberValue::Interval {
+            lower: Float::from_f64(0.0, 53),
+            upper: Float::from_f64(f64::INFINITY, 53),
+        };
+        assert!(!interval_inf.is_infinite());
+        assert!(interval_inf.includes_infinity());
+
         // is_nan
         let nan_val = NumberValue::NaN;
         let unc_nan = NumberValue::Uncertainty {
@@ -1181,6 +1192,16 @@ mod tests {
         r.canonicalize();
         assert_eq!(r.num, i128::MIN);
         assert_eq!(r.den, 1);
+    }
+
+    #[test]
+    fn test_rational_arithmetic_overflow_returns_nan() {
+        let max = NumberValue::Rational(Rational::new(i128::MAX, 1));
+        let one = NumberValue::Rational(Rational::new(1, 1));
+        assert!(max.add(&one).is_nan());
+
+        let min = NumberValue::Rational(Rational::new(i128::MIN, 1));
+        assert!(min.negate().is_nan());
     }
 
     #[test]

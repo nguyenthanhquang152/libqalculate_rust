@@ -21,7 +21,9 @@ As currently implemented by `scripts/quality.sh`, it runs:
 - `cargo test --all-targets --all-features`
 
 It does not currently run `just static`, `just test-oracle`, `just coverage`, `just fuzz`, or
-`just mutation`. Agents must run the extra gates below when the change type requires them.
+`just mutation`. The GitHub Actions workflow runs `just quality`, `just static`, and
+`just test-oracle` for pull requests after provisioning the upstream `qalc` oracle. Agents
+must still run the extra local gates below when the change type requires them.
 
 ## Gate Map
 
@@ -65,9 +67,10 @@ exists, `scripts/oracle.sh` uses it. Otherwise set:
 QALCULATE_ORACLE=/path/to/qalc just test-oracle
 ```
 
-Current oracle tests may pass while only proving upstream fixture availability. Do not report
-native Rust parity unless the test executed Rust and C++ for the same case with C++ fallback
-disabled.
+Current oracle tests include a strict `parser.batch` comparison through the `qalc-rs`
+C++ fallback bridge. This proves the harness and CLI fallback path, not native Rust parity.
+Do not report native Rust parity unless the test executed Rust and C++ for the same case
+with C++ fallback disabled.
 
 Final parity CI must fail when upstream `qalc` is unavailable. Local inventory jobs may skip
 with an explicit message, but skipped oracle execution means the feature remains unproven.

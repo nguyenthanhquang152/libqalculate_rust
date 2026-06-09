@@ -74,6 +74,18 @@ fn cli_parse_batch_reports_case_count() {
 }
 
 #[test]
+fn cli_evaluates_positional_expression_via_fallback() {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.arg("1 + 1").assert().success().stdout("2\n");
+}
+
+#[test]
+fn cli_evaluates_negative_expression_after_separator() {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.args(["--", "-0"]).assert().success().stdout("0\n");
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
     let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
     cmd.arg("--definitely-unknown")

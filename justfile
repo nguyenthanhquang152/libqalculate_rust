@@ -62,6 +62,10 @@ test-property:
 test-oracle:
     scripts/oracle.sh
 
+# Validate the checked-in batch manifest against upstream fixture case IDs.
+manifest-check:
+    sh scripts/check-batch-manifest.sh
+
 # Generate LCOV coverage.
 coverage:
     scripts/coverage.sh

@@ -194,7 +194,7 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 | 4 | `explog.batch` | 10 | 1 | — | `unstarted` |
 | 5 | `geometry.batch` | 30 | 0 | — | `unstarted` |
 | 6 | `limits.batch` | 181 | 4 | — | `unstarted` |
-| 7 | `matrixvector.batch` | 130 | 0 | `vectordata.csv`, `vectordata2.csv` | `unstarted` |
+| 7 | `matrixvector.batch` | 130 | 0 | — | `unstarted` |
 | 8 | `numberbase.batch` | 15 | 3 | — | `unstarted` |
 | 9 | `operators.batch` | 30 | 0 | — | `unstarted` |
 | 10 | `parser.batch` | 27 | 0 | — | `unstarted` |
@@ -212,8 +212,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Files with session settings | 5 |
-| Files requiring CSV assets | 2 |
+| Files with session settings | 6 |
+| Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
 
 ### Session Settings Detail
@@ -234,8 +234,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 
 | Asset | Used By | Content |
 |---|---|---|
-| `vectordata.csv` | `matrixvector.batch`, `stats.batch` | Numeric vector/matrix test data |
-| `vectordata2.csv` | `matrixvector.batch`, `stats.batch` | Additional numeric vector/matrix test data |
+| `vectordata.csv` | `stats.batch` | Numeric vector/matrix test data |
+| `vectordata2.csv` | `stats.batch` | Additional numeric vector/matrix test data |
 
 ---
 

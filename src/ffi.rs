@@ -34,6 +34,13 @@ pub(crate) mod sys {
             expr: &str,
             timeout_ms: i32,
         ) -> Result<String>;
+
+        /// Calculate and print using qalc-compatible evaluation/print defaults.
+        fn calculate_and_print_qalc(
+            calc: Pin<&mut Calculator>,
+            expr: &str,
+            timeout_ms: i32,
+        ) -> Result<String>;
     }
 }
 
@@ -114,6 +121,29 @@ impl Calculator {
         // the Calculator and a valid string slice. The cxx crate safely handles the FFI boundary
         // and converts any C++ exceptions into a Rust Result::Err containing the cxx::Exception.
         sys::calculate_and_print(pin, expr, timeout_ms)
+    }
+
+    /// Evaluate an expression using qalc-compatible print/evaluation defaults.
+    ///
+    /// This path is intended for the CLI/oracle harness. It preserves the plain
+    /// `calculate_and_print` wrapper for API-default libqalculate smoke tests.
+    ///
+    /// # Errors
+    /// Returns a `cxx::Exception` if a C++ exception occurs during parsing/evaluation.
+    ///
+    /// # Panics
+    /// Panics if the inner Calculator pointer is null, which indicates a bug.
+    pub fn calculate_and_print_qalc(
+        &mut self,
+        expr: &str,
+        timeout_ms: i32,
+    ) -> Result<String, cxx::Exception> {
+        assert!(
+            !self.inner.is_null(),
+            "BUG: Calculator inner pointer is null — possible use-after-move"
+        );
+        let pin = self.inner.pin_mut();
+        sys::calculate_and_print_qalc(pin, expr, timeout_ms)
     }
 }
 

@@ -9,14 +9,60 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    working-directory: libqalculate_rust
+
 jobs:
   build:
 
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install native dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          autoconf \
+          automake \
+          autopoint \
+          build-essential \
+          gettext \
+          libcurl4-openssl-dev \
+          libgmp-dev \
+          libmpfr-dev \
+          libreadline-dev \
+          libtool \
+          libxml2-dev \
+          pkg-config
+      working-directory: .
+
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      with:
+        path: libqalculate_rust
+
+    - uses: actions/checkout@v4
+      with:
+        repository: Qalculate/libqalculate
+        path: libqalculate
+
+    - name: Install Rust quality tools
+      uses: taiki-e/install-action@v2
+      with:
+        tool: just,cargo-deny
+
+    - name: Build upstream qalc oracle
+      run: |
+        ./autogen.sh
+        ./configure --without-icu
+        make -j2 -C src qalc
+      working-directory: libqalculate
+
+    - name: Quality
+      run: just quality
+
+    - name: Static analysis
+      run: just static
+
+    - name: Oracle
+      run: just test-oracle

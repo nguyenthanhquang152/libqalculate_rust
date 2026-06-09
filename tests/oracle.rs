@@ -8,8 +8,8 @@
 //!
 //! - **C++ Oracle**: The upstream `qalc` binary, located via `QALCULATE_ORACLE` env var
 //!   or auto-detected at `../libqalculate/src/qalc`.
-//! - **Rust Subject**: Uses the FFI `Calculator` wrapper from `libqalculate_rust::ffi`
-//!   to evaluate expressions through the C++ library (until native evaluation is implemented).
+//! - **Rust Subject**: Runs the `qalc-rs` binary. During Epic 0 this evaluates
+//!   expressions through the qalc-compatible C++ FFI fallback.
 //! - **Comparison**: Exact UTF-8 string comparison of stdout, with structured mismatch reporting.
 //!
 //! # Running
@@ -155,23 +155,17 @@ struct SessionCommand {
 impl SessionCommand {
     /// Convert this session command into qalc CLI arguments.
     ///
-    /// `/set key value` → `-set key value`
-    /// `set key value` → `-set key value`
-    /// `/assume value` → `-assume value`
+    /// `/set key value` → `-set "key value"`
+    /// `set key value` → `-set "key value"`
+    /// `/assume value` → `-set "assumptions value"`
     fn to_qalc_args(&self) -> Vec<String> {
         let trimmed = self.raw.trim();
         if let Some(rest) = trimmed.strip_prefix("/set ") {
-            let mut args = vec!["-set".to_string()];
-            args.extend(rest.split_whitespace().map(String::from));
-            args
+            vec!["-set".to_string(), rest.to_string()]
         } else if let Some(rest) = trimmed.strip_prefix("set ") {
-            let mut args = vec!["-set".to_string()];
-            args.extend(rest.split_whitespace().map(String::from));
-            args
+            vec!["-set".to_string(), rest.to_string()]
         } else if let Some(rest) = trimmed.strip_prefix("/assume ") {
-            let mut args = vec!["-assume".to_string()];
-            args.extend(rest.split_whitespace().map(String::from));
-            args
+            vec!["-set".to_string(), format!("assumptions {rest}")]
         } else {
             // Unknown command type; pass as-is (shouldn't happen with valid batch files)
             vec![trimmed.to_string()]
@@ -310,12 +304,11 @@ fn run_oracle_expression(
 
     // Base arguments: reset defaults and set consistent formatting
     cmd.arg("-defaults")
+        .arg("-terse")
         .arg("-set")
-        .arg("decimal_comma")
-        .arg("0")
+        .arg("decimal_comma 0")
         .arg("-set")
-        .arg("curconv")
-        .arg("0");
+        .arg("curconv 0");
 
     // Apply accumulated session settings
     for setting in settings {
@@ -340,13 +333,16 @@ fn run_oracle_expression(
 
 /// Run a single expression through the Rust implementation.
 ///
-/// Currently uses the FFI `Calculator` wrapper since native evaluation is not
-/// yet implemented. This goes through the same C++ library but via our Rust
-/// FFI layer, validating that the FFI wrapper produces identical output.
+/// Currently uses the qalc-compatible FFI fallback exposed by the `qalc-rs`
+/// binary since native evaluation is not yet implemented.
 ///
 /// When native Rust evaluation is implemented, this function should be updated
 /// to use the native path instead.
-fn run_rust_expression(expression: &str, _settings: &[SessionCommand]) -> CapturedOutput {
+fn run_rust_expression(
+    expression: &str,
+    _settings: &[SessionCommand],
+    defs: &Path,
+) -> CapturedOutput {
     // Use cargo run for the Rust binary, capturing output.
     // This ensures we test the actual binary interface.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -360,8 +356,10 @@ fn run_rust_expression(expression: &str, _settings: &[SessionCommand]) -> Captur
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
         .arg("--")
+        .arg("--")
         .arg(expression)
         .env("LC_ALL", "C.UTF-8")
+        .env("QALCULATE_DEFINITIONS_DIR", defs)
         .output();
 
     match output {
@@ -416,7 +414,7 @@ fn differential_oracle_batch(
         let cpp_out = run_oracle_expression(qalc_path, defs, &case.expression, settings);
 
         // Run Rust implementation
-        let rust_out = run_rust_expression(&case.expression, settings);
+        let rust_out = run_rust_expression(&case.expression, settings, defs);
 
         // Compare stdout (primary comparison)
         if cpp_out.stdout != rust_out.stdout {
@@ -537,15 +535,11 @@ fn differential_oracle_parser_batch() {
     let mismatches = differential_oracle_batch(&batch_path, &qalc, &defs);
     report_mismatches(&mismatches);
 
-    // parser.batch has no session state, so it's the cleanest comparison target.
-    // We report mismatches but don't hard-fail yet — the Rust CLI doesn't support
-    // expression evaluation as a positional argument yet.
-    if !mismatches.is_empty() {
-        eprintln!(
-            "NOTE: {} mismatches in parser.batch (expected until native eval is implemented)",
-            mismatches.len()
-        );
-    }
+    assert!(
+        mismatches.is_empty(),
+        "differential oracle parser.batch found {} mismatch(es)",
+        mismatches.len()
+    );
 }
 
 /// Differential oracle test for ALL 17 upstream batch files.
@@ -699,7 +693,7 @@ mod infrastructure_tests {
         let cmd = SessionCommand {
             raw: "/set approximation exact".to_string(),
         };
-        assert_eq!(cmd.to_qalc_args(), vec!["-set", "approximation", "exact"]);
+        assert_eq!(cmd.to_qalc_args(), vec!["-set", "approximation exact"]);
     }
 
     #[test]
@@ -707,7 +701,7 @@ mod infrastructure_tests {
         let cmd = SessionCommand {
             raw: "set input base 16".to_string(),
         };
-        assert_eq!(cmd.to_qalc_args(), vec!["-set", "input", "base", "16"]);
+        assert_eq!(cmd.to_qalc_args(), vec!["-set", "input base 16"]);
     }
 
     #[test]
@@ -715,7 +709,7 @@ mod infrastructure_tests {
         let cmd = SessionCommand {
             raw: "/assume positive".to_string(),
         };
-        assert_eq!(cmd.to_qalc_args(), vec!["-assume", "positive"]);
+        assert_eq!(cmd.to_qalc_args(), vec!["-set", "assumptions positive"]);
     }
 
     #[test]

@@ -5,10 +5,11 @@ locally invented examples. The adjacent `../libqalculate` checkout is the oracle
 `libqalculate` 5.11.0.
 
 The current repository contains a quality scaffold: batch parsing, fixture inventory, CLI
-smoke tests, property tests for batch fixture text, and scripts for local gates. That
-scaffold is useful, but it is not yet differential parity. A test that only proves upstream
-`qalc` can run, or that Rust can parse a `.batch` file, must be reported as inventory
-evidence, not feature parity.
+smoke tests, property tests for batch fixture text, a strict fallback differential check for
+`parser.batch`, and scripts for local gates. That scaffold is useful, but it is not native
+parity. A test that only proves upstream `qalc` can run, that Rust can parse a `.batch`
+file, or that the Rust CLI agrees through the C++ fallback bridge must be reported as
+inventory or fallback evidence, not native feature parity.
 
 ## 1. Definition of Tested Parity
 
@@ -40,9 +41,9 @@ add the observation to the task packet before coding.
 
 ## 3. Differential Oracle Runner
 
-`just test-oracle` must evolve into a true differential runner. Until then, documentation and
-handoffs must clearly say when the command only checks oracle availability or fixture
-inventory.
+`just test-oracle` must evolve from strict fallback comparison into a native Rust
+differential runner. Until then, documentation and handoffs must clearly say when the
+command checks oracle availability, fixture inventory, or C++ fallback agreement.
 
 Required runner behavior:
 
@@ -111,7 +112,7 @@ Any tolerance is a compatibility decision and must be reviewed.
 | Integration smoke | `just test-smoke` | Crate exports, upstream fixture availability, and scaffold assumptions. |
 | CLI e2e | `just test-e2e` | User-facing binary behavior. |
 | Regression fixtures | `just test-regression` | Local fixtures for fixed bugs and reduced oracle cases. |
-| Differential oracle | `just test-oracle` | Target/final semantics: Rust-vs-C++ comparison for manifest cases. Current scaffold semantics are described above. |
+| Differential oracle | `just test-oracle` | Target/final semantics: native Rust-vs-C++ comparison for manifest cases. Current scaffold semantics are fallback-based and described above. |
 | Property-based | `just test-property` | Parser, formatter, evaluator, and data invariant stress tests. |
 | Fuzzing | `just fuzz` | Crash and panic discovery for parsers, formatters, evaluators, XML/data loaders, and CLI command parsing. |
 | Mutation | `just mutation` | Check that semantic tests fail when logic is mutated. |

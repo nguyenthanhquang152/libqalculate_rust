@@ -21,7 +21,8 @@ fn test_runtime_rational_addition_audit() {
         assert_eq!(res.den(), 2);
         println!(
             "Trace: 1/3 + 1/6 successfully computed as {}/{}",
-            res.num(), res.den()
+            res.num(),
+            res.den()
         );
     } else {
         panic!("Expected rational result");
@@ -71,7 +72,8 @@ fn test_runtime_float_precision_max_audit() {
         assert_eq!(res.prec(), 64);
         println!(
             "Trace: 1.5 (prec=24) + 2.5 (prec=64) = {} (prec={})",
-            res.value(), res.prec()
+            res.value(),
+            res.prec()
         );
     } else {
         panic!("Expected float result");

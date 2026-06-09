@@ -4,7 +4,10 @@ use proptest::prelude::*;
 // Use i32 range to avoid i128 overflow edge cases in canonicalization.
 // Exclude den=0 since Rational::new panics on zero denominator.
 fn rational_strategy() -> impl Strategy<Value = Rational> {
-    (any::<i32>(), any::<i32>().prop_filter("den must not be zero", |d| *d != 0))
+    (
+        any::<i32>(),
+        any::<i32>().prop_filter("den must not be zero", |d| *d != 0),
+    )
         .prop_map(|(num, den)| Rational::new(num as i128, den as i128))
 }
 
@@ -94,19 +97,13 @@ proptest! {
 }
 
 #[test]
-fn test_partial_eq_transitivity_violation() {
-    // Demonstration of transitivity violation: x == y && y == z but x != z
-    // Due to conversion between exact Rational and inexact Float representations.
+fn test_partial_eq_avoids_mixed_transitivity_violation() {
     let x = Number::from_rational(Rational::new(1, 3));
     let y = Number::from_float(Float::from_f64(1.0 / 3.0, 53));
     let z = Number::from_rational(Rational::new(3333333333333333, 10000000000000000));
 
-    // Confirm that x == y
-    assert_eq!(x, y);
-    // Confirm that y == z
-    assert_eq!(y, z);
-    // Transitivity would require x == z, but since both are Rational they are compared exactly
-    // and are not equal.
+    assert_ne!(x, y);
+    assert_ne!(y, z);
     assert_ne!(x, z);
 }
 

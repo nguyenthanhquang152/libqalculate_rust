@@ -18,3 +18,9 @@ rust::String calculate_and_print(
     rust::Str expr,
     int32_t timeout_ms
 );
+
+rust::String calculate_and_print_qalc(
+    Calculator &calc,
+    rust::Str expr,
+    int32_t timeout_ms
+);
