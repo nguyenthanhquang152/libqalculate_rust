@@ -32,7 +32,7 @@ fn main() {
             Some(expression) => evaluate_expression(join_expression(expression, args)),
             None => Err("-- requires an expression".to_owned()),
         },
-        Some(other) if other.starts_with('-') => Err(format!("unknown argument: {other}")),
+        Some(other) if other.starts_with("--") => Err(format!("unknown argument: {other}")),
         Some(expression) => evaluate_expression(join_expression(expression.to_owned(), args)),
     };
 
@@ -84,7 +84,9 @@ fn join_expression(first: String, rest: impl Iterator<Item = String>) -> String 
 
 fn evaluate_expression(expression: String) -> Result<(), String> {
     let mut calc = Calculator::new();
-    let _ = calc.load_global_definitions();
+    if !calc.load_global_definitions() {
+        return Err("failed to load global definitions".to_owned());
+    }
     let result = calc
         .calculate_and_print_qalc(&expression, 1000)
         .map_err(|error| format!("calculation failed: {error}"))?;

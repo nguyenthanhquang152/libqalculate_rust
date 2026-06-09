@@ -12,6 +12,10 @@
 //!   expressions through the qalc-compatible C++ FFI fallback.
 //! - **Comparison**: Exact UTF-8 string comparison of stdout, with structured mismatch reporting.
 //!
+//! The strict default gate is currently scoped to no-session batches such as
+//! `parser.batch`. Session-dependent batches remain unsupported by the Rust
+//! subject path until `qalc-rs` can receive equivalent settings.
+//!
 //! # Running
 //!
 //! ```sh
@@ -287,8 +291,8 @@ fn accumulated_settings_for_cases(input: &str, case_count: usize) -> Vec<Vec<Ses
 /// The oracle is invoked with:
 /// - `LC_ALL=C.UTF-8` for consistent locale
 /// - `-defaults` to reset to default settings
-/// - `-set "decimal_comma" "0"` for dot-decimal mode
-/// - `-set "curconv" "0"` to disable currency rate conversion
+/// - `-set "decimal_comma 0"` for dot-decimal mode
+/// - `-set "curconv 0"` to disable currency rate conversion
 /// - Any accumulated session settings from the batch file
 ///
 /// Returns the captured stdout, stderr, and exit code.
@@ -334,15 +338,31 @@ fn run_oracle_expression(
 /// Run a single expression through the Rust implementation.
 ///
 /// Currently uses the qalc-compatible FFI fallback exposed by the `qalc-rs`
-/// binary since native evaluation is not yet implemented.
+/// binary since native evaluation is not yet implemented. Accumulated batch
+/// session settings are reported as unsupported rather than silently ignored.
 ///
 /// When native Rust evaluation is implemented, this function should be updated
 /// to use the native path instead.
 fn run_rust_expression(
     expression: &str,
-    _settings: &[SessionCommand],
+    settings: &[SessionCommand],
     defs: &Path,
 ) -> CapturedOutput {
+    if !settings.is_empty() {
+        return CapturedOutput {
+            stdout: String::new(),
+            stderr: format!(
+                "qalc-rs fallback oracle does not support session settings yet: {}",
+                settings
+                    .iter()
+                    .map(|setting| setting.raw.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+            exit_code: -1,
+        };
+    }
+
     // Use cargo run for the Rust binary, capturing output.
     // This ensures we test the actual binary interface.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -610,7 +630,8 @@ fn differential_oracle_all_batches() {
 }
 
 /// Differential oracle for a single batch file specified by name.
-/// Useful for targeted testing during development.
+/// Useful as a targeted development gate. Unlike the all-batch exploratory
+/// sweep, this test fails on any mismatch.
 ///
 /// Run with: `cargo test --test oracle -- --ignored differential_oracle_single`
 /// Set `ORACLE_BATCH` env var to specify the batch file, e.g.:
@@ -643,6 +664,12 @@ fn differential_oracle_single() {
                 .filter(|m| m.field == MismatchField::Stdout)
                 .count(),
         cases.len()
+    );
+
+    assert!(
+        mismatches.is_empty(),
+        "differential oracle {batch_name} found {} mismatch(es)",
+        mismatches.len()
     );
 }
 
@@ -710,6 +737,19 @@ mod infrastructure_tests {
             raw: "/assume positive".to_string(),
         };
         assert_eq!(cmd.to_qalc_args(), vec!["-set", "assumptions positive"]);
+    }
+
+    #[test]
+    fn rust_subject_reports_unsupported_session_settings() {
+        let settings = vec![SessionCommand {
+            raw: "set input base 16".to_string(),
+        }];
+        let out = run_rust_expression("5p10+AEp-2*p23", &settings, Path::new("."));
+
+        assert_eq!(out.stdout, "");
+        assert_eq!(out.exit_code, -1);
+        assert!(out.stderr.contains("does not support session settings"));
+        assert!(out.stderr.contains("set input base 16"));
     }
 
     #[test]

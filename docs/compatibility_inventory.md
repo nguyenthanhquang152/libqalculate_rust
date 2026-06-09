@@ -12,12 +12,12 @@
 | Category | Total | native-pass | scaffold | fallback-only | unstarted | out-of-scope |
 |---|---|---|---|---|---|---|
 | Public Headers | 22 | 0 | 3 | 1 | 14 | 4 |
-| Implementation Files | 41 | 0 | 1 | 6 | 34 | 0 |
+| Implementation Files | 41 | 0 | 1 | 3 | 37 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 9 | 0 |
 | Batch Test Files | 17 | 0 | 0 | 0 | 17 | 0 |
 | Batch Test Cases | 656 | 0 | 0 | 0 | 656 | 0 |
 | CLI Behaviors | 10 | 5 | 0 | 1 | 4 | 0 |
-| Core Class API Groups | 59 | 0 | 6 | 6 | 47 | 0 |
+| Core Class API Groups | 59 | 0 | 6 | 1 | 52 | 0 |
 
 **Overall porting progress**: Early stage. Only the `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has native batch-parsing and self-check support. All core computation, definition loading, and evaluation paths are either unstarted or fallback-only.
 
@@ -42,7 +42,7 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 
 | # | C++ Header | Rust Module | Status | Notes |
 |---|---|---|---|---|
-| 1 | `Calculator.h` | `src/ffi.rs` | `fallback-only` | FFI wrapper to C++ `Calculator`; exposes `calculate()`, `loadDefinitions()` via `cxx` bridge |
+| 1 | `Calculator.h` | `src/ffi.rs` | `fallback-only` | FFI wrapper to C++ `Calculator`; exposes `calculate_and_print()`, `calculate_and_print_qalc()`, and definition-loading helpers via `cxx` bridge |
 | 2 | `Calculator_p.h` | — | `out-of-scope` | Private implementation detail of Calculator |
 | 3 | `MathStructure.h` | — | `unstarted` | Core expression tree; ~120 public methods |
 | 4 | `MathStructure_p.h` | — | `out-of-scope` | Private implementation detail of MathStructure |
@@ -82,12 +82,12 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | # | C++ File | Responsibility | Rust Status |
 |---|---|---|---|
-| 1 | `Calculator.cc` | Core calculator state, construction, messages | `fallback-only` via `src/ffi.rs` |
+| 1 | `Calculator.cc` | Core calculator state, construction, messages | `fallback-only` for construction only via `src/ffi.rs` |
 | 2 | `Calculator-calculate.cc` | Expression evaluation engine | `fallback-only` via `src/ffi.rs` |
-| 3 | `Calculator-convert.cc` | Unit/base conversion | `fallback-only` via `src/ffi.rs` |
+| 3 | `Calculator-convert.cc` | Unit/base conversion | `unstarted` |
 | 4 | `Calculator-definitions.cc` | Definition loading from XML | `fallback-only` via `src/ffi.rs` |
-| 5 | `Calculator-parse.cc` | Expression parsing | `fallback-only` via `src/ffi.rs` |
-| 6 | `Calculator-plot.cc` | Gnuplot integration | `fallback-only` via `src/ffi.rs` |
+| 5 | `Calculator-parse.cc` | Expression parsing | `unstarted` for direct parser APIs; used internally by fallback evaluation |
+| 6 | `Calculator-plot.cc` | Gnuplot integration | `unstarted` |
 
 ### MathStructure Family (14 files)
 
@@ -148,9 +148,9 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | Status | Families | File Count |
 |---|---|---|
-| `fallback-only` | Calculator | 6 |
+| `fallback-only` | Calculator construction, calculation, definitions | 3 |
 | `scaffold` | Number | 1 |
-| `unstarted` | MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 34 |
+| `unstarted` | Calculator conversion/parsing/plot APIs, MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 37 |
 
 ---
 
@@ -250,7 +250,7 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 | 3 | `--self-check` | — | Runs self-diagnostics | `native-pass` | Rust-only addition |
 | 4 | `--list-upstream-tests` | — | Lists upstream batch files | `native-pass` | Rust-only addition |
 | 5 | `--parse-batch` | — | Parses batch file structure | `native-pass` | Native batch parser; no evaluation |
-| 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge | `fallback-only` | Delegates to C++ `Calculator::calculate()` |
+| 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge | `fallback-only` | Delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output |
 | 7 | `-defaults` | Reset to default settings | — | `unstarted` | |
 | 8 | `-set <option> <value>` | Set calculator option | — | `unstarted` | |
 | 9 | `--test-file <path>` | Run batch test file | — | `unstarted` | `qalc-rs` has `--parse-batch` but no evaluation |
@@ -275,13 +275,13 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | # | API Category | Est. Methods | Rust Status | Notes |
 |---|---|---|---|---|
 | 1 | Construction / destruction | 2 | `scaffold` | `Calculator::new()` creates C++ instance via FFI |
-| 2 | Definition loading | 3 | `scaffold` | `loadGlobalDefinitions()` exposed via FFI |
-| 3 | Expression parsing | 5 | `fallback-only` | `parse()`, `parseNumber()` via FFI |
-| 4 | Expression evaluation | 8 | `fallback-only` | `calculate()`, `calculateAndPrint()` via FFI |
-| 5 | Conversion | 6 | `fallback-only` | `convert()`, `convertToBaseUnits()` via FFI |
-| 6 | Settings / options | 15+ | `fallback-only` | Precision, angle mode, approximation, etc. |
-| 7 | Messages | 4 | `fallback-only` | `message()`, `nextMessage()`, message queue |
-| 8 | Plot support | 3 | `fallback-only` | Gnuplot integration |
+| 2 | Definition loading | 3 | `scaffold` | `load_global_definitions()`, `load_local_definitions()`, and `load_exchange_rates()` exposed via FFI |
+| 3 | Expression parsing | 5 | `unstarted` | No direct `parse()` / `parseNumber()` wrapper yet |
+| 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI |
+| 5 | Conversion | 6 | `unstarted` | No direct `convert()` / `convertToBaseUnits()` wrapper yet |
+| 6 | Settings / options | 15+ | `unstarted` | No public settings/options wrapper yet; qalc-style fallback uses fixed bridge defaults |
+| 7 | Messages | 4 | `unstarted` | No `message()` / `nextMessage()` wrapper yet |
+| 8 | Plot support | 3 | `unstarted` | No gnuplot wrapper yet |
 
 ### 6.2 MathStructure (`MathStructure.h`)
 
@@ -398,7 +398,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | Rust File | Upstream Coverage | Status |
 |---|---|---|
 | `src/lib.rs` | `includes.h` (partial), crate root | `scaffold` |
-| `src/ffi.rs` | `Calculator.h`, `Calculator*.cc` (6 files) | `fallback-only` |
+| `src/ffi.rs` | `Calculator.h`, `Calculator.cc`, `Calculator-calculate.cc`, `Calculator-definitions.cc` (partial) | `fallback-only` |
 | `src/number.rs` | `Number.h`, `Number.cc` | `scaffold` |
 | `src/batch.rs` | — (no upstream equivalent; native batch parser) | `native-pass` |
 | `src/main.rs` | `../src/qalc.cc` (partial CLI parity) | mixed |

@@ -1,6 +1,6 @@
 # Batch Fixture Manifest (Task 0.3)
 
-> Auto-generated inventory of ALL upstream libqalculate batch test cases.
+> Checked-in inventory of ALL upstream libqalculate batch test cases.
 > Upstream version: **5.11.0**
 
 ## Regeneration

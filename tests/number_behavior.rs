@@ -1,8 +1,7 @@
 use libqalculate_rust::number::{Float, Number, NumberValue, Rational};
 
 #[test]
-fn test_runtime_rational_addition_audit() {
-    // Audit dynamic calculation: 1/3 + 1/6 = 1/2
+fn rational_addition_canonicalizes_result() {
     let one_third = Number::from_rational(Rational::new(1, 3));
     let one_sixth = Number::from_rational(Rational::new(1, 6));
 
@@ -13,28 +12,17 @@ fn test_runtime_rational_addition_audit() {
         panic!("Expected rational");
     }
 
-    // Perform operation
     let result_val = one_third.value().add(one_sixth.value());
     if let NumberValue::Rational(res) = &result_val {
-        // Must canonicalize to 1/2
         assert_eq!(res.num(), 1);
         assert_eq!(res.den(), 2);
-        println!(
-            "Trace: 1/3 + 1/6 successfully computed as {}/{}",
-            res.num(),
-            res.den()
-        );
     } else {
         panic!("Expected rational result");
     }
 }
 
 #[test]
-fn test_runtime_complex_arithmetic_flattening_audit() {
-    // Audit dynamic calculation of complex flattening:
-    // (1 + 2i) + (3 + 4i)i
-    // = 1 + 2i + 3i - 4
-    // = -3 + 5i
+fn nested_complex_numbers_are_flattened() {
     let real_part = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
     let imag_part = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
 
@@ -56,13 +44,10 @@ fn test_runtime_complex_arithmetic_flattening_audit() {
     } else {
         panic!("Expected rational imaginary part");
     }
-
-    println!("Trace: (1 + 2i) + (3 + 4i)i successfully computed as -3 + 5i");
 }
 
 #[test]
-fn test_runtime_float_precision_max_audit() {
-    // Float(1.5, prec=24) + Float(2.5, prec=64) should result in Float(4.0, prec=64)
+fn float_addition_preserves_max_precision() {
     let f1 = NumberValue::Float(Float::from_f64(1.5, 24));
     let f2 = NumberValue::Float(Float::from_f64(2.5, 64));
 
@@ -70,19 +55,13 @@ fn test_runtime_float_precision_max_audit() {
     if let NumberValue::Float(res) = sum {
         assert_eq!(res.value(), 4.0);
         assert_eq!(res.prec(), 64);
-        println!(
-            "Trace: 1.5 (prec=24) + 2.5 (prec=64) = {} (prec={})",
-            res.value(),
-            res.prec()
-        );
     } else {
         panic!("Expected float result");
     }
 }
 
 #[test]
-fn test_runtime_uncertainty_propagation_audit() {
-    // (5 +/- 0.5) + (10 +/- 1.5) = 15 +/- 2.0
+fn uncertainty_addition_combines_value_and_uncertainty() {
     let v1 = NumberValue::Rational(Rational::new(5, 1));
     let u1 = NumberValue::Rational(Rational::new(1, 2));
     let unc1 = NumberValue::Uncertainty {
@@ -112,7 +91,6 @@ fn test_runtime_uncertainty_propagation_audit() {
         } else {
             panic!("Expected rational uncertainty");
         }
-        println!("Trace: (5 +/- 0.5) + (10 +/- 1.5) = 15 +/- 2.0 successfully propagated");
     } else {
         panic!("Expected uncertainty result");
     }
