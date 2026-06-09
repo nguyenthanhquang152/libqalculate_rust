@@ -17,6 +17,64 @@
 //! These divergences will be resolved when the GMP/MPFR backend replaces this
 //! placeholder implementation.
 
+/// The result of a comparison between two numbers or intervals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComparisonResult {
+    /// The values are equal point values.
+    Equal,
+    /// The second value is strictly greater than the first.
+    Greater,          // o > self (i.e. self < o) strictly
+    /// The second value is strictly less than the first.
+    Less,             // o < self (i.e. self > o) strictly
+    /// The second value is equal to or greater than the first.
+    EqualOrGreater,
+    /// The second value is equal to or less than the first.
+    EqualOrLess,
+    /// The values are not equal.
+    NotEqual,
+    /// The comparison result is unknown (e.g. involving NaN or complex).
+    Unknown,
+    /// The interval bounds are identical.
+    EqualLimits,           // Interval bounds are identical
+    /// The second interval contains the first.
+    Contains,               // o contains self
+    /// The second interval is contained in the first.
+    Contained,              // self contains o
+    /// The second interval overlaps the first on the left.
+    OverlappingLess,       // o overlaps self on the left (o.lower < self.lower)
+    /// The second interval overlaps the first on the right.
+    OverlappingGreater,     // o overlaps self on the right (o.upper > self.upper)
+}
+
+trait NextAfter {
+    fn next_after(self, direction: f64) -> f64;
+}
+
+impl NextAfter for f64 {
+    fn next_after(self, direction: f64) -> f64 {
+        if self.is_nan() || direction.is_nan() {
+            return f64::NAN;
+        }
+        if self == direction {
+            return direction;
+        }
+        if self == 0.0 {
+            if direction > 0.0 {
+                return f64::from_bits(1);
+            } else {
+                return f64::from_bits(1 | (1 << 63));
+            }
+        }
+        let bits = self.to_bits();
+        let is_negative = (bits >> 63) != 0;
+        if (direction > self) ^ is_negative {
+            f64::from_bits(bits + 1)
+        } else {
+            f64::from_bits(bits - 1)
+        }
+    }
+}
+
 /// A private helper for Euclidean GCD algorithm.
 fn gcd(a: i128, b: i128) -> u128 {
     let mut ua = a.unsigned_abs();
@@ -69,6 +127,26 @@ impl Rational {
     /// Returns true if the rational is exactly one.
     pub fn is_one(&self) -> bool {
         self.num == 1 && self.den == 1
+    }
+
+    /// Checked addition.
+    pub fn add(&self, other: &Self) -> Option<Self> {
+        add_rationals(self, other)
+    }
+
+    /// Checked subtraction.
+    pub fn sub(&self, other: &Self) -> Option<Self> {
+        sub_rationals(self, other)
+    }
+
+    /// Checked multiplication.
+    pub fn mul(&self, other: &Self) -> Option<Self> {
+        mul_rationals(self, other)
+    }
+
+    /// Checked division.
+    pub fn div(&self, other: &Self) -> Option<Self> {
+        div_rationals(self, other)
     }
 
     /// Normalize the sign and reduce the fraction.
@@ -192,6 +270,26 @@ impl Float {
     /// Returns the precision in bits.
     pub fn prec(&self) -> u32 {
         self.prec
+    }
+
+    /// Add two float values.
+    pub fn add(&self, other: &Self) -> Self {
+        Self::from_f64(self.value + other.value, std::cmp::max(self.prec, other.prec))
+    }
+
+    /// Subtract two float values.
+    pub fn sub(&self, other: &Self) -> Self {
+        Self::from_f64(self.value - other.value, std::cmp::max(self.prec, other.prec))
+    }
+
+    /// Multiply two float values.
+    pub fn mul(&self, other: &Self) -> Self {
+        Self::from_f64(self.value * other.value, std::cmp::max(self.prec, other.prec))
+    }
+
+    /// Divide two float values.
+    pub fn div(&self, other: &Self) -> Self {
+        Self::from_f64(self.value / other.value, std::cmp::max(self.prec, other.prec))
     }
 }
 
@@ -392,69 +490,512 @@ impl NumberValue {
                         uncertainty: Box::new((**uncertainty).clone()),
                     }
                 }
-                _ => match (self, other) {
-                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => add_rationals(r1, r2)
-                        .map(NumberValue::Rational)
-                        .unwrap_or(NumberValue::NaN),
-                    (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
-                        Float::from_f64(f1.value + f2.value, std::cmp::max(f1.prec, f2.prec)),
-                    ),
-                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                        let val = (r.num as f64 / r.den as f64) + f.value;
-                        NumberValue::Float(Float::from_f64(val, f.prec))
-                    }
-                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                        let val = f.value + (r.num as f64 / r.den as f64);
-                        NumberValue::Float(Float::from_f64(val, f.prec))
-                    }
-                    (
+                _ => {
+                    if self.is_interval() || other.is_interval() {
+                        let (l1, u1) = match to_interval(self) {
+                            Some(val) => val,
+                            None => return NumberValue::NaN,
+                        };
+                        let (l2, u2) = match to_interval(other) {
+                            Some(val) => val,
+                            None => return NumberValue::NaN,
+                        };
+                        let prec = std::cmp::max(l1.prec, l2.prec);
+                        let lower_val = (l1.value + l2.value).next_after(f64::NEG_INFINITY);
+                        let upper_val = (u1.value + u2.value).next_after(f64::INFINITY);
                         NumberValue::Interval {
-                            lower: l1,
-                            upper: u1,
-                        },
-                        NumberValue::Interval {
-                            lower: l2,
-                            upper: u2,
-                        },
-                    ) => NumberValue::Interval {
-                        lower: Float::from_f64(
-                            l1.value + l2.value,
-                            std::cmp::max(l1.prec, l2.prec),
-                        ),
-                        upper: Float::from_f64(
-                            u1.value + u2.value,
-                            std::cmp::max(u1.prec, u2.prec),
-                        ),
-                    },
-                    (NumberValue::Interval { lower, upper }, other_val) => {
-                        let other_f = to_float_val(other_val);
-                        NumberValue::Interval {
-                            lower: Float::from_f64(
-                                lower.value + other_f.value,
-                                std::cmp::max(lower.prec, other_f.prec),
+                            lower: Float::from_f64(lower_val, prec),
+                            upper: Float::from_f64(upper_val, prec),
+                        }
+                    } else {
+                        match (self, other) {
+                            (NumberValue::Rational(r1), NumberValue::Rational(r2)) => add_rationals(r1, r2)
+                                .map(NumberValue::Rational)
+                                .unwrap_or(NumberValue::NaN),
+                            (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
+                                Float::from_f64(f1.value + f2.value, std::cmp::max(f1.prec, f2.prec)),
                             ),
-                            upper: Float::from_f64(
-                                upper.value + other_f.value,
-                                std::cmp::max(upper.prec, other_f.prec),
-                            ),
+                            (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                                let val = (r.num as f64 / r.den as f64) + f.value;
+                                NumberValue::Float(Float::from_f64(val, f.prec))
+                            }
+                            (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                                let val = f.value + (r.num as f64 / r.den as f64);
+                                NumberValue::Float(Float::from_f64(val, f.prec))
+                            }
+                            _ => NumberValue::NaN,
                         }
                     }
-                    (self_val, NumberValue::Interval { lower, upper }) => {
-                        let self_f = to_float_val(self_val);
-                        NumberValue::Interval {
-                            lower: Float::from_f64(
-                                self_f.value + lower.value,
-                                std::cmp::max(self_f.prec, lower.prec),
-                            ),
-                            upper: Float::from_f64(
-                                self_f.value + upper.value,
-                                std::cmp::max(self_f.prec, upper.prec),
-                            ),
-                        }
-                    }
-                    _ => NumberValue::NaN,
-                },
+                }
             }
+        }
+    }
+
+    /// Subtract two values mathematically.
+    pub fn sub(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return NumberValue::NaN;
+        }
+
+        if self.is_infinite() || other.is_infinite() {
+            let s1 = get_infinity_sign(self);
+            let s2 = get_infinity_sign(other);
+            return match (s1, s2) {
+                (Some(true), Some(true)) => NumberValue::NaN,
+                (Some(false), Some(false)) => NumberValue::NaN,
+                (Some(true), _) => NumberValue::PlusInfinity,
+                (Some(false), _) => NumberValue::MinusInfinity,
+                (_, Some(true)) => NumberValue::MinusInfinity,
+                (_, Some(false)) => NumberValue::PlusInfinity,
+                _ => NumberValue::NaN,
+            };
+        }
+
+        match (self, other) {
+            (
+                NumberValue::Uncertainty {
+                    value: v1,
+                    uncertainty: u1,
+                },
+                NumberValue::Uncertainty {
+                    value: v2,
+                    uncertainty: u2,
+                },
+            ) => NumberValue::Uncertainty {
+                value: Box::new(v1.sub(v2)),
+                uncertainty: Box::new(u1.add(u2)),
+            },
+            (NumberValue::Uncertainty { value, uncertainty }, other) => {
+                NumberValue::Uncertainty {
+                    value: Box::new(value.sub(other)),
+                    uncertainty: Box::new((**uncertainty).clone()),
+                }
+            }
+            (self_val, NumberValue::Uncertainty { value, uncertainty }) => {
+                NumberValue::Uncertainty {
+                    value: Box::new(self_val.sub(value)),
+                    uncertainty: Box::new((**uncertainty).clone()),
+                }
+            }
+            _ => {
+                if self.is_interval() || other.is_interval() {
+                    let (l1, u1) = match to_interval(self) {
+                        Some(val) => val,
+                        None => return NumberValue::NaN,
+                    };
+                    let (l2, u2) = match to_interval(other) {
+                        Some(val) => val,
+                        None => return NumberValue::NaN,
+                    };
+                    let prec = std::cmp::max(l1.prec, l2.prec);
+                    let lower_val = (l1.value - u2.value).next_after(f64::NEG_INFINITY);
+                    let upper_val = (u1.value - l2.value).next_after(f64::INFINITY);
+                    NumberValue::Interval {
+                        lower: Float::from_f64(lower_val, prec),
+                        upper: Float::from_f64(upper_val, prec),
+                    }
+                } else {
+                    match (self, other) {
+                        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
+                            match r1.sub(r2) {
+                                Some(r) => NumberValue::Rational(r),
+                                None => NumberValue::NaN,
+                            }
+                        }
+                        (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                            NumberValue::Float(f1.sub(f2))
+                        }
+                        (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                            let r_f = Float::from_f64(r.num as f64 / r.den as f64, f.prec);
+                            NumberValue::Float(r_f.sub(f))
+                        }
+                        (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                            let r_f = Float::from_f64(r.num as f64 / r.den as f64, f.prec);
+                            NumberValue::Float(f.sub(&r_f))
+                        }
+                        _ => NumberValue::NaN,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Multiply two values mathematically.
+    pub fn mul(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return NumberValue::NaN;
+        }
+
+        if self.is_infinite() || other.is_infinite() {
+            let s1 = get_infinity_sign(self);
+            let s2 = get_infinity_sign(other);
+            return match (s1, s2) {
+                (Some(pos1), Some(pos2)) => {
+                    if pos1 == pos2 {
+                        NumberValue::PlusInfinity
+                    } else {
+                        NumberValue::MinusInfinity
+                    }
+                }
+                (Some(pos), None) => {
+                    match get_sign_multiplier(other) {
+                        Some(sgn) => {
+                            if sgn == 0.0 {
+                                NumberValue::NaN
+                            } else if (sgn > 0.0) == pos {
+                                NumberValue::PlusInfinity
+                            } else {
+                                NumberValue::MinusInfinity
+                            }
+                        }
+                        None => NumberValue::NaN,
+                    }
+                }
+                (None, Some(pos)) => {
+                    match get_sign_multiplier(self) {
+                        Some(sgn) => {
+                            if sgn == 0.0 {
+                                NumberValue::NaN
+                            } else if (sgn > 0.0) == pos {
+                                NumberValue::PlusInfinity
+                            } else {
+                                NumberValue::MinusInfinity
+                            }
+                        }
+                        None => NumberValue::NaN,
+                    }
+                }
+                _ => NumberValue::NaN,
+            };
+        }
+
+        match (self, other) {
+            (
+                NumberValue::Uncertainty {
+                    value: v1,
+                    uncertainty: u1,
+                },
+                NumberValue::Uncertainty {
+                    value: v2,
+                    uncertainty: u2,
+                },
+            ) => {
+                let val = v1.mul(v2);
+                let term1 = v1.abs().mul(u2);
+                let term2 = v2.abs().mul(u1);
+                let term3 = u1.mul(u2);
+                let unc = term1.add(&term2).add(&term3);
+                NumberValue::Uncertainty {
+                    value: Box::new(val),
+                    uncertainty: Box::new(unc),
+                }
+            }
+            (NumberValue::Uncertainty { value, uncertainty }, other) => {
+                let val = value.mul(other);
+                let unc = uncertainty.mul(&other.abs());
+                NumberValue::Uncertainty {
+                    value: Box::new(val),
+                    uncertainty: Box::new(unc),
+                }
+            }
+            (self_val, NumberValue::Uncertainty { value, uncertainty }) => {
+                let val = self_val.mul(value);
+                let unc = self_val.abs().mul(uncertainty);
+                NumberValue::Uncertainty {
+                    value: Box::new(val),
+                    uncertainty: Box::new(unc),
+                }
+            }
+            _ => {
+                if self.is_interval() || other.is_interval() {
+                    let (l1, u1) = match to_interval(self) {
+                        Some(val) => val,
+                        None => return NumberValue::NaN,
+                    };
+                    let (l2, u2) = match to_interval(other) {
+                        Some(val) => val,
+                        None => return NumberValue::NaN,
+                    };
+                    let prec = std::cmp::max(l1.prec, l2.prec);
+                    let p1 = l1.value * l2.value;
+                    let p2 = l1.value * u2.value;
+                    let p3 = u1.value * l2.value;
+                    let p4 = u1.value * u2.value;
+                    let min_val = min4(p1, p2, p3, p4).next_after(f64::NEG_INFINITY);
+                    let max_val = max4(p1, p2, p3, p4).next_after(f64::INFINITY);
+                    NumberValue::Interval {
+                        lower: Float::from_f64(min_val, prec),
+                        upper: Float::from_f64(max_val, prec),
+                    }
+                } else {
+                    match (self, other) {
+                        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
+                            match r1.mul(r2) {
+                                Some(r) => NumberValue::Rational(r),
+                                None => NumberValue::NaN,
+                            }
+                        }
+                        (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                            NumberValue::Float(f1.mul(f2))
+                        }
+                        (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                            let r_f = Float::from_f64(r.num as f64 / r.den as f64, f.prec);
+                            NumberValue::Float(r_f.mul(f))
+                        }
+                        (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                            let r_f = Float::from_f64(r.num as f64 / r.den as f64, f.prec);
+                            NumberValue::Float(f.mul(&r_f))
+                        }
+                        _ => NumberValue::NaN,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Divide two values mathematically.
+    pub fn div(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return NumberValue::NaN;
+        }
+
+        if self.is_infinite() || other.is_infinite() {
+            let s1 = get_infinity_sign(self);
+            let s2 = get_infinity_sign(other);
+            return match (s1, s2) {
+                (Some(_), Some(_)) => NumberValue::NaN,
+                (Some(pos), None) => {
+                    match get_sign_multiplier(other) {
+                        Some(sgn) => {
+                            if sgn == 0.0 {
+                                if sgn.is_sign_positive() == pos {
+                                    NumberValue::PlusInfinity
+                                } else {
+                                    NumberValue::MinusInfinity
+                                }
+                            } else if sgn > 0.0 {
+                                if pos { NumberValue::PlusInfinity } else { NumberValue::MinusInfinity }
+                            } else {
+                                if pos { NumberValue::MinusInfinity } else { NumberValue::PlusInfinity }
+                            }
+                        }
+                        None => NumberValue::NaN,
+                    }
+                }
+                (None, Some(_)) => {
+                    NumberValue::Rational(Rational::from_i32(0))
+                }
+                _ => NumberValue::NaN,
+            };
+        }
+
+        match (self, other) {
+            (
+                NumberValue::Uncertainty {
+                    value: v1,
+                    uncertainty: u1,
+                },
+                NumberValue::Uncertainty {
+                    value: v2,
+                    uncertainty: u2,
+                },
+            ) => {
+                let val = v1.div(v2);
+                let term1 = v1.abs().mul(u2);
+                let term2 = v2.abs().mul(u1);
+                let num = term1.add(&term2);
+                let den = v2.mul(v2);
+                let unc = num.div(&den);
+                NumberValue::Uncertainty {
+                    value: Box::new(val),
+                    uncertainty: Box::new(unc),
+                }
+            }
+            (NumberValue::Uncertainty { value, uncertainty }, other) => {
+                let val = value.div(other);
+                let unc = uncertainty.div(&other.abs());
+                NumberValue::Uncertainty {
+                    value: Box::new(val),
+                    uncertainty: Box::new(unc),
+                }
+            }
+            (self_val, NumberValue::Uncertainty { value, uncertainty }) => {
+                let val = self_val.div(value);
+                let num = self_val.abs().mul(uncertainty);
+                let den = value.mul(value);
+                let unc = num.div(&den);
+                NumberValue::Uncertainty {
+                    value: Box::new(val),
+                    uncertainty: Box::new(unc),
+                }
+            }
+            _ => {
+                if self.is_interval() || other.is_interval() {
+                    let (l1, u1) = match to_interval(self) {
+                        Some(val) => val,
+                        None => return NumberValue::NaN,
+                    };
+                    let (l2, u2) = match to_interval(other) {
+                        Some(val) => val,
+                        None => return NumberValue::NaN,
+                    };
+                    if l2.value <= 0.0 && u2.value >= 0.0 {
+                        return NumberValue::NaN;
+                    }
+                    let prec = std::cmp::max(l1.prec, l2.prec);
+                    let q1 = l1.value / l2.value;
+                    let q2 = l1.value / u2.value;
+                    let q3 = u1.value / l2.value;
+                    let q4 = u1.value / u2.value;
+                    let min_val = min4(q1, q2, q3, q4).next_after(f64::NEG_INFINITY);
+                    let max_val = max4(q1, q2, q3, q4).next_after(f64::INFINITY);
+                    NumberValue::Interval {
+                        lower: Float::from_f64(min_val, prec),
+                        upper: Float::from_f64(max_val, prec),
+                    }
+                } else {
+                    match (self, other) {
+                        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
+                            match r1.div(r2) {
+                                Some(r) => NumberValue::Rational(r),
+                                None => NumberValue::NaN,
+                            }
+                        }
+                        (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                            NumberValue::Float(f1.div(f2))
+                        }
+                        (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                            let r_f = Float::from_f64(r.num as f64 / r.den as f64, f.prec);
+                            NumberValue::Float(r_f.div(f))
+                        }
+                        (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                            let r_f = Float::from_f64(r.num as f64 / r.den as f64, f.prec);
+                            NumberValue::Float(f.div(&r_f))
+                        }
+                        _ => NumberValue::NaN,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Returns the absolute value of the number.
+    pub fn abs(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let num = if r.num == i128::MIN {
+                    return NumberValue::NaN;
+                } else {
+                    r.num.abs()
+                };
+                NumberValue::Rational(Rational::new(num, r.den))
+            }
+            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(f.value.abs(), f.prec)),
+            NumberValue::Interval { lower, upper } => {
+                let l = lower.value;
+                let u = upper.value;
+                let (new_l, new_u) = if l >= 0.0 {
+                    (l, u)
+                } else if u <= 0.0 {
+                    (-u, -l)
+                } else {
+                    (0.0, l.abs().max(u.abs()))
+                };
+                NumberValue::Interval {
+                    lower: Float::from_f64(new_l, lower.prec),
+                    upper: Float::from_f64(new_u, upper.prec),
+                }
+            }
+            NumberValue::Uncertainty { value, uncertainty } => NumberValue::Uncertainty {
+                value: Box::new(value.abs()),
+                uncertainty: Box::new((**uncertainty).clone()),
+            },
+            NumberValue::PlusInfinity | NumberValue::MinusInfinity => NumberValue::PlusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Converts the value to interval bounds (lower, upper). Returns None if the value is NaN.
+    pub fn to_interval_bounds(&self) -> Option<(f64, f64)> {
+        match self {
+            NumberValue::Rational(r) => {
+                let val = r.num as f64 / r.den as f64;
+                Some((val, val))
+            }
+            NumberValue::Float(f) => {
+                if f.value.is_nan() {
+                    None
+                } else {
+                    Some((f.value, f.value))
+                }
+            }
+            NumberValue::Interval { lower, upper } => {
+                if lower.value.is_nan() || upper.value.is_nan() {
+                    None
+                } else {
+                    Some((lower.value, upper.value))
+                }
+            }
+            NumberValue::Uncertainty { value, uncertainty } => {
+                let (v_min, v_max) = value.to_interval_bounds()?;
+                let (u_min, u_max) = uncertainty.to_interval_bounds()?;
+                let u_limit = u_min.abs().max(u_max.abs());
+                Some((v_min - u_limit, v_max + u_limit))
+            }
+            NumberValue::PlusInfinity => Some((f64::INFINITY, f64::INFINITY)),
+            NumberValue::MinusInfinity => Some((f64::NEG_INFINITY, f64::NEG_INFINITY)),
+            NumberValue::NaN => None,
+        }
+    }
+
+    /// Compares this value to another value.
+    pub fn compare(&self, other: &Self) -> ComparisonResult {
+        if self.is_nan() || other.is_nan() {
+            return ComparisonResult::Unknown;
+        }
+        let self_bounds = self.to_interval_bounds();
+        let other_bounds = other.to_interval_bounds();
+        match (self_bounds, other_bounds) {
+            (Some((l1, u1)), Some((l2, u2))) => {
+                if l1 == l2 && u1 == u2 {
+                    if l1 == u1 {
+                        ComparisonResult::Equal
+                    } else {
+                        ComparisonResult::EqualLimits
+                    }
+                } else if u2 < l1 {
+                    ComparisonResult::Less
+                } else if l2 > u1 {
+                    ComparisonResult::Greater
+                } else if l2 <= l1 && u2 >= u1 {
+                    ComparisonResult::Contains
+                } else if l1 <= l2 && u1 >= u2 {
+                    ComparisonResult::Contained
+                } else if l2 < l1 && u2 < u1 && u2 >= l1 {
+                    ComparisonResult::OverlappingLess
+                } else if l1 < l2 && u1 < u2 && l2 <= u1 {
+                    ComparisonResult::OverlappingGreater
+                } else {
+                    ComparisonResult::Unknown
+                }
+            }
+            _ => ComparisonResult::Unknown,
+        }
+    }
+
+    /// Returns true if this value is strictly greater than the other value.
+    pub fn is_greater_than(&self, other: &Self) -> bool {
+        match self.compare(other) {
+            ComparisonResult::Less => true,
+            _ => false,
+        }
+    }
+
+    /// Returns true if this value is strictly less than the other value.
+    pub fn is_less_than(&self, other: &Self) -> bool {
+        match self.compare(other) {
+            ComparisonResult::Greater => true,
+            _ => false,
         }
     }
 }
@@ -477,6 +1018,97 @@ fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
     }
 }
 
+fn get_sign_multiplier(val: &NumberValue) -> Option<f64> {
+    if val.is_nan() {
+        None
+    } else if val.is_infinite() {
+        get_infinity_sign(val).map(|s| if s { 1.0 } else { -1.0 })
+    } else {
+        match val {
+            NumberValue::Rational(r) => {
+                if r.num == 0 {
+                    Some(0.0)
+                } else if r.num > 0 {
+                    Some(1.0)
+                } else {
+                    Some(-1.0)
+                }
+            }
+            NumberValue::Float(f) => {
+                if f.value == 0.0 {
+                    Some(0.0)
+                } else if f.value > 0.0 {
+                    Some(1.0)
+                } else {
+                    Some(-1.0)
+                }
+            }
+            NumberValue::Interval { lower, upper } => {
+                if lower.value <= 0.0 && upper.value >= 0.0 {
+                    if lower.value == 0.0 && upper.value == 0.0 {
+                        Some(0.0)
+                    } else {
+                        None
+                    }
+                } else if lower.value > 0.0 {
+                    Some(1.0)
+                } else {
+                    Some(-1.0)
+                }
+            }
+            NumberValue::Uncertainty { value, .. } => get_sign_multiplier(value),
+            _ => None,
+        }
+    }
+}
+
+fn to_interval(val: &NumberValue) -> Option<(Float, Float)> {
+    match val {
+        NumberValue::Interval { lower, upper } => Some((lower.clone(), upper.clone())),
+        NumberValue::Rational(r) => {
+            let v = r.num as f64 / r.den as f64;
+            let f = Float::from_f64(v, 53);
+            Some((f.clone(), f))
+        }
+        NumberValue::Float(f) => Some((f.clone(), f.clone())),
+        NumberValue::PlusInfinity => {
+            let f = Float::from_f64(f64::INFINITY, 53);
+            Some((f.clone(), f))
+        }
+        NumberValue::MinusInfinity => {
+            let f = Float::from_f64(f64::NEG_INFINITY, 53);
+            Some((f.clone(), f))
+        }
+        NumberValue::Uncertainty { value, uncertainty } => {
+            let (v_min, v_max) = to_interval(value)?;
+            let (u_min, u_max) = to_interval(uncertainty)?;
+            let u_limit = u_min.value.abs().max(u_max.value.abs());
+            let prec = std::cmp::max(v_min.prec, u_min.prec);
+            Some((
+                Float::from_f64(v_min.value - u_limit, prec),
+                Float::from_f64(v_max.value + u_limit, prec),
+            ))
+        }
+        NumberValue::NaN => None,
+    }
+}
+
+fn min4(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    if a.is_nan() || b.is_nan() || c.is_nan() || d.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b).min(c).min(d)
+    }
+}
+
+fn max4(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    if a.is_nan() || b.is_nan() || c.is_nan() || d.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b).max(c).max(d)
+    }
+}
+
 fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
     let lhs_num = lhs.num.checked_mul(rhs.den)?;
     let rhs_num = rhs.num.checked_mul(lhs.den)?;
@@ -485,12 +1117,27 @@ fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
     Some(Rational::new(num, den))
 }
 
-fn to_float_val(val: &NumberValue) -> Float {
-    match val {
-        NumberValue::Float(f) => f.clone(),
-        NumberValue::Rational(r) => Float::from_f64(r.num as f64 / r.den as f64, 53),
-        _ => Float::from_f64(f64::NAN, 53),
+fn sub_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
+    let lhs_num = lhs.num.checked_mul(rhs.den)?;
+    let rhs_num = rhs.num.checked_mul(lhs.den)?;
+    let num = lhs_num.checked_sub(rhs_num)?;
+    let den = lhs.den.checked_mul(rhs.den)?;
+    Some(Rational::new(num, den))
+}
+
+fn mul_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
+    let num = lhs.num.checked_mul(rhs.num)?;
+    let den = lhs.den.checked_mul(rhs.den)?;
+    Some(Rational::new(num, den))
+}
+
+fn div_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
+    if rhs.num == 0 {
+        return None;
     }
+    let num = lhs.num.checked_mul(rhs.den)?;
+    let den = lhs.den.checked_mul(rhs.num)?;
+    Some(Rational::new(num, den))
 }
 
 fn try_unwrap_single_val(val: &NumberValue) -> Option<NumberValue> {
@@ -799,6 +1446,122 @@ impl Number {
     pub fn is_nan(&self) -> bool {
         let (real, imag) = self.to_canonical_real_imag();
         real.is_nan() || imag.is_nan()
+    }
+
+    /// Creates a new `Number` from its real and imaginary components.
+    pub fn from_real_imag_values(real_val: NumberValue, imag_val: NumberValue, prec: i32, approx: bool) -> Self {
+        if imag_val.is_real_zero() {
+            Self {
+                value: real_val,
+                imaginary: None,
+                precision: prec,
+                approximate: approx,
+                is_imaginary: false,
+            }
+        } else {
+            let imag_num = Number {
+                value: imag_val,
+                imaginary: None,
+                precision: prec,
+                approximate: approx,
+                is_imaginary: true,
+            };
+            Self {
+                value: real_val,
+                imaginary: Some(Box::new(imag_num)),
+                precision: prec,
+                approximate: approx,
+                is_imaginary: false,
+            }
+        }
+    }
+
+    /// Adds two `Number` values.
+    pub fn add(&self, other: &Self) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+        let new_real = a.add(&c);
+        let new_imag = b.add(&d);
+        let prec = std::cmp::max(self.precision, other.precision);
+        let approx = self.approximate || other.approximate;
+        Self::from_real_imag_values(new_real, new_imag, prec, approx)
+    }
+
+    /// Subtracts two `Number` values.
+    pub fn sub(&self, other: &Self) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+        let new_real = a.sub(&c);
+        let new_imag = b.sub(&d);
+        let prec = std::cmp::max(self.precision, other.precision);
+        let approx = self.approximate || other.approximate;
+        Self::from_real_imag_values(new_real, new_imag, prec, approx)
+    }
+
+    /// Multiplies two `Number` values.
+    pub fn mul(&self, other: &Self) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+        let ac = a.mul(&c);
+        let bd = b.mul(&d);
+        let ad = a.mul(&d);
+        let bc = b.mul(&c);
+        let new_real = ac.sub(&bd);
+        let new_imag = ad.add(&bc);
+        let prec = std::cmp::max(self.precision, other.precision);
+        let approx = self.approximate || other.approximate;
+        Self::from_real_imag_values(new_real, new_imag, prec, approx)
+    }
+
+    /// Divides two `Number` values.
+    pub fn div(&self, other: &Self) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+        let ac = a.mul(&c);
+        let bd = b.mul(&d);
+        let bc = b.mul(&c);
+        let ad = a.mul(&d);
+        
+        let c2 = c.mul(&c);
+        let d2 = d.mul(&d);
+        let denom = c2.add(&d2);
+        
+        let num_real = ac.add(&bd);
+        let num_imag = bc.sub(&ad);
+        
+        let new_real = num_real.div(&denom);
+        let new_imag = num_imag.div(&denom);
+        
+        let prec = std::cmp::max(self.precision, other.precision);
+        let approx = self.approximate || other.approximate;
+        Self::from_real_imag_values(new_real, new_imag, prec, approx)
+    }
+
+    /// Compares this `Number` with another `Number`.
+    pub fn compare(&self, other: &Self) -> ComparisonResult {
+        if self.is_complex() || other.is_complex() {
+            return ComparisonResult::Unknown;
+        }
+        if self.is_nan() || other.is_nan() {
+            return ComparisonResult::Unknown;
+        }
+        self.value.compare(&other.value)
+    }
+
+    /// Returns true if this number is strictly greater than the other number.
+    pub fn is_greater_than(&self, other: &Self) -> bool {
+        match self.compare(other) {
+            ComparisonResult::Less => true,
+            _ => false,
+        }
+    }
+
+    /// Returns true if this number is strictly less than the other number.
+    pub fn is_less_than(&self, other: &Self) -> bool {
+        match self.compare(other) {
+            ComparisonResult::Greater => true,
+            _ => false,
+        }
     }
 }
 

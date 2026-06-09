@@ -635,3 +635,193 @@ fn test_adversarial_challenger_cases() {
     }
     assert_eq!(current_val, current_val2);
 }
+
+#[test]
+fn test_exhaustive_comparison_results() {
+    // 1. ComparisonResult variants existence/construction check
+    let _ = ComparisonResult::Equal;
+    let _ = ComparisonResult::Greater;
+    let _ = ComparisonResult::Less;
+    let _ = ComparisonResult::EqualOrGreater;
+    let _ = ComparisonResult::EqualOrLess;
+    let _ = ComparisonResult::NotEqual;
+    let _ = ComparisonResult::Unknown;
+    let _ = ComparisonResult::EqualLimits;
+    let _ = ComparisonResult::Contains;
+    let _ = ComparisonResult::Contained;
+    let _ = ComparisonResult::OverlappingLess;
+    let _ = ComparisonResult::OverlappingGreater;
+
+    // 2. Comparison tests (using self = A, other = B, B relative to A)
+    // - Equal: l1 == l2 && u1 == u2 and it is a point value
+    let a_eq = Number::from_f64(5.0);
+    let b_eq = Number::from_f64(5.0);
+    assert_eq!(a_eq.compare(&b_eq), ComparisonResult::Equal);
+    assert!(!a_eq.is_greater_than(&b_eq));
+    assert!(!a_eq.is_less_than(&b_eq));
+
+    // - Strictly Less: B.upper < A.lower
+    let a_less = Number::new_interval(Float::from_f64(10.0, 53), Float::from_f64(12.0, 53));
+    let b_less = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(8.0, 53));
+    assert_eq!(a_less.compare(&b_less), ComparisonResult::Less);
+    assert!(a_less.is_greater_than(&b_less));
+    assert!(!a_less.is_less_than(&b_less));
+
+    // - Strictly Greater: B.lower > A.upper
+    let a_greater = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(8.0, 53));
+    let b_greater = Number::new_interval(Float::from_f64(10.0, 53), Float::from_f64(12.0, 53));
+    assert_eq!(a_greater.compare(&b_greater), ComparisonResult::Greater);
+    assert!(!a_greater.is_greater_than(&b_greater));
+    assert!(a_greater.is_less_than(&b_greater));
+
+    // - EqualLimits: l1 == l2 && u1 == u2 and not a point value
+    let a_lim = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    let b_lim = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    assert_eq!(a_lim.compare(&b_lim), ComparisonResult::EqualLimits);
+
+    // - Contained: A contains B strictly (l1 <= l2 && u1 >= u2)
+    let a_cont = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(10.0, 53));
+    let b_cont = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    assert_eq!(a_cont.compare(&b_cont), ComparisonResult::Contained);
+
+    // - Contains: B contains A strictly (l2 <= l1 && u2 >= u1)
+    let a_contains = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    let b_contains = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(10.0, 53));
+    assert_eq!(a_contains.compare(&b_contains), ComparisonResult::Contains);
+
+    // - OverlappingLess: l2 < l1 && u2 < u1 && u2 >= l1 (B overlaps A on left)
+    let a_ol = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    let b_ol = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    assert_eq!(a_ol.compare(&b_ol), ComparisonResult::OverlappingLess);
+
+    // - OverlappingGreater: l1 < l2 && u1 < u2 && l2 <= u1 (B overlaps A on right)
+    let a_og = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    let b_og = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    assert_eq!(a_og.compare(&b_og), ComparisonResult::OverlappingGreater);
+
+    // - Unknown: NaN or Complex
+    let a_nan = Number::from_f64(f64::NAN);
+    let b_nan = Number::from_f64(5.0);
+    assert_eq!(a_nan.compare(&b_nan), ComparisonResult::Unknown);
+
+    let a_complex = Number::new_complex(Number::from_f64(1.0), Number::from_f64(2.0));
+    let b_complex = Number::from_f64(5.0);
+    assert_eq!(a_complex.compare(&b_complex), ComparisonResult::Unknown);
+    assert_eq!(b_complex.compare(&a_complex), ComparisonResult::Unknown);
+
+    // - Infinity comparisons
+    let inf = Number::from_f64(f64::INFINITY);
+    let neg_inf = Number::from_f64(f64::NEG_INFINITY);
+    assert_eq!(neg_inf.compare(&inf), ComparisonResult::Greater); // other (inf) > self (neg_inf)
+    assert_eq!(inf.compare(&neg_inf), ComparisonResult::Less); // other (neg_inf) < self (inf)
+}
+
+#[test]
+fn test_exhaustive_interval_arithmetic() {
+    // Test outward-rounded addition
+    // [1.0, 2.0] + [3.0, 4.0] = [4.0, 6.0] (rounded outwards)
+    let a = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(2.0, 53));
+    let b = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(4.0, 53));
+    let sum = a.add(&b);
+    if let NumberValue::Interval { lower, upper } = sum.value() {
+        // lower = next_after(4.0, NEG_INFINITY), upper = next_after(6.0, INFINITY)
+        assert!(lower.value < 4.0);
+        assert!(upper.value > 6.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test outward-rounded subtraction
+    // [3.0, 4.0] - [1.0, 2.0] = [1.0, 3.0]
+    let diff = b.sub(&a);
+    if let NumberValue::Interval { lower, upper } = diff.value() {
+        assert!(lower.value < 1.0);
+        assert!(upper.value > 3.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test outward-rounded multiplication
+    // [-2.0, 3.0] * [-4.0, 5.0]
+    // possible products: 8, -10, -12, 15. min = -12, max = 15
+    let c = Number::new_interval(Float::from_f64(-2.0, 53), Float::from_f64(3.0, 53));
+    let d = Number::new_interval(Float::from_f64(-4.0, 53), Float::from_f64(5.0, 53));
+    let prod = c.mul(&d);
+    if let NumberValue::Interval { lower, upper } = prod.value() {
+        assert!(lower.value < -12.0);
+        assert!(upper.value > 15.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test outward-rounded division
+    // [4.0, 6.0] / [2.0, 3.0] = [4/3, 3.0]
+    let e = Number::new_interval(Float::from_f64(4.0, 53), Float::from_f64(6.0, 53));
+    let f = Number::new_interval(Float::from_f64(2.0, 53), Float::from_f64(3.0, 53));
+    let quot = e.div(&f);
+    if let NumberValue::Interval { lower, upper } = quot.value() {
+        assert!(lower.value < 4.0 / 3.0);
+        assert!(upper.value > 3.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test division by zero interval
+    let zero_interval = Number::new_interval(Float::from_f64(-1.0, 53), Float::from_f64(1.0, 53));
+    let div_zero = e.div(&zero_interval);
+    assert!(div_zero.is_nan());
+
+    // Test mixed scalar-interval operations
+    let scalar = Number::from_f64(2.0);
+    let mixed_sum = a.add(&scalar);
+    if let NumberValue::Interval { lower, upper } = mixed_sum.value() {
+        assert!(lower.value < 3.0);
+        assert!(upper.value > 4.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    let mixed_prod = a.mul(&scalar);
+    if let NumberValue::Interval { lower, upper } = mixed_prod.value() {
+        assert!(lower.value < 2.0);
+        assert!(upper.value > 4.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test NaN propagation in interval arithmetic
+    let nan_val = Number::from_f64(f64::NAN);
+    assert!(a.add(&nan_val).is_nan());
+    assert!(nan_val.add(&a).is_nan());
+}
+
+#[test]
+fn test_complex_arithmetic() {
+    // Standard complex arithmetic: (1+2i) + (3+4i) = 4+6i
+    let c1 = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
+    let c2 = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
+    
+    let sum = c1.add(&c2);
+    let (real_sum, imag_sum) = sum.to_canonical_real_imag();
+    assert_eq!(real_sum, NumberValue::Rational(Rational::new(4, 1)));
+    assert_eq!(imag_sum, NumberValue::Rational(Rational::new(6, 1)));
+
+    // Subtraction: (1+2i) - (3+4i) = -2-2i
+    let diff = c1.sub(&c2);
+    let (real_diff, imag_diff) = diff.to_canonical_real_imag();
+    assert_eq!(real_diff, NumberValue::Rational(Rational::new(-2, 1)));
+    assert_eq!(imag_diff, NumberValue::Rational(Rational::new(-2, 1)));
+
+    // Multiplication: (1+2i) * (3+4i) = (3 - 8) + (4 + 6)i = -5+10i
+    let prod = c1.mul(&c2);
+    let (real_prod, imag_prod) = prod.to_canonical_real_imag();
+    assert_eq!(real_prod, NumberValue::Rational(Rational::new(-5, 1)));
+    assert_eq!(imag_prod, NumberValue::Rational(Rational::new(10, 1)));
+
+    // Division: (1+2i) / (3+4i) = ((1+2i)(3-4i))/(9+16) = (3 + 8 + i(6 - 4))/25 = (11 + 2i)/25 = 11/25 + 2/25 i
+    let quot = c1.div(&c2);
+    let (real_quot, imag_quot) = quot.to_canonical_real_imag();
+    assert_eq!(real_quot, NumberValue::Rational(Rational::new(11, 25)));
+    assert_eq!(imag_quot, NumberValue::Rational(Rational::new(2, 25)));
+}
+
