@@ -430,10 +430,34 @@ fn test_arbitrary_precision_rationals_do_not_fall_back_to_i128_surface() {
         panic!("Expected rational");
     };
     let one = Rational::new(1, 1);
-    assert_eq!(parsed_rational.checked_add(&one), None);
-    assert_eq!(parsed_rational.checked_sub(&one), None);
-    assert_eq!(parsed_rational.checked_mul(&one), None);
-    assert_eq!(parsed_rational.checked_div(&one), None);
+    assert_eq!(
+        parsed_rational
+            .checked_add(&one)
+            .expect("arbitrary-precision checked add should remain exact")
+            .numerator_string(),
+        (rug::Integer::from(i128::MAX) + 2_i32).to_string()
+    );
+    assert_eq!(
+        parsed_rational
+            .checked_sub(&one)
+            .expect("arbitrary-precision checked sub should remain exact")
+            .numerator_string(),
+        i128::MAX.to_string()
+    );
+    assert_eq!(
+        parsed_rational
+            .checked_mul(&one)
+            .expect("arbitrary-precision checked mul should remain exact")
+            .numerator_string(),
+        beyond_i128
+    );
+    assert_eq!(
+        parsed_rational
+            .checked_div(&one)
+            .expect("arbitrary-precision checked div should remain exact")
+            .numerator_string(),
+        beyond_i128
+    );
 }
 
 #[test]
@@ -498,6 +522,16 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
         "10000000000"
     );
     assert_eq!(evaluate_expr("1e303").unwrap().to_qalc_string(), "1E303");
+    assert_eq!(evaluate_expr("2e303").unwrap().to_qalc_string(), "2E303");
+    assert_eq!(evaluate_expr("12e303").unwrap().to_qalc_string(), "1.2E304");
+    assert_eq!(
+        evaluate_expr("123456789012345").unwrap().to_qalc_string(),
+        "1.234567890E14"
+    );
+    assert_eq!(
+        evaluate_expr("129999999999999").unwrap().to_qalc_string(),
+        "1.300000000E14"
+    );
 }
 
 #[test]
@@ -538,6 +572,7 @@ fn scientific_literals_with_impractical_exponents_are_rejected() {
     assert!("- . e1".parse::<Number>().is_err());
 
     assert_eq!("1e303".parse::<Number>().unwrap().to_qalc_string(), "1E303");
+    assert_eq!("2e303".parse::<Number>().unwrap().to_qalc_string(), "2E303");
 }
 
 #[test]
@@ -556,6 +591,27 @@ fn exact_large_rational_compare_does_not_collapse_to_f64_infinity() {
     assert_ne!(
         smaller.value().compare(larger.value()),
         ComparisonResult::Equal
+    );
+
+    let zero = NumberValue::Rational(Rational::new(0, 1));
+    let smaller_uncertain = NumberValue::Uncertainty {
+        value: Box::new(smaller.value().clone()),
+        uncertainty: Box::new(zero.clone()),
+        is_relative: false,
+    };
+    let larger_uncertain = NumberValue::Uncertainty {
+        value: Box::new(larger.value().clone()),
+        uncertainty: Box::new(zero),
+        is_relative: false,
+    };
+
+    assert_eq!(
+        smaller_uncertain.compare(&larger_uncertain),
+        ComparisonResult::Greater
+    );
+    assert_eq!(
+        larger_uncertain.compare(&smaller_uncertain),
+        ComparisonResult::Less
     );
 }
 
@@ -1093,10 +1149,22 @@ fn test_new_rational_arithmetic_and_comparisons() {
     // Overflows
     let max_rat = Rational::try_new(i128::MAX, 1).unwrap();
     let one_rat = Rational::try_new(1, 1).unwrap();
-    assert_eq!(max_rat.checked_add(&one_rat), None);
+    assert_eq!(
+        max_rat
+            .checked_add(&one_rat)
+            .expect("checked add should remain exact past i128")
+            .numerator_string(),
+        (rug::Integer::from(i128::MAX) + 1_i32).to_string()
+    );
 
     let min_rat = Rational::try_new(i128::MIN, 1).unwrap();
-    assert_eq!(min_rat.checked_sub(&one_rat), None);
+    assert_eq!(
+        min_rat
+            .checked_sub(&one_rat)
+            .expect("checked sub should remain exact past i128")
+            .numerator_string(),
+        (rug::Integer::from(i128::MIN) - 1_i32).to_string()
+    );
 
     // Regression tests for premature overflow
     let max_over_2 = Rational::try_new(i128::MAX, 2).unwrap();

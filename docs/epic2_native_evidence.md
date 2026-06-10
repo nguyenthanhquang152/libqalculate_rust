@@ -1,6 +1,6 @@
 # Epic 2 Native Numeric Evidence
 
-Date: 2026-06-10
+Date: 2026-06-11
 
 This note records fallback-disabled Rust-vs-upstream evidence for the current
 Epic 2 numeric slice. It is evidence for the cases listed here only; it does not
@@ -55,6 +55,19 @@ non-batch expressions with fallback disabled:
   `Rational::numerator_string()`, and `Rational::denominator_string()`.
   The older `Rational::num()` / `Rational::den()` compatibility accessors still
   return `i128` and intentionally panic when the exact value exceeds that range.
+- `Rational::checked_add`, `checked_sub`, `checked_mul`, and `checked_div` now
+  use the native `rug`-backed exact rational operations instead of narrowing
+  through the old `i128` compatibility surface. They preserve exact
+  arbitrary-precision results beyond the `i128` range; checked division still
+  returns `None` for division by zero.
+- qalc-profile formatting now uses scientific notation for large exact integer
+  rationals beyond the upstream display threshold, including non-power-of-ten
+  mantissas. Focused upstream probes covered `2e303 -> 2E303`,
+  `12e303 -> 1.2E304`, `123456789012345 -> 1.234567890E14`, and
+  `129999999999999 -> 1.300000000E14`.
+- Exact rational comparisons now unwrap zero-uncertainty values before falling
+  back to approximate interval comparison, preserving ordering for values such
+  as `1e10000 +/- 0` and `2e10000 +/- 0`.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -84,11 +97,21 @@ non-batch expressions with fallback disabled:
 ```sh
 rtk cargo check --tests
 rtk cargo test --test number_behavior rational_from_str_exposes_lossless_arbitrary_precision_surface -- --nocapture
+rtk cargo test --lib test_arbitrary_precision_rationals_do_not_fall_back_to_i128_surface -- --nocapture
+rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
+rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
+rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
+rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
+rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_properties interval_constructor_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_properties interval_constructor -- --nocapture
 rtk cargo test --lib
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '2e303'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '12e303'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '123456789012345'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '129999999999999'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(5;2)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;5)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;2)'

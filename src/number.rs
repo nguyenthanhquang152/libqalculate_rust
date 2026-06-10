@@ -245,10 +245,6 @@ impl Rational {
         }
     }
 
-    fn i128_parts(&self) -> Option<(i128, i128)> {
-        Some((self.value.numer().to_i128()?, self.value.denom().to_i128()?))
-    }
-
     /// Checked addition.
     pub fn add(&self, other: &Self) -> Option<Self> {
         add_rationals(self, other)
@@ -287,166 +283,22 @@ impl Rational {
 
     /// GCD-optimized checked addition.
     pub fn checked_add(&self, other: &Self) -> Option<Self> {
-        let (a, b) = self.i128_parts()?;
-        let (c, d) = other.i128_parts()?;
-
-        let g = gcd(b, d);
-        let b_prime = (b as u128) / g;
-        let d_prime = (d as u128) / g;
-
-        let neg1 = a < 0;
-        let abs1 = U256::mul_u128(a.unsigned_abs(), d_prime);
-
-        let neg2 = c < 0;
-        let abs2 = U256::mul_u128(c.unsigned_abs(), b_prime);
-
-        let (neg_t, abs_t) = if neg1 == neg2 {
-            (neg1, abs1.add(abs2))
-        } else if abs1 >= abs2 {
-            (neg1, abs1.sub(abs2))
-        } else {
-            (neg2, abs2.sub(abs1))
-        };
-
-        let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
-        let g2 = gcd_u128(g, abs_rem);
-
-        let num_u256 = abs_t.div_rem(U256::from_u128(g2)).0;
-
-        let limit = if neg_t {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        if !num_u256.fits_in_u128() || num_u256.as_u128() > limit {
-            return None;
-        }
-
-        let num = if neg_t {
-            let val = num_u256.as_u128();
-            if val == i128::MIN.unsigned_abs() {
-                i128::MIN
-            } else {
-                -(val as i128)
-            }
-        } else {
-            num_u256.as_u128() as i128
-        };
-
-        let g_i128 = g as i128;
-        let g2_i128 = g2 as i128;
-        let b_prime_i128 = b_prime as i128;
-        let d_prime_i128 = d_prime as i128;
-
-        let den = g_i128
-            .checked_div(g2_i128)?
-            .checked_mul(b_prime_i128)?
-            .checked_mul(d_prime_i128)?;
-
-        Self::try_new(num, den)
+        add_rationals(self, other)
     }
 
     /// GCD-optimized checked subtraction.
     pub fn checked_sub(&self, other: &Self) -> Option<Self> {
-        let (a, b) = self.i128_parts()?;
-        let (c, d) = other.i128_parts()?;
-
-        let g = gcd(b, d);
-        let b_prime = (b as u128) / g;
-        let d_prime = (d as u128) / g;
-
-        let neg1 = a < 0;
-        let abs1 = U256::mul_u128(a.unsigned_abs(), d_prime);
-
-        let neg2 = c >= 0;
-        let abs2 = U256::mul_u128(c.unsigned_abs(), b_prime);
-
-        let (neg_t, abs_t) = if neg1 == neg2 {
-            (neg1, abs1.add(abs2))
-        } else if abs1 >= abs2 {
-            (neg1, abs1.sub(abs2))
-        } else {
-            (neg2, abs2.sub(abs1))
-        };
-
-        let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
-        let g2 = gcd_u128(g, abs_rem);
-
-        let num_u256 = abs_t.div_rem(U256::from_u128(g2)).0;
-
-        let limit = if neg_t {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        if !num_u256.fits_in_u128() || num_u256.as_u128() > limit {
-            return None;
-        }
-
-        let num = if neg_t {
-            let val = num_u256.as_u128();
-            if val == i128::MIN.unsigned_abs() {
-                i128::MIN
-            } else {
-                -(val as i128)
-            }
-        } else {
-            num_u256.as_u128() as i128
-        };
-
-        let g_i128 = g as i128;
-        let g2_i128 = g2 as i128;
-        let b_prime_i128 = b_prime as i128;
-        let d_prime_i128 = d_prime as i128;
-
-        let den = g_i128
-            .checked_div(g2_i128)?
-            .checked_mul(b_prime_i128)?
-            .checked_mul(d_prime_i128)?;
-
-        Self::try_new(num, den)
+        sub_rationals(self, other)
     }
 
     /// GCD-optimized checked multiplication.
     pub fn checked_mul(&self, other: &Self) -> Option<Self> {
-        let (a, b) = self.i128_parts()?;
-        let (c, d) = other.i128_parts()?;
-
-        let g1 = gcd(a, d) as i128;
-        let g2 = gcd(c, b) as i128;
-
-        let a_prime = a / g1;
-        let d_prime = d / g1;
-        let c_prime = c / g2;
-        let b_prime = b / g2;
-
-        let num = a_prime.checked_mul(c_prime)?;
-        let den = b_prime.checked_mul(d_prime)?;
-
-        Self::try_new(num, den)
+        mul_rationals(self, other)
     }
 
     /// GCD-optimized checked division.
     pub fn checked_div(&self, other: &Self) -> Option<Self> {
-        let (a, b) = self.i128_parts()?;
-        let (c, d) = other.i128_parts()?;
-
-        if c == 0 {
-            return None;
-        }
-
-        let g1 = gcd(a, c) as i128;
-        let g2 = gcd(d, b) as i128;
-
-        let a_prime = a / g1;
-        let c_prime = c / g1;
-        let d_prime = d / g2;
-        let b_prime = b / g2;
-
-        let num = a_prime.checked_mul(d_prime)?;
-        let den = b_prime.checked_mul(c_prime)?;
-
-        Self::try_new(num, den)
+        div_rationals(self, other)
     }
 }
 
@@ -1880,7 +1732,10 @@ impl NumberValue {
         if self.is_nan() || other.is_nan() {
             return ComparisonResult::Unknown;
         }
-        if let (NumberValue::Rational(lhs), NumberValue::Rational(rhs)) = (self, other) {
+        if let (Some(lhs), Some(rhs)) = (
+            self.exact_rational_for_compare(),
+            other.exact_rational_for_compare(),
+        ) {
             return match lhs.cmp(rhs) {
                 std::cmp::Ordering::Less => ComparisonResult::Greater,
                 std::cmp::Ordering::Equal => ComparisonResult::Equal,
@@ -1914,6 +1769,16 @@ impl NumberValue {
                 }
             }
             _ => ComparisonResult::Unknown,
+        }
+    }
+
+    fn exact_rational_for_compare(&self) -> Option<&Rational> {
+        match self {
+            NumberValue::Rational(rational) => Some(rational),
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } if uncertainty.is_real_zero() => value.exact_rational_for_compare(),
+            _ => None,
         }
     }
 
@@ -3022,7 +2887,7 @@ fn rounded_uncertainty_and_width(unc_abs: f64) -> (f64, usize) {
 fn format_qalc_value(value: &NumberValue) -> String {
     match value {
         NumberValue::Rational(rational) => {
-            if let Some(scientific) = qalc_power_of_ten_string(rational) {
+            if let Some(scientific) = qalc_large_integer_scientific_string(rational) {
                 scientific
             } else if let Some(decimal) = rational.terminating_decimal_string() {
                 decimal
@@ -3097,7 +2962,7 @@ fn fixed_decimal_from_scientific(input: &str) -> Option<String> {
     })
 }
 
-fn qalc_power_of_ten_string(rational: &Rational) -> Option<String> {
+fn qalc_large_integer_scientific_string(rational: &Rational) -> Option<String> {
     if rational.value.denom() != &1 {
         return None;
     }
@@ -3105,18 +2970,66 @@ fn qalc_power_of_ten_string(rational: &Rational) -> Option<String> {
     let numerator = rational.value.numer();
     let negative = numerator.is_negative();
     let digits = numerator.clone().abs().to_string();
-    let exponent = digits.len().checked_sub(1)?;
+    let mut exponent = digits.len().checked_sub(1)?;
     if exponent < 13 {
         return None;
     }
-    if !digits.starts_with('1') || !digits[1..].chars().all(|ch| ch == '0') {
-        return None;
+
+    let dropped_nonzero = digits
+        .as_bytes()
+        .iter()
+        .skip(10)
+        .any(|digit| *digit != b'0');
+    let mut significant: Vec<u8> = digits
+        .as_bytes()
+        .iter()
+        .take(10)
+        .map(|digit| digit - b'0')
+        .collect();
+    if digits
+        .as_bytes()
+        .get(10)
+        .is_some_and(|digit| *digit >= b'5')
+    {
+        let mut carry = true;
+        for digit in significant.iter_mut().rev() {
+            if *digit == 9 {
+                *digit = 0;
+            } else {
+                *digit += 1;
+                carry = false;
+                break;
+            }
+        }
+        if carry {
+            significant.fill(0);
+            significant[0] = 1;
+            exponent += 1;
+        }
     }
 
-    Some(if negative {
-        format!("-1E{exponent}")
+    let leading = char::from(b'0' + significant[0]);
+    let mut fraction: String = significant[1..]
+        .iter()
+        .map(|digit| char::from(b'0' + *digit))
+        .collect();
+    if fraction.chars().all(|ch| ch == '0') {
+        fraction.clear();
+    } else if !dropped_nonzero {
+        while fraction.ends_with('0') {
+            fraction.pop();
+        }
+    }
+
+    let mantissa = if fraction.is_empty() {
+        leading.to_string()
     } else {
-        format!("1E{exponent}")
+        format!("{leading}.{fraction}")
+    };
+    Some(if negative {
+        format!("-{mantissa}E{exponent}")
+    } else {
+        format!("{mantissa}E{exponent}")
     })
 }
 
@@ -3969,19 +3882,6 @@ impl std::ops::Shr<usize> for U256 {
         }
         Self { parts }
     }
-}
-
-fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
-    while b != 0 {
-        let temp = b;
-        b = a % b;
-        a = temp;
-    }
-    a
-}
-
-fn gcd(a: i128, b: i128) -> u128 {
-    gcd_u128(a.unsigned_abs(), b.unsigned_abs())
 }
 
 #[cfg(test)]
