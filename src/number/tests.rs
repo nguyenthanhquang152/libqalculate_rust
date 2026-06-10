@@ -484,6 +484,43 @@ fn exact_division_by_zero_yields_nan_not_fabricated_infinity() {
 }
 
 #[test]
+fn exact_integer_powers_remain_rational_and_parse_starstar() {
+    let power = evaluate_expr("2 ^ 20").expect("integer power expression should parse");
+    assert_eq!(
+        power.value(),
+        &NumberValue::Rational(Rational::new(1_048_576, 1))
+    );
+
+    let reciprocal = evaluate_expr("2 ^ -3").expect("negative integer power should parse");
+    assert_eq!(
+        reciprocal.value(),
+        &NumberValue::Rational(Rational::new(1, 8))
+    );
+
+    let fractional_base =
+        evaluate_expr("(2 / 3) ^ -2").expect("fractional rational power should parse");
+    assert_eq!(
+        fractional_base.value(),
+        &NumberValue::Rational(Rational::new(9, 4))
+    );
+
+    assert_eq!(evaluate_expr("5 ** 3").unwrap().to_qalc_string(), "125");
+    assert_eq!(
+        evaluate_expr("4 ** 3 ** 2").unwrap().to_qalc_string(),
+        "262144"
+    );
+}
+
+#[test]
+fn exact_integer_powers_have_result_size_guard() {
+    let guarded = evaluate_expr("1e5000 ^ 1000").expect("guarded power expression should parse");
+    assert!(
+        matches!(guarded.value(), NumberValue::Float(_)),
+        "oversized exact rational power should fall back to approximate path"
+    );
+}
+
+#[test]
 fn decimal_and_scientific_literals_parse_without_f64_loss() {
     let decimal = "0.01"
         .parse::<Number>()

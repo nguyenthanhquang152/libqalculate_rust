@@ -19,7 +19,7 @@
 //! These divergences will be resolved as the rest of the upstream `Number`
 //! behavior is ported.
 
-use rug::ops::AssignRound;
+use rug::ops::{AssignRound, Pow};
 
 /// The result of a comparison between two numbers or intervals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,6 +314,30 @@ impl Ord for Rational {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.value.cmp(&other.value)
     }
+}
+
+fn integer_decimal_digits_upper_bound(value: &rug::Integer) -> u64 {
+    let bits = u64::from(value.significant_bits());
+    if bits == 0 {
+        1
+    } else {
+        // log10(2) is just below 0.30103, so this is a cheap conservative
+        // upper bound without allocating a decimal string.
+        bits.saturating_mul(30_103).saturating_add(99_999) / 100_000
+    }
+}
+
+fn exact_rational_integer_pow_is_bounded(base: &Rational, exponent_magnitude: u32) -> bool {
+    if exponent_magnitude == 0 {
+        return true;
+    }
+
+    const MAX_EXACT_RATIONAL_POW_DECIMAL_DIGITS: u64 = 1_000_000;
+    let base_digits = integer_decimal_digits_upper_bound(base.value.numer())
+        .max(integer_decimal_digits_upper_bound(base.value.denom()));
+    base_digits < MAX_EXACT_RATIONAL_POW_DECIMAL_DIGITS
+        && base_digits.saturating_mul(u64::from(exponent_magnitude))
+            < MAX_EXACT_RATIONAL_POW_DECIMAL_DIGITS
 }
 
 impl PartialOrd for Rational {
@@ -1491,13 +1515,16 @@ impl NumberValue {
             }
             (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
                 if r2.value.denom() == &1 {
-                    if let Some(exp) = r2.value.numer().to_u32() {
-                        if exp <= 10 {
-                            let mut value = rug::Rational::from(1);
-                            for _ in 0..exp {
-                                value = rug::Rational::from(&value * &r1.value);
-                            }
-                            return NumberValue::Rational(Rational::from_rug(value));
+                    const MAX_EXACT_RATIONAL_POW_EXP: u32 = 10_000;
+                    if let Some(exp) = r2.value.numer().to_i32() {
+                        let magnitude = exp.unsigned_abs();
+                        if magnitude <= MAX_EXACT_RATIONAL_POW_EXP
+                            && !(exp < 0 && r1.is_zero())
+                            && exact_rational_integer_pow_is_bounded(r1, magnitude)
+                        {
+                            return NumberValue::Rational(Rational::from_rug(
+                                r1.value.clone().pow(exp),
+                            ));
                         }
                     }
                 }
@@ -3538,6 +3565,9 @@ pub fn evaluate_expr(s: &str) -> Result<Number, String> {
     while !rest.is_empty() {
         if let Some((lit, remaining)) = next_literal(rest) {
             tokens.push(Token::Literal(std::str::FromStr::from_str(lit)?));
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix("**") {
+            tokens.push(Token::OpPow);
             rest = remaining.trim_start();
         } else {
             let c = rest.chars().next().unwrap();

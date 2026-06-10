@@ -17,11 +17,11 @@ claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 26 rows as `native-pass`.
+`docs/batch_manifest.md` now marks 29 rows as `native-pass`.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.
-- `operators.batch`: lines 1, 10, 12, 14, 21, 30, 34.
+- `operators.batch`: lines 1, 10, 12, 14, 21, 30, 34, 58, 60, 62.
 
 The oracle runner disables C++ fallback for these rows and verifies
 `fallback=native`.
@@ -29,7 +29,7 @@ The oracle runner disables C++ fallback for these rows and verifies
 ## Focused Native Oracle Cases
 
 `tests/oracle.rs::focused_epic2_native_numeric_oracle_cases` compares these
-non-batch expressions with fallback disabled:
+focused expressions with fallback disabled:
 
 - `i`
 - `5i`
@@ -38,6 +38,12 @@ non-batch expressions with fallback disabled:
 - `(1 + 2i) / (3 + 4i)`
 - `1/3`
 - `1e10`
+- `5 ^ 2`
+- `2 ^ -3`
+- `(-2) ^ -3`
+- `(1/2) ^ -3`
+- `5 ** 3`
+- `4 ** 3 ** 2`
 - `2+/-0.002`
 - `100+/-5%`
 - `100+/-5 + 200+/-10%`
@@ -68,6 +74,12 @@ non-batch expressions with fallback disabled:
 - Exact rational comparisons now unwrap zero-uncertainty values before falling
   back to approximate interval comparison, preserving ordering for values such
   as `1e10000 +/- 0` and `2e10000 +/- 0`.
+- Exact rational integer powers now stay rational when both exponent magnitude
+  and estimated exact-result size are within the native guard, including
+  negative exponents. Qalc `**` exponent syntax is parsed as right-associative
+  power syntax. Upstream `operators.batch` rows `5 ^ 2`, `5 ** 3`, and
+  `4 ** 3 ** 2` are promoted to fallback-disabled native evidence; focused
+  oracle probes also cover `2 ^ -3`, `(-2) ^ -3`, and `(1/2) ^ -3`.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -102,6 +114,7 @@ rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
 rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
 rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
+rtk cargo test --lib exact_integer_powers_remain_rational_and_parse_starstar -- --nocapture
 rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
@@ -139,5 +152,7 @@ rtk timeout 600 just coverage
   semantics in several operations.
 - Uncertainty function examples from `explog.batch`, ASCII/Unicode print-option
   toggles, and session-setting-dependent behavior remain incomplete.
+- Division-by-zero-style power output such as `0 ^ -1 -> 1 / 0` remains outside
+  the fallback-disabled native subset.
 - `Calculator` expression evaluation remains fallback-first outside the vetted
   fallback-disabled native numeric subset.

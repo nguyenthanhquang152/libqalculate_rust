@@ -713,6 +713,12 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("complex-division", "(1 + 2i) / (3 + 4i)"),
         ("nonterminating-rational-qalc-format", "1/3"),
         ("fixed-power-of-ten-qalc-format", "1e10"),
+        ("rational-integer-power-caret", "5 ^ 2"),
+        ("rational-negative-integer-power", "2 ^ -3"),
+        ("negative-rational-negative-integer-power", "(-2) ^ -3"),
+        ("fractional-rational-negative-integer-power", "(1/2) ^ -3"),
+        ("rational-integer-power-starstar", "5 ** 3"),
+        ("rational-right-associative-starstar", "4 ** 3 ** 2"),
         ("absolute-uncertainty", "2+/-0.002"),
         ("relative-uncertainty", "100+/-5%"),
         (

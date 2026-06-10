@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **26** |
-| Inventory-only test cases | **630** |
+| Native-pass test cases | **29** |
+| Inventory-only test cases | **627** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -656,9 +656,9 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 23 | `operators.batch:51` | `5//2` | `2` | — | inventory-only |
 | 24 | `operators.batch:53` | `5\2` | `2` | — | inventory-only |
 | 25 | `operators.batch:55` | `5 div 2` | `2` | — | inventory-only |
-| 26 | `operators.batch:58` | `5 ^ 2` | `25` | — | inventory-only |
-| 27 | `operators.batch:60` | `5 ** 3` | `125` | — | inventory-only |
-| 28 | `operators.batch:62` | `4 ** 3 ** 2` | `262144` | — | inventory-only |
+| 26 | `operators.batch:58` | `5 ^ 2` | `25` | — | native-pass |
+| 27 | `operators.batch:60` | `5 ** 3` | `125` | — | native-pass |
+| 28 | `operators.batch:62` | `4 ** 3 ** 2` | `262144` | — | native-pass |
 | 29 | `operators.batch:65` | `1!` | `1` | — | inventory-only |
 | 30 | `operators.batch:67` | `5!` | `120` | — | inventory-only |
 
