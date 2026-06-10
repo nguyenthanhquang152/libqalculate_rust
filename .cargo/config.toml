@@ -2,4 +2,4 @@
 quality = "test --all-targets --all-features"
 
 [env]
-LIBQALCULATE_UPSTREAM_DIR = { value = "../libqalculate", relative = true }
+LIBQALCULATE_UPSTREAM_DIR = "/home/nt-quang/Workspaces/personal/experimentals/porting_qalculator/libqalculate"

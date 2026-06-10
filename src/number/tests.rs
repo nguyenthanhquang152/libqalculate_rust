@@ -28,16 +28,16 @@ fn test_constructors() {
 
     let n_i32 = Number::from_i32(42);
     if let NumberValue::Rational(rat) = n_i32.value() {
-        assert_eq!(rat.num, 42);
-        assert_eq!(rat.den, 1);
+        assert_eq!(rat.num(), 42);
+        assert_eq!(rat.den(), 1);
     } else {
         panic!("Expected rational");
     }
 
     let n_f64 = Number::from_f64(1.23);
     if let NumberValue::Float(fl) = n_f64.value() {
-        assert_eq!(fl.value, 1.23);
-        assert_eq!(fl.prec, 53);
+        assert_eq!(fl.value(), 1.23);
+        assert_eq!(fl.prec(), 53);
     } else {
         panic!("Expected float");
     }
@@ -186,20 +186,20 @@ fn test_extra_coverage() {
 fn test_rational_normalization() {
     // Test normal reductions
     let r1 = Rational::new(2, 2);
-    assert_eq!(r1.num, 1);
-    assert_eq!(r1.den, 1);
+    assert_eq!(r1.num(), 1);
+    assert_eq!(r1.den(), 1);
 
     let r2 = Rational::new(2, -4);
-    assert_eq!(r2.num, -1);
-    assert_eq!(r2.den, 2);
+    assert_eq!(r2.num(), -1);
+    assert_eq!(r2.den(), 2);
 
     let r3 = Rational::new(0, -5);
-    assert_eq!(r3.num, 0);
-    assert_eq!(r3.den, 1);
+    assert_eq!(r3.num(), 0);
+    assert_eq!(r3.den(), 1);
 
     let r4 = Rational::new(-10, -20);
-    assert_eq!(r4.num, 1);
-    assert_eq!(r4.den, 2);
+    assert_eq!(r4.num(), 1);
+    assert_eq!(r4.den(), 2);
 }
 
 #[test]
@@ -211,13 +211,13 @@ fn test_uncertainty_modeling() {
     assert!(n.approximate());
     if let NumberValue::Uncertainty { value, uncertainty } = n.value() {
         if let NumberValue::Rational(r_val) = &**value {
-            assert_eq!(r_val.num, 5);
+            assert_eq!(r_val.num(), 5);
         } else {
             panic!("Expected Rational");
         }
         if let NumberValue::Rational(r_unc) = &**uncertainty {
-            assert_eq!(r_unc.num, 1);
-            assert_eq!(r_unc.den, 2);
+            assert_eq!(r_unc.num(), 1);
+            assert_eq!(r_unc.den(), 2);
         } else {
             panic!("Expected Rational");
         }
@@ -365,46 +365,49 @@ fn test_float_equality_ignores_precision() {
 
 #[test]
 fn test_gcd_and_canonicalize_limits() {
-    // Test GCD with i128::MIN
-    let g = gcd(i128::MIN, i128::MIN);
-    assert_eq!(g, i128::MIN.unsigned_abs());
-
-    // Test canonicalize with self.num = i128::MIN and den = 1 (representable)
-    let mut r = Rational {
-        num: i128::MIN,
-        den: 1,
-    };
-    r.canonicalize();
-    assert_eq!(r.num, i128::MIN);
-    assert_eq!(r.den, 1);
+    // Test canonicalize with num = i128::MIN and den = 1 (representable)
+    let r = Rational::new(i128::MIN, 1);
+    assert_eq!(r.num(), i128::MIN);
+    assert_eq!(r.den(), 1);
 }
 
 #[test]
-fn test_rational_arithmetic_overflow_returns_nan() {
+fn test_rational_arithmetic_no_overflow() {
     let max = NumberValue::Rational(Rational::new(i128::MAX, 1));
     let one = NumberValue::Rational(Rational::new(1, 1));
-    assert!(max.add(&one).is_nan());
+    let sum = max.add(&one);
+    assert!(!sum.is_nan());
+    if let NumberValue::Rational(r) = sum {
+        let expected = rug::Integer::from(i128::MAX) + 1_i32;
+        assert_eq!(r.value.numer().to_string(), expected.to_string());
+    } else {
+        panic!("Expected rational");
+    }
 
     let min = NumberValue::Rational(Rational::new(i128::MIN, 1));
-    assert!(min.negate().is_nan());
+    let negated = min.negate();
+    assert!(!negated.is_nan());
+    if let NumberValue::Rational(r) = negated {
+        let expected = -rug::Integer::from(i128::MIN);
+        assert_eq!(r.value.numer().to_string(), expected.to_string());
+    } else {
+        panic!("Expected rational");
+    }
 }
 
 #[test]
-#[should_panic(expected = "Rational numerator overflow")]
-fn test_canonicalize_overflow_panics() {
-    // i128::MIN / -1 = 2^127 which overflows i128
-    let mut r = Rational {
-        num: i128::MIN,
-        den: -1,
-    };
-    r.canonicalize();
+fn test_canonicalize_no_overflow_panics() {
+    // i128::MIN / -1 = 2^127 which overflows i128, but fits in rug::Rational
+    let r = Rational::new(i128::MIN, -1);
+    let expected = -rug::Integer::from(i128::MIN);
+    assert_eq!(r.value.numer().to_string(), expected.to_string());
+    assert_eq!(r.value.denom().to_string(), "1");
 }
 
 #[test]
-#[should_panic(expected = "Rational denominator must not be zero")]
+#[should_panic]
 fn test_canonicalize_den_zero_panics() {
-    let mut r = Rational { num: 5, den: 0 };
-    r.canonicalize();
+    let _r = Rational::new(5, 0);
 }
 
 #[test]
@@ -576,10 +579,10 @@ fn test_adversarial_challenger_cases() {
     assert_eq!(r_neg_to_pos_limit.num(), i128::MAX);
     assert_eq!(r_neg_to_pos_limit.den(), 1);
 
-    // 2. Extremely large values in add_rationals and negate causing NaN
+    // 2. Extremely large values in add_rationals and negate succeeding
     let max_rat = NumberValue::Rational(Rational::new(i128::MAX, 1));
     let two_rat = NumberValue::Rational(Rational::new(2, 1));
-    assert!(max_rat.add(&two_rat).is_nan());
+    assert!(!max_rat.add(&two_rat).is_nan());
 
     // 3. Float extremes and bounds
     let f_max = Float::from_f64(f64::MAX, 53);
@@ -634,4 +637,630 @@ fn test_adversarial_challenger_cases() {
         };
     }
     assert_eq!(current_val, current_val2);
+}
+
+#[test]
+fn test_exhaustive_comparison_results() {
+    // 1. ComparisonResult variants existence/construction check
+    let _ = ComparisonResult::Equal;
+    let _ = ComparisonResult::Greater;
+    let _ = ComparisonResult::Less;
+    let _ = ComparisonResult::EqualOrGreater;
+    let _ = ComparisonResult::EqualOrLess;
+    let _ = ComparisonResult::NotEqual;
+    let _ = ComparisonResult::Unknown;
+    let _ = ComparisonResult::EqualLimits;
+    let _ = ComparisonResult::Contains;
+    let _ = ComparisonResult::Contained;
+    let _ = ComparisonResult::OverlappingLess;
+    let _ = ComparisonResult::OverlappingGreater;
+
+    // 2. Comparison tests (using self = A, other = B, B relative to A)
+    // - Equal: l1 == l2 && u1 == u2 and it is a point value
+    let a_eq = Number::from_f64(5.0);
+    let b_eq = Number::from_f64(5.0);
+    assert_eq!(a_eq.compare(&b_eq), ComparisonResult::Equal);
+    assert!(!a_eq.is_greater_than(&b_eq));
+    assert!(!a_eq.is_less_than(&b_eq));
+
+    // - Strictly Less: B.upper < A.lower
+    let a_less = Number::new_interval(Float::from_f64(10.0, 53), Float::from_f64(12.0, 53));
+    let b_less = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(8.0, 53));
+    assert_eq!(a_less.compare(&b_less), ComparisonResult::Less);
+    assert!(a_less.is_greater_than(&b_less));
+    assert!(!a_less.is_less_than(&b_less));
+
+    // - Strictly Greater: B.lower > A.upper
+    let a_greater = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(8.0, 53));
+    let b_greater = Number::new_interval(Float::from_f64(10.0, 53), Float::from_f64(12.0, 53));
+    assert_eq!(a_greater.compare(&b_greater), ComparisonResult::Greater);
+    assert!(!a_greater.is_greater_than(&b_greater));
+    assert!(a_greater.is_less_than(&b_greater));
+
+    // - EqualLimits: l1 == l2 && u1 == u2 and not a point value
+    let a_lim = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    let b_lim = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    assert_eq!(a_lim.compare(&b_lim), ComparisonResult::EqualLimits);
+
+    // - Contained: A contains B strictly (l1 <= l2 && u1 >= u2)
+    let a_cont = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(10.0, 53));
+    let b_cont = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    assert_eq!(a_cont.compare(&b_cont), ComparisonResult::Contained);
+
+    // - Contains: B contains A strictly (l2 <= l1 && u2 >= u1)
+    let a_contains = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    let b_contains = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(10.0, 53));
+    assert_eq!(a_contains.compare(&b_contains), ComparisonResult::Contains);
+
+    // - OverlappingLess: l2 < l1 && u2 < u1 && u2 >= l1 (B overlaps A on left)
+    let a_ol = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    let b_ol = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    assert_eq!(a_ol.compare(&b_ol), ComparisonResult::OverlappingLess);
+
+    // - OverlappingGreater: l1 < l2 && u1 < u2 && l2 <= u1 (B overlaps A on right)
+    let a_og = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(7.0, 53));
+    let b_og = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(10.0, 53));
+    assert_eq!(a_og.compare(&b_og), ComparisonResult::OverlappingGreater);
+
+    // - Unknown: NaN or Complex
+    let a_nan = Number::from_f64(f64::NAN);
+    let b_nan = Number::from_f64(5.0);
+    assert_eq!(a_nan.compare(&b_nan), ComparisonResult::Unknown);
+
+    let a_complex = Number::new_complex(Number::from_f64(1.0), Number::from_f64(2.0));
+    let b_complex = Number::from_f64(5.0);
+    assert_eq!(a_complex.compare(&b_complex), ComparisonResult::Unknown);
+    assert_eq!(b_complex.compare(&a_complex), ComparisonResult::Unknown);
+
+    // - Infinity comparisons
+    let inf = Number::from_f64(f64::INFINITY);
+    let neg_inf = Number::from_f64(f64::NEG_INFINITY);
+    assert_eq!(neg_inf.compare(&inf), ComparisonResult::Greater); // other (inf) > self (neg_inf)
+    assert_eq!(inf.compare(&neg_inf), ComparisonResult::Less); // other (neg_inf) < self (inf)
+}
+
+#[test]
+fn test_exhaustive_interval_arithmetic() {
+    // Test outward-rounded addition
+    // [1.0, 2.0] + [3.0, 4.0] = [4.0, 6.0] (rounded outwards)
+    let a = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(2.0, 53));
+    let b = Number::new_interval(Float::from_f64(3.0, 53), Float::from_f64(4.0, 53));
+    let sum = a.add(&b);
+    if let NumberValue::Interval { lower, upper } = sum.value() {
+        // lower = next_after(4.0, NEG_INFINITY), upper = next_after(6.0, INFINITY)
+        assert!(lower.value <= 4.0);
+        assert!(upper.value >= 6.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test outward-rounded subtraction
+    // [3.0, 4.0] - [1.0, 2.0] = [1.0, 3.0]
+    let diff = b.sub(&a);
+    if let NumberValue::Interval { lower, upper } = diff.value() {
+        assert!(lower.value <= 1.0);
+        assert!(upper.value >= 3.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test outward-rounded multiplication
+    // [-2.0, 3.0] * [-4.0, 5.0]
+    // possible products: 8, -10, -12, 15. min = -12, max = 15
+    let c = Number::new_interval(Float::from_f64(-2.0, 53), Float::from_f64(3.0, 53));
+    let d = Number::new_interval(Float::from_f64(-4.0, 53), Float::from_f64(5.0, 53));
+    let prod = c.mul(&d);
+    if let NumberValue::Interval { lower, upper } = prod.value() {
+        assert!(lower.value <= -12.0);
+        assert!(upper.value >= 15.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test outward-rounded division
+    // [4.0, 6.0] / [2.0, 3.0] = [4/3, 3.0]
+    let e = Number::new_interval(Float::from_f64(4.0, 53), Float::from_f64(6.0, 53));
+    let f = Number::new_interval(Float::from_f64(2.0, 53), Float::from_f64(3.0, 53));
+    let quot = e.div(&f);
+    if let NumberValue::Interval { lower, upper } = quot.value() {
+        assert!(lower.value <= 4.0 / 3.0);
+        assert!(upper.value >= 3.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test division by zero interval
+    let zero_interval = Number::new_interval(Float::from_f64(-1.0, 53), Float::from_f64(1.0, 53));
+    let div_zero = e.div(&zero_interval);
+    assert!(div_zero.is_nan());
+
+    // Test mixed scalar-interval operations
+    let scalar = Number::from_f64(2.0);
+    let mixed_sum = a.add(&scalar);
+    if let NumberValue::Interval { lower, upper } = mixed_sum.value() {
+        assert!(lower.value <= 3.0);
+        assert!(upper.value >= 4.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    let mixed_prod = a.mul(&scalar);
+    if let NumberValue::Interval { lower, upper } = mixed_prod.value() {
+        assert!(lower.value <= 2.0);
+        assert!(upper.value >= 4.0);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // Test NaN propagation in interval arithmetic
+    let nan_val = Number::from_f64(f64::NAN);
+    assert!(a.add(&nan_val).is_nan());
+    assert!(nan_val.add(&a).is_nan());
+}
+
+#[test]
+fn test_complex_arithmetic() {
+    // Standard complex arithmetic: (1+2i) + (3+4i) = 4+6i
+    let c1 = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
+    let c2 = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
+
+    let sum = c1.add(&c2);
+    let (real_sum, imag_sum) = sum.to_canonical_real_imag();
+    assert_eq!(real_sum, NumberValue::Rational(Rational::new(4, 1)));
+    assert_eq!(imag_sum, NumberValue::Rational(Rational::new(6, 1)));
+
+    // Subtraction: (1+2i) - (3+4i) = -2-2i
+    let diff = c1.sub(&c2);
+    let (real_diff, imag_diff) = diff.to_canonical_real_imag();
+    assert_eq!(real_diff, NumberValue::Rational(Rational::new(-2, 1)));
+    assert_eq!(imag_diff, NumberValue::Rational(Rational::new(-2, 1)));
+
+    // Multiplication: (1+2i) * (3+4i) = (3 - 8) + (4 + 6)i = -5+10i
+    let prod = c1.mul(&c2);
+    let (real_prod, imag_prod) = prod.to_canonical_real_imag();
+    assert_eq!(real_prod, NumberValue::Rational(Rational::new(-5, 1)));
+    assert_eq!(imag_prod, NumberValue::Rational(Rational::new(10, 1)));
+
+    // Division: (1+2i) / (3+4i) = ((1+2i)(3-4i))/(9+16) = (3 + 8 + i(6 - 4))/25 = (11 + 2i)/25 = 11/25 + 2/25 i
+    let quot = c1.div(&c2);
+    let (real_quot, imag_quot) = quot.to_canonical_real_imag();
+    assert_eq!(real_quot, NumberValue::Rational(Rational::new(11, 25)));
+    assert_eq!(imag_quot, NumberValue::Rational(Rational::new(2, 25)));
+}
+
+#[test]
+fn test_new_rational_arithmetic_and_comparisons() {
+    // 1. checked_add, checked_sub, checked_mul, checked_div
+    let half = Rational::try_new(1, 2).unwrap();
+    let third = Rational::try_new(1, 3).unwrap();
+
+    assert_eq!(half.checked_add(&third), Rational::try_new(5, 6));
+    assert_eq!(half.checked_sub(&third), Rational::try_new(1, 6));
+    assert_eq!(half.checked_mul(&third), Rational::try_new(1, 6));
+    assert_eq!(half.checked_div(&third), Rational::try_new(3, 2));
+
+    // Overflows
+    let max_rat = Rational::try_new(i128::MAX, 1).unwrap();
+    let one_rat = Rational::try_new(1, 1).unwrap();
+    assert_eq!(max_rat.checked_add(&one_rat), None);
+
+    let min_rat = Rational::try_new(i128::MIN, 1).unwrap();
+    assert_eq!(min_rat.checked_sub(&one_rat), None);
+
+    // Regression tests for premature overflow
+    let max_over_2 = Rational::try_new(i128::MAX, 2).unwrap();
+    assert_eq!(
+        max_over_2.checked_add(&max_over_2),
+        Some(Rational::new(i128::MAX, 1))
+    );
+
+    let min_plus_1_over_2 = Rational::try_new(i128::MIN + 1, 2).unwrap();
+    assert_eq!(
+        min_plus_1_over_2.checked_sub(&max_over_2),
+        Some(Rational::new(i128::MIN + 1, 1))
+    );
+
+    // Cross-GCD multiplication/division to avoid premature overflow
+    let large_a = Rational::try_new(1 << 120, 1 << 100).unwrap();
+    let large_b = Rational::try_new(1 << 100, 1 << 120).unwrap();
+    assert_eq!(large_a.checked_mul(&large_b), Some(Rational::new(1, 1)));
+    assert_eq!(large_a.checked_div(&large_a), Some(Rational::new(1, 1)));
+
+    // Division by zero
+    let zero_rat = Rational::try_new(0, 1).unwrap();
+    assert_eq!(half.checked_div(&zero_rat), None);
+
+    // 2. Ordering comparisons
+    assert!(half > third);
+    assert!(Rational::try_new(-1, 2).unwrap() < Rational::try_new(-1, 3).unwrap());
+    assert!(half > Rational::try_new(-1, 2).unwrap());
+    assert!(zero_rat < half);
+    assert!(zero_rat > Rational::try_new(-1, 2).unwrap());
+    assert!(max_rat > Rational::try_new(i128::MAX - 1, 1).unwrap());
+
+    // 3. NumberValue promotions and arithmetic
+    let nv_half = NumberValue::Rational(half.clone());
+    let nv_third = NumberValue::Rational(third.clone());
+    let nv_float = NumberValue::Float(Float::from_f64(0.5, 53));
+    let nv_float_two = NumberValue::Float(Float::from_f64(2.0, 53));
+
+    // sub
+    assert_eq!(
+        nv_half.sub(&nv_third),
+        NumberValue::Rational(Rational::new(1, 6))
+    );
+    assert!(nv_half.sub(&nv_float).is_real_zero());
+
+    // mul
+    assert_eq!(
+        nv_half.mul(&nv_third),
+        NumberValue::Rational(Rational::new(1, 6))
+    );
+    assert_eq!(
+        nv_half.mul(&nv_float_two),
+        NumberValue::Float(Float::from_f64(1.0, 53))
+    );
+
+    // div
+    assert_eq!(
+        nv_half.div(&nv_third),
+        NumberValue::Rational(Rational::new(3, 2))
+    );
+    assert_eq!(
+        nv_half.div(&nv_float),
+        NumberValue::Float(Float::from_f64(1.0, 53))
+    );
+    assert!(nv_half
+        .div(&NumberValue::Rational(zero_rat.clone()))
+        .is_nan());
+
+    // Interval promotions
+    let interval = NumberValue::Interval {
+        lower: Float::from_f64(0.0, 53),
+        upper: Float::from_f64(2.0, 53),
+    };
+    // nv_half (0.5) - [0, 2] = [0.5 - 2, 0.5 - 0] = [-1.5, 0.5]
+    if let NumberValue::Interval { lower, upper } = nv_half.sub(&interval) {
+        assert!(lower.value() <= -1.5);
+        assert!(upper.value() >= 0.5);
+    } else {
+        panic!("Expected interval");
+    }
+
+    // [0, 2] - nv_half (0.5) = [-0.5, 1.5]
+    if let NumberValue::Interval { lower, upper } = interval.sub(&nv_half) {
+        assert!(lower.value() <= -0.5);
+        assert!(upper.value() >= 1.5);
+    } else {
+        panic!("Expected interval");
+    }
+
+    // Uncertainty promotions
+    let uncertainty = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Rational(Rational::new(5, 1))),
+        uncertainty: Box::new(NumberValue::Rational(Rational::new(1, 2))),
+    };
+    // nv_half (0.5) - (5 +/- 0.5) = -4.5 +/- 0.5
+    if let NumberValue::Uncertainty {
+        value,
+        uncertainty: unc,
+    } = nv_half.sub(&uncertainty)
+    {
+        assert_eq!(value.as_ref(), &NumberValue::Rational(Rational::new(-9, 2)));
+        assert_eq!(unc.as_ref(), &NumberValue::Rational(Rational::new(1, 2)));
+    } else {
+        panic!("Expected uncertainty");
+    }
+
+    // 4. Number comparisons and promotions
+    let n_half = Number::from_rational(half.clone());
+    let n_third = Number::from_rational(third.clone());
+    let n_float = Number::from_float(Float::from_f64(0.5, 53));
+
+    assert!(n_half > n_third);
+    assert_eq!(
+        n_half.partial_cmp(&n_float),
+        Some(std::cmp::Ordering::Equal)
+    );
+    assert!(n_half > Number::from_float(Float::from_f64(0.4, 53)));
+
+    // Complex promotions
+    let c = Number::new_complex(
+        Number::from_rational(Rational::new(2, 1)),
+        Number::from_rational(Rational::new(3, 1)),
+    );
+    // n_half (0.5) - (2 + 3i) = -1.5 - 3i
+    let diff = n_half.sub(&c);
+    assert_eq!(diff.value(), &NumberValue::Rational(Rational::new(-3, 2)));
+    assert_eq!(
+        diff.imaginary().unwrap().value(),
+        &NumberValue::Rational(Rational::new(-3, 1))
+    );
+}
+
+#[test]
+fn test_critic_adversarial_precision_rounding_equality() {
+    use rug::ops::Pow;
+
+    // 1. Float Equality Transitivity Violation Test
+    let x = Float::from_f64(1.0, 53);
+
+    let mut y_val = rug::Float::with_val(128, 1.0);
+    let base2 = rug::Float::with_val(128, 2.0);
+    let diff = rug::Float::with_val(128, base2.pow(-100));
+    y_val += diff;
+    let y = Float { value: y_val };
+
+    let mut z_val = rug::Float::with_val(128, 1.0);
+    let base2_z = rug::Float::with_val(128, 2.0);
+    let diff2 = rug::Float::with_val(128, base2_z.pow(-53));
+    z_val += diff2;
+    let z = Float { value: z_val };
+
+    assert_ne!(x, y, "Transitivity check 1 (x != y)");
+    assert_ne!(x, z, "Transitivity check 2 (x != z)");
+    assert_ne!(y, z, "Transitivity check 3 (y != z)");
+
+    // 2. Rational + Interval Precision Loss Test
+    let lower_128 = Float {
+        value: rug::Float::with_val(128, 0.0),
+    };
+    let upper_128 = Float {
+        value: rug::Float::with_val(128, 0.0),
+    };
+    let interval = NumberValue::Interval {
+        lower: lower_128,
+        upper: upper_128,
+    };
+
+    let r_third = NumberValue::Rational(Rational::new(1, 3));
+
+    let result = interval.add(&r_third);
+    if let NumberValue::Interval { lower, upper } = result {
+        assert_eq!(lower.prec(), 128);
+        assert_eq!(upper.prec(), 128);
+
+        let expected_128 = rug::Float::with_val(128, &rug::Rational::from((1, 3)));
+        let actual_lower = &lower.value;
+
+        let diff_actual_expected = rug::Float::with_val(128, actual_lower - &expected_128).abs();
+
+        let base2_limit = rug::Float::with_val(128, 2.0);
+        let limit_128 = rug::Float::with_val(128, base2_limit.pow(-120));
+
+        // The difference must be extremely small (0 or <= limit_128) as precision is preserved at 128 bits
+        assert!(
+            diff_actual_expected <= limit_128,
+            "Rational to Interval addition should NOT have lost precision"
+        );
+    } else {
+        panic!("Expected Interval result");
+    }
+
+    // 3. Outward Rounding verification under Round::Down and Round::Up
+    let f1_lower = Float {
+        value: rug::Float::with_val(4, 0.1),
+    };
+    let f1_upper = Float {
+        value: rug::Float::with_val(4, 0.1),
+    };
+    let iv1 = NumberValue::Interval {
+        lower: f1_lower,
+        upper: f1_upper,
+    };
+
+    let f2_lower = Float {
+        value: rug::Float::with_val(4, 0.2),
+    };
+    let f2_upper = Float {
+        value: rug::Float::with_val(4, 0.2),
+    };
+    let iv2 = NumberValue::Interval {
+        lower: f2_lower,
+        upper: f2_upper,
+    };
+
+    let sum_iv = iv1.add(&iv2);
+    if let NumberValue::Interval { lower, upper } = sum_iv {
+        let exact_sum = rug::Float::with_val(128, 0.3);
+        let lower_f128 = rug::Float::with_val(128, &lower.value);
+        let upper_f128 = rug::Float::with_val(128, &upper.value);
+        assert!(
+            lower_f128 <= exact_sum,
+            "Lower bound must be rounded Down (<= exact sum)"
+        );
+        assert!(
+            upper_f128 >= exact_sum,
+            "Upper bound must be rounded Up (>= exact sum)"
+        );
+        assert!(
+            lower_f128 < upper_f128,
+            "Outward rounding should make interval bounds diverge"
+        );
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // 4. Boundary and extreme Float values
+    let subnormal_f64 = 5e-324;
+    let f_sub = Float::from_f64(subnormal_f64, 53);
+    assert!(!f_sub.is_zero());
+    assert!(!f_sub.is_nan());
+    assert!(!f_sub.is_infinite());
+
+    let large_float = Float {
+        value: rug::Float::with_val(128, rug::Float::parse("1e10000").unwrap()),
+    };
+    assert_eq!(large_float.value(), f64::INFINITY);
+}
+
+#[test]
+fn test_critic_float_eq_transitivity_adversarial() {
+    use rug::ops::Pow;
+
+    // 1. Float PartialEq Transitivity
+    let precs = [2, 12, 24, 53, 64, 128, 256, 512];
+    for &p1 in &precs {
+        for &p2 in &precs {
+            for &p3 in &precs {
+                let values = [1.0, 0.5, 0.25, 0.0, -0.0, f64::INFINITY, f64::NEG_INFINITY];
+                for &v in &values {
+                    let a = Float::from_f64(v, p1);
+                    let b = Float::from_f64(v, p2);
+                    let c = Float::from_f64(v, p3);
+
+                    assert_eq!(a, b, "a == b for value {} with prec {} and {}", v, p1, p2);
+                    assert_eq!(b, c, "b == c for value {} with prec {} and {}", v, p2, p3);
+                    assert_eq!(a, c, "a == c for value {} with prec {} and {}", v, p1, p3);
+                }
+
+                let a_nan = Float::from_f64(f64::NAN, p1);
+                let b_nan = Float::from_f64(f64::NAN, p2);
+                let c_nan = Float::from_f64(f64::NAN, p3);
+                assert_eq!(a_nan, b_nan);
+                assert_eq!(b_nan, c_nan);
+                assert_eq!(a_nan, c_nan);
+            }
+        }
+    }
+
+    // Pairwise inequalities transitivity: A != B && B == C => A != C
+    let a = Float::from_f64(1.0, 53);
+
+    let mut b_val = rug::Float::with_val(128, 1.0);
+    let diff = rug::Float::with_val(128, rug::Float::with_val(128, 2.0).pow(-100));
+    b_val += diff;
+    let b = Float {
+        value: b_val.clone(),
+    };
+
+    let c = Float {
+        value: rug::Float::with_val(256, &b_val),
+    };
+
+    assert_ne!(a, b);
+    assert_eq!(b, c);
+    assert_ne!(a, c);
+
+    // Subnormals transitivity
+    let sub1 = Float::from_f64(5e-324, 53);
+    let sub2 = Float::from_f64(5e-324, 128);
+    let sub3 = Float::from_f64(5e-324, 256);
+    assert_eq!(sub1, sub2);
+    assert_eq!(sub2, sub3);
+    assert_eq!(sub1, sub3);
+}
+
+#[test]
+fn test_critic_rational_interval_addition_precision_loss() {
+    use rug::ops::AssignRound;
+
+    let precs = [2, 12, 24, 53, 64, 128, 256, 512];
+    for &prec in &precs {
+        let lower = Float {
+            value: rug::Float::with_val(prec, 0.0),
+        };
+        let upper = Float {
+            value: rug::Float::with_val(prec, 0.0),
+        };
+        let interval = NumberValue::Interval { lower, upper };
+        let r_third = NumberValue::Rational(Rational::new(1, 3));
+
+        let res = interval.add(&r_third);
+        if let NumberValue::Interval {
+            lower: res_l,
+            upper: res_u,
+        } = res
+        {
+            // Verify that precision is preserved
+            assert_eq!(res_l.prec(), prec);
+            assert_eq!(res_u.prec(), prec);
+
+            // Compute expected bounds under correct outward rounding (Down for lower, Up for upper)
+            let r = rug::Rational::from((1, 3));
+            let mut expected_lower = rug::Float::new(prec);
+            expected_lower.assign_round(&r, rug::float::Round::Down);
+            let mut expected_upper = rug::Float::new(prec);
+            expected_upper.assign_round(&r, rug::float::Round::Up);
+
+            // Verify that the actual bounds computed by the code match the expected outward-rounded bounds
+            assert_eq!(res_l.value, expected_lower);
+            assert_eq!(res_u.value, expected_upper);
+        } else {
+            panic!("Expected Interval");
+        }
+    }
+}
+
+#[test]
+fn test_critic_no_regressions_float_interval_rational() {
+    // 1. Outward rounding of intervals: verify round Down for lower and Up for upper under addition.
+    let lower1 = Float {
+        value: rug::Float::with_val(12, 0.1),
+    };
+    let upper1 = Float {
+        value: rug::Float::with_val(12, 0.1),
+    };
+    let iv1 = NumberValue::Interval {
+        lower: lower1,
+        upper: upper1,
+    };
+
+    let lower2 = Float {
+        value: rug::Float::with_val(12, 0.2),
+    };
+    let upper2 = Float {
+        value: rug::Float::with_val(12, 0.2),
+    };
+    let iv2 = NumberValue::Interval {
+        lower: lower2,
+        upper: upper2,
+    };
+
+    let sum = iv1.add(&iv2);
+    if let NumberValue::Interval {
+        lower: sum_l,
+        upper: sum_u,
+    } = sum
+    {
+        let exact_sum = rug::Float::with_val(1024, 0.3);
+        let sum_l_high = rug::Float::with_val(1024, &sum_l.value);
+        let sum_u_high = rug::Float::with_val(1024, &sum_u.value);
+
+        assert!(sum_l_high <= exact_sum);
+        assert!(sum_u_high >= exact_sum);
+        assert!(sum_l_high < sum_u_high);
+    } else {
+        panic!("Expected Interval");
+    }
+
+    // 2. Rational panic behaviors (overflows, zero denominator)
+    let result = std::panic::catch_unwind(|| {
+        let _ = Rational::new(5, 0);
+    });
+    assert!(result.is_err());
+
+    let r_overflow_num = Rational::new(i128::MIN, -1);
+    let result_num = std::panic::catch_unwind(move || {
+        let _ = r_overflow_num.num();
+    });
+    assert!(result_num.is_err());
+
+    let r_overflow_den = Rational::new(1, i128::MIN);
+    let result_den = std::panic::catch_unwind(move || {
+        let _ = r_overflow_den.den();
+    });
+    assert!(result_den.is_err());
+
+    let r_max = NumberValue::Rational(Rational::new(i128::MAX, 1));
+    let sum_large = r_max.add(&r_max);
+    assert!(!sum_large.is_nan());
+    if let NumberValue::Rational(sum_r) = sum_large {
+        let result_sum_access = std::panic::catch_unwind(move || {
+            let _ = sum_r.num();
+        });
+        assert!(result_sum_access.is_err());
+    } else {
+        panic!("Expected Rational");
+    }
 }

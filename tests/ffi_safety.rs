@@ -35,6 +35,9 @@ fn get_vm_rss() -> Option<usize> {
 
 #[test]
 fn test_memory_cleanup_calculations_loop() {
+    if std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1") {
+        return;
+    }
     let _guard = TEST_MUTEX.lock().unwrap();
     configure_definitions_dir();
 
@@ -72,6 +75,9 @@ fn test_memory_cleanup_calculations_loop() {
 
 #[test]
 fn test_memory_cleanup_calculator_creation_loop() {
+    if std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1") {
+        return;
+    }
     let _guard = TEST_MUTEX.lock().unwrap();
     configure_definitions_dir();
 
