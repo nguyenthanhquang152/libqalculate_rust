@@ -62,7 +62,7 @@ fn test_parsing_percentage_variations() {
 
     // Zero percentage uncertainty
     let n2 = "100 +/- 0%".parse::<Number>().unwrap();
-    assert_eq!(n2.to_string(), "100±0%");
+    assert_eq!(n2.to_string(), "100");
 
     // Negative percentage uncertainty
     let n3 = "100 +/- -5%".parse::<Number>().unwrap();
@@ -256,7 +256,7 @@ fn test_uncertainty_propagation_boundary_cases() {
     // Multiplication with zero uncertainty
     let zero_unc = "10 +/- 0".parse::<Number>().unwrap();
     let zero_unc_sum = zero_unc.add(&zero_unc);
-    assert_eq!(zero_unc_sum.to_string(), "20±0");
+    assert_eq!(zero_unc_sum.to_string(), "20");
 
     // Auditor specific cases:
     // 1. Exponentiating a negative base with exponent having 0 uncertainty

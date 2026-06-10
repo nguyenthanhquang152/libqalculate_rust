@@ -1,9 +1,9 @@
 # Compatibility Inventory — libqalculate → libqalculate_rust
 
 > **Upstream version**: libqalculate 5.11.0
-> **Inventory date**: 2026-06-09
-> **Epics**: 0 — Project Bootstrap & Inventory; 1 — Workspace Foundation and Optional C++ Oracle/FFI
-> **Tasks**: 0.1/0.2 inventory baseline; 1.1 (hybrid-build-inventory), 1.2 (ffi-sys-bindings), 1.3 (safe-ffi-calculator-wrapper), 1.4 (no-cpp-fallback-gate)
+> **Inventory date**: 2026-06-10
+> **Epics**: 0 — Project Bootstrap & Inventory; 1 — Workspace Foundation and Optional C++ Oracle/FFI; 2 — Numeric Core (Number)
+> **Tasks**: 0.1/0.2 inventory baseline; 1.1 (hybrid-build-inventory), 1.2 (ffi-sys-bindings), 1.3 (safe-ffi-calculator-wrapper), 1.4 (no-cpp-fallback-gate), 2.1-2.6 numeric-core slices
 
 ---
 
@@ -11,15 +11,15 @@
 
 | Category | Total | native-pass | tooling-pass | scaffold | fallback-only | unstarted | out-of-scope |
 |---|---|---|---|---|---|---|---|
-| Public Headers | 22 | 1 | 0 | 2 | 1 | 14 | 4 |
-| Implementation Files | 41 | 1 | 0 | 0 | 3 | 37 | 0 |
+| Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
+| Implementation Files | 41 | 0 | 0 | 1 | 3 | 37 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
-| Batch Test Files | 17 | 0 | 0 | 0 | 0 | 17 | 0 |
-| Batch Test Cases | 656 | 0 | 0 | 0 | 0 | 656 | 0 |
+| Batch Test Files | 17 | 0 | 0 | 2 | 0 | 15 | 0 |
+| Batch Test Cases | 656 | 25 | 0 | 0 | 0 | 631 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 0 | 1 | 4 | 0 |
-| Core Class API Groups | 59 | 3 | 0 | 3 | 1 | 52 | 0 |
+| Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for future native evidence. The `Number` type has a scaffold, `Calculator` has an FFI fallback bridge, and the CLI (`qalc-rs`) has Rust-only tooling for batch parsing and self-checks. Core computation, definition loading, and expression evaluation remain unstarted or fallback-only until native tests run with fallback disabled.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 25 `native-pass` rows across `parser.batch` and `operators.batch`; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
 
 ---
 
@@ -48,7 +48,7 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 | 3 | `MathStructure.h` | — | `unstarted` | Core expression tree; ~120 public methods |
 | 4 | `MathStructure_p.h` | — | `out-of-scope` | Private implementation detail of MathStructure |
 | 5 | `MathStructure-support.h` | — | `unstarted` | Internal support macros for MathStructure operations |
-| 6 | `Number.h` | `src/number.rs` | `native-pass` | `NumberValue` enum, `Rational`, `Float` types defined; no MPFR backend |
+| 6 | `Number.h` | `src/number.rs` | `scaffold` | Mixed native slices for `NumberValue`, `Rational`, `Float`, intervals, complex values, and uncertainty; not full upstream `Number.h` parity |
 | 7 | `ExpressionItem.h` | — | `unstarted` | Base class for all definition items |
 | 8 | `ExpressionItem_p.h` | — | `out-of-scope` | Private implementation detail of ExpressionItem |
 | 9 | `Function.h` | — | `unstarted` | `MathFunction` and argument classes |
@@ -68,9 +68,9 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 
 ### Headers by Status
 
-- **native-pass (1)**: `Number.h`
+- **native-pass (0)**: —
 - **fallback-only (1)**: `Calculator.h`
-- **scaffold (2)**: `includes.h`, `qalculate.h`
+- **scaffold (3)**: `Number.h`, `includes.h`, `qalculate.h`
 - **unstarted (14)**: `MathStructure.h`, `MathStructure-support.h`, `ExpressionItem.h`, `Function.h`, `BuiltinFunctions.h`, `Variable.h`, `Unit.h`, `Prefix.h`, `DataSet.h`, `QalculateDateTime.h`, `definitions.h`, `util.h`, `bernoulli_numbers.h`, `primes.h`
 - **out-of-scope (4)**: `Calculator_p.h`, `MathStructure_p.h`, `ExpressionItem_p.h`, `support.h`
 
@@ -114,7 +114,7 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | # | C++ File | Responsibility | Rust Status |
 |---|---|---|---|
-| 1 | `Number.cc` | Arbitrary-precision arithmetic (MPFR) | `native-pass` via `src/number.rs` |
+| 1 | `Number.cc` | Arbitrary-precision arithmetic (GMP/MPFR), intervals, uncertainty, complex values, formatting | `scaffold` via `src/number.rs`; selected native slices covered, full upstream parity incomplete |
 
 ### BuiltinFunctions Family (12 files)
 
@@ -150,9 +150,8 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | Status | Families | File Count |
 |---|---|---|
-| `native-pass` | Number | 1 |
+| `scaffold` | Number | 1 |
 | `fallback-only` | Calculator construction, calculation, definitions | 3 |
-| `scaffold` | — | 0 |
 | `unstarted` | Calculator conversion/parsing/plot APIs, MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 37 |
 
 ---
@@ -171,7 +170,7 @@ Maps the upstream command-line and test harness sources inspected for Epic 0. Th
 | 6 | `../libqalculate/tests/Makefile.am` | `docs/batch_manifest.md`, `tests/batch_manifest_validation.rs` | `tooling-pass` | none | #3 |
 | 7 | `../libqalculate/data/Makefile.am` | `docs/compatibility_inventory.md` | `unstarted` | none | #41 |
 
-All rows use exact upstream paths, an owner artifact in this repository, a status, a deviation value, and a next-task reference. No native parity is claimed for CLI expression evaluation because it still routes through the C++ fallback bridge.
+All rows use exact upstream paths, an owner artifact in this repository, a status, a deviation value, and a next-task reference. No broad native parity is claimed for CLI expression evaluation: the default path still routes through the C++ fallback bridge, while fallback-disabled native evidence is limited to the oracle-proven numeric subset that `number::evaluate_expr()` can parse and evaluate successfully.
 
 ## 2.2 Build and Configure Feature Mapping
 
@@ -241,8 +240,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 | 6 | `limits.batch` | 181 | 4 | — | `unstarted` |
 | 7 | `matrixvector.batch` | 130 | 0 | — | `unstarted` |
 | 8 | `numberbase.batch` | 15 | 3 | — | `unstarted` |
-| 9 | `operators.batch` | 30 | 0 | — | `unstarted` |
-| 10 | `parser.batch` | 27 | 0 | — | `unstarted` |
+| 9 | `operators.batch` | 30 | 0 | — | `scaffold` |
+| 10 | `parser.batch` | 27 | 0 | — | `scaffold` |
 | 11 | `percentages.batch` | 26 | 0 | — | `unstarted` |
 | 12 | `polynomial.batch` | 49 | 4 | — | `unstarted` |
 | 13 | `solver.batch` | 25 | 4 | — | `unstarted` |
@@ -257,6 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
+| Native-pass batch cases | 25 |
+| Inventory-only batch cases | 631 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -295,7 +296,7 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 | 3 | `--self-check` | — | Runs self-diagnostics | `tooling-pass` | Rust-only addition; no upstream parity claim |
 | 4 | `--list-upstream-tests` | — | Lists upstream batch files | `tooling-pass` | Rust-only addition; no upstream parity claim |
 | 5 | `--parse-batch` | — | Parses batch file structure | `tooling-pass` | Native batch parser tooling; no expression evaluation |
-| 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge or explicit no-fallback scaffold | `fallback-only` | Delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output; `QALCULATE_DISABLE_FALLBACK=1` rejects unported expressions and only allows named scaffold cases |
+| 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge or fallback-disabled native scaffold for an oracle-proven numeric subset | `fallback-only` | Default path delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output; `QALCULATE_DISABLE_FALLBACK=1` attempts `number::evaluate_expr()` only for expressions explicitly covered by native oracle evidence and reports `fallback=native` only for successful non-NaN native results |
 | 7 | `-defaults` | Reset to default settings | — | `unstarted` | |
 | 8 | `-set <option> <value>` | Set calculator option | — | `unstarted` | |
 | 9 | `--test-file <path>` | Run batch test file | — | `unstarted` | `qalc-rs` has `--parse-batch` but no evaluation |
@@ -323,7 +324,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | 1 | Construction / destruction | 2 | `scaffold` | `Calculator::new()` creates C++ instance via FFI |
 | 2 | Definition loading | 3 | `scaffold` | `load_global_definitions()`, `load_local_definitions()`, and `load_exchange_rates()` exposed via FFI |
 | 3 | Expression parsing | 5 | `unstarted` | No direct `parse()` / `parseNumber()` wrapper yet |
-| 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI; tracked variants report fallback state for oracle evidence |
+| 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI; fallback-disabled mode can route a small oracle-proven native numeric expression subset through `number::evaluate_expr()` and tracked variants report fallback state for oracle evidence |
 | 5 | Conversion | 6 | `unstarted` | No direct `convert()` / `convertToBaseUnits()` wrapper yet |
 | 6 | Settings / options | 15+ | `unstarted` | No public settings/options wrapper yet; qalc-style fallback uses fixed bridge defaults |
 | 7 | Messages | 4 | `unstarted` | No `message()` / `nextMessage()` wrapper yet |
@@ -352,17 +353,17 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 | # | API Category | Est. Methods | Rust Status | Notes |
 |---|---|---|---|---|
-| 1 | NumberType enum | 1 | `native-pass` | `NumberValue` enum maps types (Rational, Float, PlusInfinity, MinusInfinity, etc.) |
-| 2 | Construction | 8 | `native-pass` | Basic constructors exist (`from_i64`, `from_rational`, etc.) |
+| 1 | NumberType enum | 1 | `scaffold` | `NumberValue` includes current Rust numeric variants, but this is not a complete upstream `Number.h` `NumberType` parity claim |
+| 2 | Construction | 8 | `scaffold` | Basic constructors exist (`new`, `from_i32`, `from_rational`, `from_float`, `from_f64`, `new_interval`, `new_uncertainty`, `new_complex`), while the full upstream construction/setter surface remains incomplete |
 | 3 | Setters | 6 | `unstarted` | `set()`, `setFloat()`, `setInterval()` |
-| 4 | Arithmetic | 15 | `unstarted` | `add`, `subtract`, `multiply`, `divide`, `power`, `root`, `negate`, `abs`, `mod`, etc. |
+| 4 | Arithmetic | 15 | `scaffold` | `add`, `sub`, `mul`, `div`, `pow`, `sqrt`, `ln`, `negate`, and `abs` exist for selected variants; division-by-zero declines native success, and full upstream edge-case parity remains incomplete |
 | 5 | Comparison | 6 | `scaffold` | `PartialEq` for value equality; `<`, `>`, `<=`, `>=` not yet implemented |
-| 6 | Predicates | 12 | `native-pass` | `is_zero()`, `is_one()`, `is_positive()`, `is_negative()`, `is_integer()` exist as stubs |
-| 7 | Conversion | 5 | `unstarted` | `intValue()`, `floatValue()`, `to_string()` |
-| 8 | Interval operations | 4 | `unstarted` | `setInterval()`, `isInterval()`, interval arithmetic |
-| 9 | Uncertainty | 3 | `unstarted` | `uncertainty()`, `setUncertainty()` |
-| 10 | Precision | 4 | `unstarted` | `precision()`, `setPrecision()`, MPFR precision control |
-| 11 | Format / print | 3 | `unstarted` | `print()`, `format()`, base conversion display |
+| 6 | Predicates | 12 | `scaffold` | Current predicates include zero/one, complex, real/imaginary part, interval, infinity, NaN, approximation, and precision state used by the scaffold; full upstream predicate parity remains incomplete |
+| 7 | Conversion | 5 | `scaffold` | Bounded `num()`/`den()` accessors remain `i128`; internal exact rationals can exceed that range and display through `rug` strings |
+| 8 | Interval operations | 4 | `scaffold` | Native interval storage, comparison categories, and selected outward-rounded arithmetic are covered by unit/property tests; qalc-compatible interval input syntax and fallback-disabled oracle coverage remain incomplete |
+| 9 | Uncertainty | 3 | `scaffold` | Native absolute/relative uncertainty representation, parsing, formatting, and selected propagation are covered by unit/property tests; fallback-disabled oracle coverage remains incomplete |
+| 10 | Precision | 4 | `scaffold` | `rug::Float` precision is tracked, but the full upstream precision-setting API is not ported |
+| 11 | Format / print | 3 | `scaffold` | Display exists for current Rust variants; upstream base/localized formatting and full print options are not ported |
 
 ### 6.4 ExpressionItem (`ExpressionItem.h`)
 
@@ -426,14 +427,14 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 |---|---|---|---|---|---|
 | Calculator | 8 | 0 | 2 | 1 | 5 |
 | MathStructure | 14 | 0 | 0 | 0 | 14 |
-| Number | 11 | 3 | 1 | 0 | 7 |
+| Number | 11 | 0 | 10 | 0 | 1 |
 | ExpressionItem | 4 | 0 | 0 | 0 | 4 |
 | Variable | 4 | 0 | 0 | 0 | 4 |
 | Function | 5 | 0 | 0 | 0 | 5 |
 | DataSet | 4 | 0 | 0 | 0 | 4 |
 | Unit | 5 | 0 | 0 | 0 | 5 |
 | Prefix | 4 | 0 | 0 | 0 | 4 |
-| **Total** | **59** | **3** | **3** | **1** | **52** |
+| **Total** | **59** | **0** | **12** | **1** | **46** |
 
 ---
 
@@ -445,7 +446,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 |---|---|---|
 | `src/lib.rs` | `includes.h` (partial), crate root | `scaffold` |
 | `src/ffi.rs` | `Calculator.h`, `Calculator.cc`, `Calculator-calculate.cc`, `Calculator-definitions.cc` (partial) | `fallback-only` |
-| `src/number.rs` | `Number.h`, `Number.cc` | `native-pass` |
+| `src/number.rs` | `Number.h`, `Number.cc` | mixed: focused native evidence, scaffold, unstarted |
 | `src/batch.rs` | — (no upstream equivalent; native batch parser) | `tooling-pass` |
 | `src/main.rs` | `../src/qalc.cc` (partial CLI parity) | mixed |
 
@@ -478,9 +479,9 @@ Used by automated inventory validation tooling.
 
 inventory_version: 1
 upstream_version: 5.11.0
-inventory_date: 2026-06-09
-epic: 0
-tasks: [0.1, 0.2]
+inventory_date: 2026-06-10
+epic: 2
+tasks: [0.1, 0.2, 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6]
 
 counts:
   public_headers: 22
@@ -518,9 +519,16 @@ status_summary:
   batch_tests:
     native_pass: 0
     tooling_pass: 0
+    scaffold: 2
+    fallback_only: 0
+    unstarted: 15
+    out_of_scope: 0
+  batch_test_cases:
+    native_pass: 25
+    tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 17
+    unstarted: 631
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2
@@ -532,8 +540,8 @@ status_summary:
   api_categories:
     native_pass: 0
     tooling_pass: 0
-    scaffold: 6
+    scaffold: 12
     fallback_only: 1
-    unstarted: 52
+    unstarted: 46
     out_of_scope: 0
 -->

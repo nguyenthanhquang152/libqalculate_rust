@@ -40,13 +40,10 @@ fn test_complex_stress_nan_and_infinity() {
     let div_inf = one_complex.div(&inf_real);
     assert!(div_inf.is_zero());
 
-    // 3. Division by zero (special case)
-    // (1 + 1i) / 0 = inf + inf i
+    // 3. Division by exact zero declines evaluation instead of fabricating infinities.
     let zero = Number::from_i32(0);
     let div_zero = one_complex.div(&zero);
-    let (real_div_zero, imag_div_zero) = div_zero.to_canonical_real_imag();
-    assert_eq!(real_div_zero, NumberValue::PlusInfinity);
-    assert_eq!(imag_div_zero, NumberValue::PlusInfinity);
+    assert!(div_zero.is_nan());
 
     // 4. NaN propagation
     let nan_num = Number::from_f64(f64::NAN);
@@ -312,12 +309,10 @@ fn test_complex_stress_mixed_interval_uncertainty() {
 
 #[test]
 fn test_complex_stress_extreme_division() {
-    // 1. (1 - 1i) / 0 = inf - inf i
+    // 1. Exact zero divisor declines evaluation instead of fabricating infinities.
     let one_minus_i = Number::new_complex(Number::from_i32(1), Number::from_i32(-1));
     let div_zero = one_minus_i.div(&Number::from_i32(0));
-    let (real_div_zero, imag_div_zero) = div_zero.to_canonical_real_imag();
-    assert_eq!(real_div_zero, NumberValue::PlusInfinity);
-    assert_eq!(imag_div_zero, NumberValue::MinusInfinity);
+    assert!(div_zero.is_nan());
 
     // 2. (inf + 2i) / (2 + 3i) = inf - inf i
     let inf_real = Number::from_f64(f64::INFINITY);

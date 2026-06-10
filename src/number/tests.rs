@@ -403,6 +403,137 @@ fn test_rational_arithmetic_no_overflow() {
 }
 
 #[test]
+fn test_arbitrary_precision_rationals_do_not_fall_back_to_i128_surface() {
+    let beyond_i128 = (rug::Integer::from(i128::MAX) + 1_i32).to_string();
+
+    let parsed = beyond_i128
+        .parse::<Number>()
+        .expect("arbitrary-size integer literal should parse as an exact rational");
+    assert!(!parsed.approximate());
+    assert_eq!(parsed.to_string(), beyond_i128);
+    if let NumberValue::Rational(r) = parsed.value() {
+        assert_eq!(r.value.numer().to_string(), beyond_i128);
+        assert_eq!(r.value.denom().to_string(), "1");
+    } else {
+        panic!("Expected rational");
+    }
+
+    let sum = NumberValue::Rational(Rational::new(i128::MAX, 1))
+        .add(&NumberValue::Rational(Rational::new(1, 1)));
+    assert_eq!(sum.to_string(), beyond_i128);
+    assert_eq!(
+        sum.partial_cmp(&NumberValue::Rational(Rational::new(i128::MAX, 1))),
+        Some(std::cmp::Ordering::Greater)
+    );
+
+    let NumberValue::Rational(parsed_rational) = parsed.value() else {
+        panic!("Expected rational");
+    };
+    let one = Rational::new(1, 1);
+    assert_eq!(parsed_rational.checked_add(&one), None);
+    assert_eq!(parsed_rational.checked_sub(&one), None);
+    assert_eq!(parsed_rational.checked_mul(&one), None);
+    assert_eq!(parsed_rational.checked_div(&one), None);
+}
+
+#[test]
+fn evaluate_expr_handles_grouping_parentheses() {
+    let result = evaluate_expr("(1 + 2) * 4").expect("grouped expression should parse");
+    assert_eq!(result.to_string(), "12");
+}
+
+#[test]
+fn evaluate_expr_rejects_trailing_literals_and_respects_unary_precedence() {
+    assert!(evaluate_expr("1 2").is_err());
+    assert!(evaluate_expr("1(2)3").is_err());
+    assert!(evaluate_expr("1.23(4)5").is_err());
+    assert!(evaluate_expr("1(2)%").is_err());
+
+    let result = evaluate_expr("-2^2").expect("expression should parse");
+    assert_eq!(result.to_string(), "-4");
+}
+
+#[test]
+fn exact_division_by_zero_yields_nan_not_fabricated_infinity() {
+    let result = evaluate_expr("1 / 0").expect("expression should parse");
+    assert!(result.is_nan());
+}
+
+#[test]
+fn decimal_and_scientific_literals_parse_without_f64_loss() {
+    let decimal = "0.01"
+        .parse::<Number>()
+        .expect("decimal literal should parse");
+    assert!(!decimal.approximate());
+    assert_eq!(decimal.to_string(), "0.01");
+    let NumberValue::Rational(r) = decimal.value() else {
+        panic!("Expected rational decimal storage");
+    };
+    assert_eq!(r.value.numer().to_string(), "1");
+    assert_eq!(r.value.denom().to_string(), "100");
+
+    let sum = evaluate_expr(".123 + 1").expect("decimal expression should parse");
+    assert_eq!(sum.to_string(), "1.123");
+
+    let scientific = evaluate_expr("1e3 + 2").expect("scientific expression should parse");
+    assert_eq!(scientific.to_string(), "1002");
+}
+
+#[test]
+fn terminating_rationals_use_qalc_decimal_output_shape() {
+    assert_eq!(evaluate_expr("1/2").unwrap().to_string(), "0.5");
+    assert_eq!(evaluate_expr("2/25").unwrap().to_string(), "0.08");
+    assert_eq!(evaluate_expr("10/2").unwrap().to_string(), "5");
+    assert_eq!(evaluate_expr("1/3").unwrap().to_string(), "1/3");
+}
+
+#[test]
+fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
+    assert_eq!(
+        evaluate_expr("1/3").unwrap().to_qalc_string(),
+        "0.3333333333"
+    );
+    assert_eq!(
+        evaluate_expr("1e10").unwrap().to_qalc_string(),
+        "10000000000"
+    );
+    assert_eq!(evaluate_expr("1e303").unwrap().to_qalc_string(), "1E303");
+}
+
+#[test]
+fn simple_imaginary_literals_parse_natively() {
+    assert_eq!(evaluate_expr("i").unwrap().to_string(), "i");
+    assert_eq!(evaluate_expr("-i").unwrap().to_string(), "-i");
+    assert_eq!(evaluate_expr("5i").unwrap().to_string(), "5i");
+    assert_eq!(
+        evaluate_expr("(1 + 2i) + (3 + 4i)").unwrap().to_string(),
+        "4 + 6i"
+    );
+    assert_eq!(
+        evaluate_expr("(1 + 2i) * (3 + 4i)").unwrap().to_string(),
+        "-5 + 10i"
+    );
+    assert_eq!(
+        evaluate_expr("(1 + 2i) / (3 + 4i)").unwrap().to_string(),
+        "0.44 + 0.08i"
+    );
+}
+
+#[test]
+fn internal_interval_literals_parse_for_scaffold() {
+    let comma_interval = evaluate_expr("[1,2]").unwrap();
+    assert!(comma_interval.is_interval());
+    assert_eq!(comma_interval.to_qalc_string(), "[1  2]");
+    assert_eq!(evaluate_expr("[1 2]").unwrap().to_qalc_string(), "[1  2]");
+    assert_eq!(evaluate_expr("[-1,2]").unwrap().to_qalc_string(), "[-1  2]");
+    assert_eq!(
+        evaluate_expr("[1,2] + [3,4]").unwrap().to_qalc_string(),
+        "[4  6]"
+    );
+    assert!(evaluate_expr("[2,1]").is_err());
+}
+
+#[test]
 fn test_canonicalize_no_overflow_panics() {
     // i128::MIN / -1 = 2^127 which overflows i128, but fits in rug::Rational
     let r = Rational::new(i128::MIN, -1);
@@ -686,6 +817,18 @@ fn test_native_uncertainty_behavior() {
     let f = "3 +/- 0".parse::<Number>().unwrap();
     let div = e.div(&f);
     assert_eq!(div.to_string(), "4.0±1.7");
+}
+
+#[test]
+fn test_zero_uncertainty_formats_as_underlying_value() {
+    let exact = "10 +/- 0".parse::<Number>().unwrap();
+    assert_eq!(exact.to_string(), "10");
+
+    let exact_sum = exact.add(&exact);
+    assert_eq!(exact_sum.to_string(), "20");
+
+    assert_eq!(evaluate_expr("10 +/- 0").unwrap().to_string(), "10");
+    assert_eq!(evaluate_expr("10 ± 0").unwrap().to_string(), "10");
 }
 
 #[test]
@@ -1373,18 +1516,7 @@ fn test_coverage_boost() {
     assert!(is_value_negative(&v_unc));
     assert!(!is_value_negative(&v_nan));
 
-    // 4. get_finite_sign helper function
-    assert_eq!(get_finite_sign(&v_rat_pos), Some(true));
-    assert_eq!(get_finite_sign(&v_rat_neg), Some(false));
-    assert_eq!(get_finite_sign(&v_fl_pos), Some(true));
-    assert_eq!(get_finite_sign(&v_fl_neg), Some(false));
-    assert_eq!(get_finite_sign(&v_interval_pos), Some(true));
-    assert_eq!(get_finite_sign(&v_interval_neg), Some(false));
-    assert_eq!(get_finite_sign(&v_interval_mixed), None);
-    assert_eq!(get_finite_sign(&v_unc), Some(false));
-    assert_eq!(get_finite_sign(&v_nan), None);
-
-    // 5. get_sign_multiplier helper function
+    // 4. get_sign_multiplier helper function
     assert_eq!(get_sign_multiplier(&v_rat_pos), Some(1.0));
     assert_eq!(get_sign_multiplier(&v_rat_neg), Some(-1.0));
     assert_eq!(get_sign_multiplier(&v_fl_pos), Some(1.0));
@@ -1397,7 +1529,7 @@ fn test_coverage_boost() {
     assert_eq!(get_sign_multiplier(&v_unc), Some(-1.0));
     assert_eq!(get_sign_multiplier(&v_nan), None);
 
-    // 6. Number constructors and predicates coverage
+    // 5. Number constructors and predicates coverage
     let n_default = Number::default();
     assert!(n_default.is_zero());
 
@@ -1417,22 +1549,16 @@ fn test_coverage_boost() {
     assert!(n_complex.is_complex());
     assert!(n_complex.is_imaginary() || n_complex.has_real_part());
 
-    // 7. norm and conjugate
+    // 6. norm and conjugate
     let n_comp = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
     assert_eq!(n_comp.conjugate().to_string(), "3 - 4i");
     assert_eq!(n_comp.norm().to_string(), "5");
 
-    // 8. cmp_u128_rational
-    assert_eq!(
-        cmp_u128_rational(1, 2, 2, 3, false),
-        std::cmp::Ordering::Less
-    );
-
-    // 9. min4 / max4
+    // 7. min4 / max4
     assert_eq!(min4(1.0, 2.0, 3.0, 4.0), 1.0);
     assert_eq!(max4(1.0, 2.0, 3.0, 4.0), 4.0);
 
-    // 10. to_interval
+    // 8. to_interval
     let int_bounds = to_interval(&v_rat_pos);
     assert!(int_bounds.is_some());
     let int_bounds_unc = to_interval(&v_unc);
