@@ -8,30 +8,21 @@ struct I256 {
 }
 
 impl I256 {
-    fn from_i128(val: i128) -> Self {
-        Self {
-            neg: val < 0,
-            abs: U256::from_u128(val.unsigned_abs()),
-        }
-    }
-
     fn add(self, other: Self) -> Self {
         if self.neg == other.neg {
             Self {
                 neg: self.neg,
                 abs: self.abs.add(other.abs),
             }
+        } else if self.abs >= other.abs {
+            Self {
+                neg: self.neg,
+                abs: self.abs.sub(other.abs),
+            }
         } else {
-            if self.abs >= other.abs {
-                Self {
-                    neg: self.neg,
-                    abs: self.abs.sub(other.abs),
-                }
-            } else {
-                Self {
-                    neg: other.neg,
-                    abs: other.abs.sub(self.abs),
-                }
+            Self {
+                neg: other.neg,
+                abs: other.abs.sub(self.abs),
             }
         }
     }
@@ -182,13 +173,22 @@ fn oracle_sub(r1: &Rational, r2: &Rational) -> Option<Rational> {
 fn rational_strategy() -> impl Strategy<Value = Rational> {
     prop_oneof![
         // Small numbers
-        (any::<i32>(), any::<i32>().prop_filter("den not zero", |d| *d != 0))
+        (
+            any::<i32>(),
+            any::<i32>().prop_filter("den not zero", |d| *d != 0)
+        )
             .prop_map(|(n, d)| Rational::try_new(n as i128, d as i128).unwrap()),
         // i64 range
-        (any::<i64>(), any::<i64>().prop_filter("den not zero", |d| *d != 0))
+        (
+            any::<i64>(),
+            any::<i64>().prop_filter("den not zero", |d| *d != 0)
+        )
             .prop_map(|(n, d)| Rational::try_new(n as i128, d as i128).unwrap()),
         // i128 range, filtered to valid ones
-        (any::<i128>(), any::<i128>().prop_filter("den not zero", |d| *d != 0))
+        (
+            any::<i128>(),
+            any::<i128>().prop_filter("den not zero", |d| *d != 0)
+        )
             .prop_filter_map("valid rational", |(n, d)| Rational::try_new(n, d)),
         // Specific boundary values
         prop_oneof![

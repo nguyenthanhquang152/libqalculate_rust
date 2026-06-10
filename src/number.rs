@@ -17,15 +17,17 @@
 //! These divergences will be resolved when the GMP/MPFR backend replaces this
 //! placeholder implementation.
 
+use rug::ops::AssignRound;
+
 /// The result of a comparison between two numbers or intervals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComparisonResult {
     /// The values are equal point values.
     Equal,
     /// The second value is strictly greater than the first.
-    Greater,          // o > self (i.e. self < o) strictly
+    Greater, // o > self (i.e. self < o) strictly
     /// The second value is strictly less than the first.
-    Less,             // o < self (i.e. self > o) strictly
+    Less, // o < self (i.e. self > o) strictly
     /// The second value is equal to or greater than the first.
     EqualOrGreater,
     /// The second value is equal to or less than the first.
@@ -35,21 +37,23 @@ pub enum ComparisonResult {
     /// The comparison result is unknown (e.g. involving NaN or complex).
     Unknown,
     /// The interval bounds are identical.
-    EqualLimits,           // Interval bounds are identical
+    EqualLimits, // Interval bounds are identical
     /// The second interval contains the first.
-    Contains,               // o contains self
+    Contains, // o contains self
     /// The second interval is contained in the first.
-    Contained,              // self contains o
+    Contained, // self contains o
     /// The second interval overlaps the first on the left.
-    OverlappingLess,       // o overlaps self on the left (o.lower < self.lower)
+    OverlappingLess, // o overlaps self on the left (o.lower < self.lower)
     /// The second interval overlaps the first on the right.
-    OverlappingGreater,     // o overlaps self on the right (o.upper > self.upper)
+    OverlappingGreater, // o overlaps self on the right (o.upper > self.upper)
 }
 
+#[allow(dead_code)]
 trait NextAfter {
     fn next_after(self, direction: f64) -> f64;
 }
 
+#[allow(dead_code)]
 impl NextAfter for f64 {
     fn next_after(self, direction: f64) -> f64 {
         if self.is_nan() || direction.is_nan() {
@@ -75,59 +79,17 @@ impl NextAfter for f64 {
     }
 }
 
-/// A private helper for Euclidean GCD algorithm.
-fn gcd(a: i128, b: i128) -> u128 {
-    let mut ua = a.unsigned_abs();
-    let mut ub = b.unsigned_abs();
-    while ub != 0 {
-        let temp = ub;
-        ub = ua % ub;
-        ua = temp;
-    }
-    ua
-}
-
-/// A private helper to compare positive rationals without overflow using continued fractions.
-fn cmp_u128_rational(a: u128, b: u128, c: u128, d: u128, invert: bool) -> std::cmp::Ordering {
-    let q1 = a / b;
-    let q2 = c / d;
-    if q1 != q2 {
-        let ord = q1.cmp(&q2);
-        return if invert { ord.reverse() } else { ord };
-    }
-    let r1 = a % b;
-    let r2 = c % d;
-    if r1 == 0 && r2 == 0 {
-        return std::cmp::Ordering::Equal;
-    }
-    if r1 == 0 {
-        return if invert {
-            std::cmp::Ordering::Greater
-        } else {
-            std::cmp::Ordering::Less
-        };
-    }
-    if r2 == 0 {
-        return if invert {
-            std::cmp::Ordering::Less
-        } else {
-            std::cmp::Ordering::Greater
-        };
-    }
-    cmp_u128_rational(b, r1, d, r2, !invert)
-}
-
 /// A private helper to determine if a value is negative.
 fn is_negative_value(val: &NumberValue) -> Option<bool> {
     match val {
-        NumberValue::Rational(r) => Some(r.num < 0),
-        NumberValue::Float(f) => Some(f.value < 0.0),
+        NumberValue::Rational(r) => Some(r.value.numer().is_negative()),
+        NumberValue::Float(f) => Some(f.value.is_sign_negative()),
         NumberValue::PlusInfinity => Some(false),
         NumberValue::MinusInfinity => Some(true),
         NumberValue::Interval { lower, upper } => {
-            if upper.value < 0.0 {
+            if upper.value.is_sign_negative() {
                 Some(true)
-            } else if lower.value > 0.0 {
+            } else if lower.value.is_sign_positive() && !lower.value.is_zero() {
                 Some(false)
             } else {
                 None
@@ -138,138 +100,52 @@ fn is_negative_value(val: &NumberValue) -> Option<bool> {
     }
 }
 
-/// A placeholder for GMP rational representation.
-///
-/// # Invariants (post-canonicalization)
-/// - `den > 0`
-/// - `gcd(num.unsigned_abs(), den as u128) == 1`
-///
-/// # Known limitations
-/// This placeholder uses `i128` arithmetic. Values where the reduced numerator
-/// or denominator exceeds `i128::MAX` (e.g., `i128::MIN / -1`) will panic
-/// during canonicalization. These cases will be handled correctly once the
-/// GMP/rug backend replaces this placeholder.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// A rational number represented using arbitrary precision integers.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rational {
-    /// Numerator of the rational number.
-    num: i128,
-    /// Denominator of the rational number.
-    den: i128,
+    /// The inner rug::Rational value.
+    pub(crate) value: rug::Rational,
+}
+
+impl std::hash::Hash for Rational {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.numer().to_string().hash(state);
+        self.value.denom().to_string().hash(state);
+    }
 }
 
 impl Rational {
-    /// Try to create a new rational number, returning None on overflow or division by zero.
-    pub fn try_new(num: i128, den: i128) -> Option<Self> {
-        if den == 0 {
-            return None;
-        }
-        if num == 0 {
-            return Some(Self { num: 0, den: 1 });
-        }
-
-        let u_num = num.unsigned_abs();
-        let u_den = den.unsigned_abs();
-        let g = gcd(num, den);
-
-        let reduced_u_num = u_num / g;
-        let reduced_u_den = u_den / g;
-
-        let num_neg = num < 0;
-        let den_neg = den < 0;
-        let result_neg = num_neg ^ den_neg;
-
-        let num_limit = if result_neg {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        if reduced_u_num > num_limit {
-            return None;
-        }
-        if reduced_u_den > i128::MAX as u128 {
-            return None;
-        }
-
-        let mut reduced_num = if result_neg && reduced_u_num == i128::MIN.unsigned_abs() {
-            i128::MIN
-        } else {
-            reduced_u_num as i128
-        };
-        let reduced_den = reduced_u_den as i128;
-
-        if result_neg && reduced_num != i128::MIN {
-            reduced_num = -reduced_num;
-        }
-
-        Some(Self {
-            num: reduced_num,
-            den: reduced_den,
-        })
-    }
-
     /// Create a new rational number, reducing it to lowest terms.
     pub fn new(num: i128, den: i128) -> Self {
         assert!(den != 0, "Rational denominator must not be zero");
-        if num == 0 {
-            return Self { num: 0, den: 1 };
-        }
+        let value = rug::Rational::from((rug::Integer::from(num), rug::Integer::from(den)));
+        Self { value }
+    }
 
-        let u_num = num.unsigned_abs();
-        let u_den = den.unsigned_abs();
-        let g = gcd(num, den);
-
-        let reduced_u_num = u_num / g;
-        let reduced_u_den = u_den / g;
-        let num_neg = num < 0;
-        let den_neg = den < 0;
-        let result_neg = num_neg ^ den_neg;
-
-        let num_limit = if result_neg {
-            i128::MIN.unsigned_abs()
+    /// Create a new rational number, returning None if denominator is zero.
+    pub fn try_new(num: i128, den: i128) -> Option<Self> {
+        if den == 0 {
+            None
         } else {
-            i128::MAX as u128
-        };
-        assert!(
-            reduced_u_num <= num_limit,
-            "Rational numerator overflow: {} cannot be represented as i128",
-            reduced_u_num
-        );
-        assert!(
-            reduced_u_den <= i128::MAX as u128,
-            "Rational denominator overflow: {} cannot be represented as i128",
-            reduced_u_den
-        );
-
-        let mut reduced_num = if result_neg && reduced_u_num == i128::MIN.unsigned_abs() {
-            i128::MIN
-        } else {
-            reduced_u_num as i128
-        };
-        let reduced_den = reduced_u_den as i128;
-
-        if result_neg && reduced_num != i128::MIN {
-            reduced_num = -reduced_num;
-        }
-
-        Self {
-            num: reduced_num,
-            den: reduced_den,
+            Some(Self::new(num, den))
         }
     }
 
     /// Create a rational from an i32.
     pub fn from_i32(val: i32) -> Self {
-        Self::new(val as i128, 1)
+        Self {
+            value: rug::Rational::from(val),
+        }
     }
 
     /// Returns true if the rational is zero.
     pub fn is_zero(&self) -> bool {
-        self.num == 0
+        self.value.numer() == &0
     }
 
     /// Returns true if the rational is exactly one.
     pub fn is_one(&self) -> bool {
-        self.num == 1 && self.den == 1
+        self.value.numer() == &1 && self.value.denom() == &1
     }
 
     /// Checked addition.
@@ -292,34 +168,28 @@ impl Rational {
         div_rationals(self, other)
     }
 
-    /// Normalize the sign and reduce the fraction.
-    ///
-    /// # Panics
-    /// Panics if `den == 0` (undefined value) or if the reduced numerator or
-    /// denominator overflows `i128` (e.g., `i128::MIN / -1`).
-    #[allow(dead_code)]
-    fn canonicalize(&mut self) {
-        let r = Self::new(self.num, self.den);
-        self.num = r.num;
-        self.den = r.den;
-    }
-
-    /// Returns the numerator.
+    /// Returns the numerator as an i128. Panics if it does not fit.
     pub fn num(&self) -> i128 {
-        self.num
+        self.value
+            .numer()
+            .to_i128()
+            .expect("Numerator exceeds i128")
     }
 
-    /// Returns the denominator.
+    /// Returns the denominator as an i128. Panics if it does not fit.
     pub fn den(&self) -> i128 {
-        self.den
+        self.value
+            .denom()
+            .to_i128()
+            .expect("Denominator exceeds i128")
     }
 
     /// GCD-optimized checked addition.
     pub fn checked_add(&self, other: &Self) -> Option<Self> {
-        let a = self.num;
-        let b = self.den;
-        let c = other.num;
-        let d = other.den;
+        let a = self.num();
+        let b = self.den();
+        let c = other.num();
+        let d = other.den();
 
         let g = gcd(b, d);
         let b_prime = (b as u128) / g;
@@ -333,12 +203,10 @@ impl Rational {
 
         let (neg_t, abs_t) = if neg1 == neg2 {
             (neg1, abs1.add(abs2))
+        } else if abs1 >= abs2 {
+            (neg1, abs1.sub(abs2))
         } else {
-            if abs1 >= abs2 {
-                (neg1, abs1.sub(abs2))
-            } else {
-                (neg2, abs2.sub(abs1))
-            }
+            (neg2, abs2.sub(abs1))
         };
 
         let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
@@ -381,10 +249,10 @@ impl Rational {
 
     /// GCD-optimized checked subtraction.
     pub fn checked_sub(&self, other: &Self) -> Option<Self> {
-        let a = self.num;
-        let b = self.den;
-        let c = other.num;
-        let d = other.den;
+        let a = self.num();
+        let b = self.den();
+        let c = other.num();
+        let d = other.den();
 
         let g = gcd(b, d);
         let b_prime = (b as u128) / g;
@@ -398,12 +266,10 @@ impl Rational {
 
         let (neg_t, abs_t) = if neg1 == neg2 {
             (neg1, abs1.add(abs2))
+        } else if abs1 >= abs2 {
+            (neg1, abs1.sub(abs2))
         } else {
-            if abs1 >= abs2 {
-                (neg1, abs1.sub(abs2))
-            } else {
-                (neg2, abs2.sub(abs1))
-            }
+            (neg2, abs2.sub(abs1))
         };
 
         let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
@@ -446,10 +312,10 @@ impl Rational {
 
     /// GCD-optimized checked multiplication.
     pub fn checked_mul(&self, other: &Self) -> Option<Self> {
-        let a = self.num;
-        let b = self.den;
-        let c = other.num;
-        let d = other.den;
+        let a = self.num();
+        let b = self.den();
+        let c = other.num();
+        let d = other.den();
 
         let g1 = gcd(a, d) as i128;
         let g2 = gcd(c, b) as i128;
@@ -467,10 +333,10 @@ impl Rational {
 
     /// GCD-optimized checked division.
     pub fn checked_div(&self, other: &Self) -> Option<Self> {
-        let a = self.num;
-        let b = self.den;
-        let c = other.num;
-        let d = other.den;
+        let a = self.num();
+        let b = self.den();
+        let c = other.num();
+        let d = other.den();
 
         if c == 0 {
             return None;
@@ -493,42 +359,42 @@ impl Rational {
 
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.num == 0 && other.num == 0 {
+        if self.num() == 0 && other.num() == 0 {
             return std::cmp::Ordering::Equal;
         }
-        if self.num == 0 {
-            return if other.num > 0 {
+        if self.num() == 0 {
+            return if other.num() > 0 {
                 std::cmp::Ordering::Less
             } else {
                 std::cmp::Ordering::Greater
             };
         }
-        if other.num == 0 {
-            return if self.num > 0 {
+        if other.num() == 0 {
+            return if self.num() > 0 {
                 std::cmp::Ordering::Greater
             } else {
                 std::cmp::Ordering::Less
             };
         }
 
-        let self_pos = self.num > 0;
-        let other_pos = other.num > 0;
+        let self_pos = self.num() > 0;
+        let other_pos = other.num() > 0;
 
         match (self_pos, other_pos) {
             (true, false) => std::cmp::Ordering::Greater,
             (false, true) => std::cmp::Ordering::Less,
             (true, true) => cmp_u128_rational(
-                self.num as u128,
-                self.den as u128,
-                other.num as u128,
-                other.den as u128,
+                self.num() as u128,
+                self.den() as u128,
+                other.num() as u128,
+                other.den() as u128,
                 false,
             ),
             (false, false) => cmp_u128_rational(
-                self.num.unsigned_abs(),
-                self.den as u128,
-                other.num.unsigned_abs(),
-                other.den as u128,
+                self.num().unsigned_abs(),
+                self.den() as u128,
+                other.num().unsigned_abs(),
+                other.den() as u128,
                 true,
             ),
         }
@@ -541,13 +407,10 @@ impl PartialOrd for Rational {
     }
 }
 
-/// A placeholder for MPFR float representation.
+/// A representation of an arbitrary precision float using MPFR backend.
 #[derive(Debug, Clone)]
 pub struct Float {
-    /// The numeric value as an f64.
-    value: f64,
-    /// The precision in bits.
-    prec: u32,
+    value: rug::Float,
 }
 
 impl PartialEq for Float {
@@ -563,14 +426,14 @@ impl PartialEq for Float {
 impl Float {
     /// Create a float from f64 and precision.
     pub fn from_f64(val: f64, prec: u32) -> Self {
-        Self { value: val, prec }
+        let p = std::cmp::max(prec, 2);
+        Self {
+            value: rug::Float::with_val(p, val),
+        }
     }
     /// Returns true if the float is zero.
-    ///
-    /// Note: treats `-0.0` as zero (matching IEEE 754 semantics).
-    // TODO: replace with MPFR `mpfr_zero_p` when backend is upgraded.
     pub fn is_zero(&self) -> bool {
-        self.value == 0.0
+        self.value.is_zero()
     }
     /// Returns true if the float is exactly one.
     pub fn is_one(&self) -> bool {
@@ -587,32 +450,44 @@ impl Float {
 
     /// Returns the f64 value.
     pub fn value(&self) -> f64 {
-        self.value
+        self.value.to_f64()
     }
 
     /// Returns the precision in bits.
     pub fn prec(&self) -> u32 {
-        self.prec
+        self.value.prec()
     }
 
     /// Add two float values.
     pub fn add(&self, other: &Self) -> Self {
-        Self::from_f64(self.value + other.value, std::cmp::max(self.prec, other.prec))
+        let prec = std::cmp::max(self.prec(), other.prec());
+        Self {
+            value: rug::Float::with_val(prec, &self.value + &other.value),
+        }
     }
 
     /// Subtract two float values.
     pub fn sub(&self, other: &Self) -> Self {
-        Self::from_f64(self.value - other.value, std::cmp::max(self.prec, other.prec))
+        let prec = std::cmp::max(self.prec(), other.prec());
+        Self {
+            value: rug::Float::with_val(prec, &self.value - &other.value),
+        }
     }
 
     /// Multiply two float values.
     pub fn mul(&self, other: &Self) -> Self {
-        Self::from_f64(self.value * other.value, std::cmp::max(self.prec, other.prec))
+        let prec = std::cmp::max(self.prec(), other.prec());
+        Self {
+            value: rug::Float::with_val(prec, &self.value * &other.value),
+        }
     }
 
     /// Divide two float values.
     pub fn div(&self, other: &Self) -> Self {
-        Self::from_f64(self.value / other.value, std::cmp::max(self.prec, other.prec))
+        let prec = std::cmp::max(self.prec(), other.prec());
+        Self {
+            value: rug::Float::with_val(prec, &self.value / &other.value),
+        }
     }
 }
 
@@ -655,8 +530,8 @@ impl NumberValue {
     pub fn precision(&self) -> i32 {
         match self {
             NumberValue::Rational(_) => 0,
-            NumberValue::Float(f) => f.prec as i32,
-            NumberValue::Interval { lower, .. } => lower.prec as i32,
+            NumberValue::Float(f) => f.prec() as i32,
+            NumberValue::Interval { lower, .. } => lower.prec() as i32,
             NumberValue::Uncertainty { value, uncertainty } => {
                 std::cmp::max(value.precision(), uncertainty.precision())
             }
@@ -751,16 +626,20 @@ impl NumberValue {
     /// Negate the value mathematically.
     pub fn negate(&self) -> Self {
         match self {
-            NumberValue::Rational(r) => r
-                .num
-                .checked_neg()
-                .map(|num| NumberValue::Rational(Rational::new(num, r.den)))
-                .unwrap_or(NumberValue::NaN),
-            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(-f.value, f.prec)),
-            NumberValue::Interval { lower, upper } => NumberValue::Interval {
-                lower: Float::from_f64(-upper.value, upper.prec),
-                upper: Float::from_f64(-lower.value, lower.prec),
-            },
+            NumberValue::Rational(r) => NumberValue::Rational(Rational {
+                value: rug::Rational::from(-&r.value),
+            }),
+            NumberValue::Float(f) => NumberValue::Float(Float {
+                value: rug::Float::with_val(f.prec(), -&f.value),
+            }),
+            NumberValue::Interval { lower, upper } => {
+                let new_lower = rug::Float::with_val(upper.prec(), -&upper.value);
+                let new_upper = rug::Float::with_val(lower.prec(), -&lower.value);
+                NumberValue::Interval {
+                    lower: Float { value: new_lower },
+                    upper: Float { value: new_upper },
+                }
+            }
             NumberValue::Uncertainty { value, uncertainty } => NumberValue::Uncertainty {
                 value: Box::new(value.negate()),
                 uncertainty: Box::new((**uncertainty).clone()),
@@ -813,44 +692,83 @@ impl NumberValue {
                         uncertainty: Box::new((**uncertainty).clone()),
                     }
                 }
-                _ => {
-                    if self.is_interval() || other.is_interval() {
-                        let (l1, u1) = match to_interval(self) {
-                            Some(val) => val,
-                            None => return NumberValue::NaN,
-                        };
-                        let (l2, u2) = match to_interval(other) {
-                            Some(val) => val,
-                            None => return NumberValue::NaN,
-                        };
-                        let prec = std::cmp::max(l1.prec, l2.prec);
-                        let lower_val = (l1.value + l2.value).next_after(f64::NEG_INFINITY);
-                        let upper_val = (u1.value + u2.value).next_after(f64::INFINITY);
+                _ => match (self, other) {
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => add_rationals(r1, r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                        let prec = std::cmp::max(f1.prec(), f2.prec());
+                        let value = rug::Float::with_val(prec, &f1.value + &f2.value);
+                        NumberValue::Float(Float { value })
+                    }
+                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                        let prec = f.prec();
+                        let r_f = rug::Float::with_val(prec, &r.value);
+                        let value = rug::Float::with_val(prec, r_f + &f.value);
+                        NumberValue::Float(Float { value })
+                    }
+                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                        let prec = f.prec();
+                        let r_f = rug::Float::with_val(prec, &r.value);
+                        let value = rug::Float::with_val(prec, &f.value + r_f);
+                        NumberValue::Float(Float { value })
+                    }
+                    (
                         NumberValue::Interval {
-                            lower: Float::from_f64(lower_val, prec),
-                            upper: Float::from_f64(upper_val, prec),
-                        }
-                    } else {
-                        match (self, other) {
-                            (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
-                                .checked_add(r2)
-                                .map(NumberValue::Rational)
-                                .unwrap_or(NumberValue::NaN),
-                            (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
-                                Float::from_f64(f1.value + f2.value, std::cmp::max(f1.prec, f2.prec)),
-                            ),
-                            (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                                let val = (r.num as f64 / r.den as f64) + f.value;
-                                NumberValue::Float(Float::from_f64(val, f.prec))
-                            }
-                            (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                                let val = f.value + (r.num as f64 / r.den as f64);
-                                NumberValue::Float(Float::from_f64(val, f.prec))
-                            }
-                            _ => NumberValue::NaN,
+                            lower: l1,
+                            upper: u1,
+                        },
+                        NumberValue::Interval {
+                            lower: l2,
+                            upper: u2,
+                        },
+                    ) => {
+                        let prec = std::cmp::max(l1.prec(), l2.prec());
+                        let mut lower = rug::Float::new(prec);
+                        lower.assign_round(&l1.value + &l2.value, rug::float::Round::Down);
+                        let mut upper = rug::Float::new(prec);
+                        upper.assign_round(&u1.value + &u2.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower },
+                            upper: Float { value: upper },
                         }
                     }
-                }
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        let other_f_l =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Down);
+                        let other_f_u =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(lower.prec(), other_f_l.prec());
+                        let mut lower_res = rug::Float::new(prec);
+                        lower_res
+                            .assign_round(&lower.value + &other_f_l.value, rug::float::Round::Down);
+                        let mut upper_res = rug::Float::new(prec);
+                        upper_res
+                            .assign_round(&upper.value + &other_f_u.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower_res },
+                            upper: Float { value: upper_res },
+                        }
+                    }
+                    (self_val, NumberValue::Interval { lower, upper }) => {
+                        let self_f_l =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Down);
+                        let self_f_u =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(self_f_l.prec(), lower.prec());
+                        let mut lower_res = rug::Float::new(prec);
+                        lower_res
+                            .assign_round(&self_f_l.value + &lower.value, rug::float::Round::Down);
+                        let mut upper_res = rug::Float::new(prec);
+                        upper_res
+                            .assign_round(&self_f_u.value + &upper.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower_res },
+                            upper: Float { value: upper_res },
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                },
             }
         }
     }
@@ -897,44 +815,83 @@ impl NumberValue {
                         uncertainty: Box::new((**uncertainty).clone()),
                     }
                 }
-                _ => {
-                    if self.is_interval() || other.is_interval() {
-                        let (l1, u1) = match to_interval(self) {
-                            Some(val) => val,
-                            None => return NumberValue::NaN,
-                        };
-                        let (l2, u2) = match to_interval(other) {
-                            Some(val) => val,
-                            None => return NumberValue::NaN,
-                        };
-                        let prec = std::cmp::max(l1.prec, l2.prec);
-                        let lower_val = (l1.value - u2.value).next_after(f64::NEG_INFINITY);
-                        let upper_val = (u1.value - l2.value).next_after(f64::INFINITY);
+                _ => match (self, other) {
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => sub_rationals(r1, r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                        let prec = std::cmp::max(f1.prec(), f2.prec());
+                        let value = rug::Float::with_val(prec, &f1.value - &f2.value);
+                        NumberValue::Float(Float { value })
+                    }
+                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                        let prec = f.prec();
+                        let r_f = rug::Float::with_val(prec, &r.value);
+                        let value = rug::Float::with_val(prec, r_f - &f.value);
+                        NumberValue::Float(Float { value })
+                    }
+                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                        let prec = f.prec();
+                        let r_f = rug::Float::with_val(prec, &r.value);
+                        let value = rug::Float::with_val(prec, &f.value - r_f);
+                        NumberValue::Float(Float { value })
+                    }
+                    (
                         NumberValue::Interval {
-                            lower: Float::from_f64(lower_val, prec),
-                            upper: Float::from_f64(upper_val, prec),
-                        }
-                    } else {
-                        match (self, other) {
-                            (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
-                                .checked_sub(r2)
-                                .map(NumberValue::Rational)
-                                .unwrap_or(NumberValue::NaN),
-                            (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
-                                Float::from_f64(f1.value - f2.value, std::cmp::max(f1.prec, f2.prec)),
-                            ),
-                            (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                                let val = (r.num as f64 / r.den as f64) - f.value;
-                                NumberValue::Float(Float::from_f64(val, f.prec))
-                            }
-                            (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                                let val = f.value - (r.num as f64 / r.den as f64);
-                                NumberValue::Float(Float::from_f64(val, f.prec))
-                            }
-                            _ => NumberValue::NaN,
+                            lower: l1,
+                            upper: u1,
+                        },
+                        NumberValue::Interval {
+                            lower: l2,
+                            upper: u2,
+                        },
+                    ) => {
+                        let prec = std::cmp::max(l1.prec(), l2.prec());
+                        let mut lower = rug::Float::new(prec);
+                        lower.assign_round(&l1.value - &u2.value, rug::float::Round::Down);
+                        let mut upper = rug::Float::new(prec);
+                        upper.assign_round(&u1.value - &l2.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower },
+                            upper: Float { value: upper },
                         }
                     }
-                }
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        let other_f_l =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Up);
+                        let other_f_u =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Down);
+                        let prec = std::cmp::max(lower.prec(), other_f_l.prec());
+                        let mut lower_res = rug::Float::new(prec);
+                        lower_res
+                            .assign_round(&lower.value - &other_f_l.value, rug::float::Round::Down);
+                        let mut upper_res = rug::Float::new(prec);
+                        upper_res
+                            .assign_round(&upper.value - &other_f_u.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower_res },
+                            upper: Float { value: upper_res },
+                        }
+                    }
+                    (self_val, NumberValue::Interval { lower, upper }) => {
+                        let self_f_l =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Down);
+                        let self_f_u =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(self_f_l.prec(), lower.prec());
+                        let mut lower_res = rug::Float::new(prec);
+                        lower_res
+                            .assign_round(&self_f_l.value - &upper.value, rug::float::Round::Down);
+                        let mut upper_res = rug::Float::new(prec);
+                        upper_res
+                            .assign_round(&self_f_u.value - &lower.value, rug::float::Round::Up);
+                        NumberValue::Interval {
+                            lower: Float { value: lower_res },
+                            upper: Float { value: upper_res },
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                },
             }
         }
     }
@@ -959,34 +916,30 @@ impl NumberValue {
                         NumberValue::MinusInfinity
                     }
                 }
-                (Some(pos), None) => {
-                    match get_sign_multiplier(other) {
-                        Some(sgn) => {
-                            if sgn == 0.0 {
-                                NumberValue::NaN
-                            } else if (sgn > 0.0) == pos {
-                                NumberValue::PlusInfinity
-                            } else {
-                                NumberValue::MinusInfinity
-                            }
+                (Some(pos), None) => match get_sign_multiplier(other) {
+                    Some(sgn) => {
+                        if sgn == 0.0 {
+                            NumberValue::NaN
+                        } else if (sgn > 0.0) == pos {
+                            NumberValue::PlusInfinity
+                        } else {
+                            NumberValue::MinusInfinity
                         }
-                        None => NumberValue::NaN,
                     }
-                }
-                (None, Some(pos)) => {
-                    match get_sign_multiplier(self) {
-                        Some(sgn) => {
-                            if sgn == 0.0 {
-                                NumberValue::NaN
-                            } else if (sgn > 0.0) == pos {
-                                NumberValue::PlusInfinity
-                            } else {
-                                NumberValue::MinusInfinity
-                            }
+                    None => NumberValue::NaN,
+                },
+                (None, Some(pos)) => match get_sign_multiplier(self) {
+                    Some(sgn) => {
+                        if sgn == 0.0 {
+                            NumberValue::NaN
+                        } else if (sgn > 0.0) == pos {
+                            NumberValue::PlusInfinity
+                        } else {
+                            NumberValue::MinusInfinity
                         }
-                        None => NumberValue::NaN,
                     }
-                }
+                    None => NumberValue::NaN,
+                },
                 _ => NumberValue::NaN,
             };
         }
@@ -1028,48 +981,131 @@ impl NumberValue {
                     uncertainty: Box::new(unc),
                 }
             }
-            _ => {
-                if self.is_interval() || other.is_interval() {
-                    let (l1, u1) = match to_interval(self) {
-                        Some(val) => val,
-                        None => return NumberValue::NaN,
-                    };
-                    let (l2, u2) = match to_interval(other) {
-                        Some(val) => val,
-                        None => return NumberValue::NaN,
-                    };
-                    let prec = std::cmp::max(l1.prec, l2.prec);
-                    let p1 = l1.value * l2.value;
-                    let p2 = l1.value * u2.value;
-                    let p3 = u1.value * l2.value;
-                    let p4 = u1.value * u2.value;
-                    let min_val = min4(p1, p2, p3, p4).next_after(f64::NEG_INFINITY);
-                    let max_val = max4(p1, p2, p3, p4).next_after(f64::INFINITY);
+            _ => match (self, other) {
+                (NumberValue::Rational(r1), NumberValue::Rational(r2)) => mul_rationals(r1, r2)
+                    .map(NumberValue::Rational)
+                    .unwrap_or(NumberValue::NaN),
+                (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                    let prec = std::cmp::max(f1.prec(), f2.prec());
+                    let value = rug::Float::with_val(prec, &f1.value * &f2.value);
+                    NumberValue::Float(Float { value })
+                }
+                (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                    let prec = f.prec();
+                    let r_f = rug::Float::with_val(prec, &r.value);
+                    let value = rug::Float::with_val(prec, r_f * &f.value);
+                    NumberValue::Float(Float { value })
+                }
+                (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                    let prec = f.prec();
+                    let r_f = rug::Float::with_val(prec, &r.value);
+                    let value = rug::Float::with_val(prec, &f.value * r_f);
+                    NumberValue::Float(Float { value })
+                }
+                (
                     NumberValue::Interval {
-                        lower: Float::from_f64(min_val, prec),
-                        upper: Float::from_f64(max_val, prec),
-                    }
-                } else {
-                    match (self, other) {
-                        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
-                            .checked_mul(r2)
-                            .map(NumberValue::Rational)
-                            .unwrap_or(NumberValue::NaN),
-                        (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
-                            Float::from_f64(f1.value * f2.value, std::cmp::max(f1.prec, f2.prec)),
-                        ),
-                        (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                            let val = (r.num as f64 / r.den as f64) * f.value;
-                            NumberValue::Float(Float::from_f64(val, f.prec))
-                        }
-                        (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                            let val = f.value * (r.num as f64 / r.den as f64);
-                            NumberValue::Float(Float::from_f64(val, f.prec))
-                        }
-                        _ => NumberValue::NaN,
+                        lower: l1,
+                        upper: u1,
+                    },
+                    NumberValue::Interval {
+                        lower: l2,
+                        upper: u2,
+                    },
+                ) => {
+                    let prec = std::cmp::max(l1.prec(), l2.prec());
+                    let mut p1_d = rug::Float::new(prec);
+                    p1_d.assign_round(&l1.value * &l2.value, rug::float::Round::Down);
+                    let mut p2_d = rug::Float::new(prec);
+                    p2_d.assign_round(&l1.value * &u2.value, rug::float::Round::Down);
+                    let mut p3_d = rug::Float::new(prec);
+                    p3_d.assign_round(&u1.value * &l2.value, rug::float::Round::Down);
+                    let mut p4_d = rug::Float::new(prec);
+                    p4_d.assign_round(&u1.value * &u2.value, rug::float::Round::Down);
+
+                    let mut p1_u = rug::Float::new(prec);
+                    p1_u.assign_round(&l1.value * &l2.value, rug::float::Round::Up);
+                    let mut p2_u = rug::Float::new(prec);
+                    p2_u.assign_round(&l1.value * &u2.value, rug::float::Round::Up);
+                    let mut p3_u = rug::Float::new(prec);
+                    p3_u.assign_round(&u1.value * &l2.value, rug::float::Round::Up);
+                    let mut p4_u = rug::Float::new(prec);
+                    p4_u.assign_round(&u1.value * &u2.value, rug::float::Round::Up);
+
+                    let min_val = min_float(p1_d, min_float(p2_d, min_float(p3_d, p4_d)));
+                    let max_val = max_float(p1_u, max_float(p2_u, max_float(p3_u, p4_u)));
+
+                    NumberValue::Interval {
+                        lower: Float { value: min_val },
+                        upper: Float { value: max_val },
                     }
                 }
-            }
+                (NumberValue::Interval { lower, upper }, other_val) => {
+                    let other_f_l =
+                        to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Down);
+                    let other_f_u =
+                        to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Up);
+                    let prec = std::cmp::max(lower.prec(), other_f_l.prec());
+
+                    let mut p1_d = rug::Float::new(prec);
+                    p1_d.assign_round(&lower.value * &other_f_l.value, rug::float::Round::Down);
+                    let mut p2_d = rug::Float::new(prec);
+                    p2_d.assign_round(&lower.value * &other_f_u.value, rug::float::Round::Down);
+                    let mut p3_d = rug::Float::new(prec);
+                    p3_d.assign_round(&upper.value * &other_f_l.value, rug::float::Round::Down);
+                    let mut p4_d = rug::Float::new(prec);
+                    p4_d.assign_round(&upper.value * &other_f_u.value, rug::float::Round::Down);
+
+                    let mut p1_u = rug::Float::new(prec);
+                    p1_u.assign_round(&lower.value * &other_f_l.value, rug::float::Round::Up);
+                    let mut p2_u = rug::Float::new(prec);
+                    p2_u.assign_round(&lower.value * &other_f_u.value, rug::float::Round::Up);
+                    let mut p3_u = rug::Float::new(prec);
+                    p3_u.assign_round(&upper.value * &other_f_l.value, rug::float::Round::Up);
+                    let mut p4_u = rug::Float::new(prec);
+                    p4_u.assign_round(&upper.value * &other_f_u.value, rug::float::Round::Up);
+
+                    let min_val = min_float(p1_d, min_float(p2_d, min_float(p3_d, p4_d)));
+                    let max_val = max_float(p1_u, max_float(p2_u, max_float(p3_u, p4_u)));
+
+                    NumberValue::Interval {
+                        lower: Float { value: min_val },
+                        upper: Float { value: max_val },
+                    }
+                }
+                (self_val, NumberValue::Interval { lower, upper }) => {
+                    let self_f_l =
+                        to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Down);
+                    let self_f_u = to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Up);
+                    let prec = std::cmp::max(self_f_l.prec(), lower.prec());
+
+                    let mut p1_d = rug::Float::new(prec);
+                    p1_d.assign_round(&self_f_l.value * &lower.value, rug::float::Round::Down);
+                    let mut p2_d = rug::Float::new(prec);
+                    p2_d.assign_round(&self_f_l.value * &upper.value, rug::float::Round::Down);
+                    let mut p3_d = rug::Float::new(prec);
+                    p3_d.assign_round(&self_f_u.value * &lower.value, rug::float::Round::Down);
+                    let mut p4_d = rug::Float::new(prec);
+                    p4_d.assign_round(&self_f_u.value * &upper.value, rug::float::Round::Down);
+
+                    let mut p1_u = rug::Float::new(prec);
+                    p1_u.assign_round(&self_f_l.value * &lower.value, rug::float::Round::Up);
+                    let mut p2_u = rug::Float::new(prec);
+                    p2_u.assign_round(&self_f_l.value * &upper.value, rug::float::Round::Up);
+                    let mut p3_u = rug::Float::new(prec);
+                    p3_u.assign_round(&self_f_u.value * &lower.value, rug::float::Round::Up);
+                    let mut p4_u = rug::Float::new(prec);
+                    p4_u.assign_round(&self_f_u.value * &upper.value, rug::float::Round::Up);
+
+                    let min_val = min_float(p1_d, min_float(p2_d, min_float(p3_d, p4_d)));
+                    let max_val = max_float(p1_u, max_float(p2_u, max_float(p3_u, p4_u)));
+
+                    NumberValue::Interval {
+                        lower: Float { value: min_val },
+                        upper: Float { value: max_val },
+                    }
+                }
+                _ => NumberValue::NaN,
+            },
         }
     }
 
@@ -1153,95 +1189,189 @@ impl NumberValue {
                         uncertainty: Box::new(unc),
                     }
                 }
-                _ => {
-                    if self.is_interval() || other.is_interval() {
-                        let (l1, u1) = match to_interval(self) {
-                            Some(val) => val,
-                            None => return NumberValue::NaN,
-                        };
-                        let (l2, u2) = match to_interval(other) {
-                            Some(val) => val,
-                            None => return NumberValue::NaN,
-                        };
+                _ => match (self, other) {
+                    (NumberValue::Rational(r1), NumberValue::Rational(r2)) => div_rationals(r1, r2)
+                        .map(NumberValue::Rational)
+                        .unwrap_or(NumberValue::NaN),
+                    (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                        if f2.is_zero() {
+                            NumberValue::NaN
+                        } else {
+                            let prec = std::cmp::max(f1.prec(), f2.prec());
+                            let value = rug::Float::with_val(prec, &f1.value / &f2.value);
+                            NumberValue::Float(Float { value })
+                        }
+                    }
+                    (NumberValue::Rational(r), NumberValue::Float(f)) => {
+                        if f.is_zero() {
+                            NumberValue::NaN
+                        } else {
+                            let prec = f.prec();
+                            let r_f = rug::Float::with_val(prec, &r.value);
+                            let value = rug::Float::with_val(prec, r_f / &f.value);
+                            NumberValue::Float(Float { value })
+                        }
+                    }
+                    (NumberValue::Float(f), NumberValue::Rational(r)) => {
+                        if r.is_zero() {
+                            NumberValue::NaN
+                        } else {
+                            let prec = f.prec();
+                            let r_f = rug::Float::with_val(prec, &r.value);
+                            let value = rug::Float::with_val(prec, &f.value / r_f);
+                            NumberValue::Float(Float { value })
+                        }
+                    }
+                    (
+                        NumberValue::Interval {
+                            lower: l1,
+                            upper: u1,
+                        },
+                        NumberValue::Interval {
+                            lower: l2,
+                            upper: u2,
+                        },
+                    ) => {
                         if l2.value <= 0.0 && u2.value >= 0.0 {
                             return NumberValue::NaN;
                         }
-                        let prec = std::cmp::max(l1.prec, l2.prec);
-                        let q1 = l1.value / l2.value;
-                        let q2 = l1.value / u2.value;
-                        let q3 = u1.value / l2.value;
-                        let q4 = u1.value / u2.value;
-                        let min_val = min4(q1, q2, q3, q4).next_after(f64::NEG_INFINITY);
-                        let max_val = max4(q1, q2, q3, q4).next_after(f64::INFINITY);
+                        let prec = std::cmp::max(l1.prec(), l2.prec());
+                        let mut q1_d = rug::Float::new(prec);
+                        q1_d.assign_round(&l1.value / &l2.value, rug::float::Round::Down);
+                        let mut q2_d = rug::Float::new(prec);
+                        q2_d.assign_round(&l1.value / &u2.value, rug::float::Round::Down);
+                        let mut q3_d = rug::Float::new(prec);
+                        q3_d.assign_round(&u1.value / &l2.value, rug::float::Round::Down);
+                        let mut q4_d = rug::Float::new(prec);
+                        q4_d.assign_round(&u1.value / &u2.value, rug::float::Round::Down);
+
+                        let mut q1_u = rug::Float::new(prec);
+                        q1_u.assign_round(&l1.value / &l2.value, rug::float::Round::Up);
+                        let mut q2_u = rug::Float::new(prec);
+                        q2_u.assign_round(&l1.value / &u2.value, rug::float::Round::Up);
+                        let mut q3_u = rug::Float::new(prec);
+                        q3_u.assign_round(&u1.value / &l2.value, rug::float::Round::Up);
+                        let mut q4_u = rug::Float::new(prec);
+                        q4_u.assign_round(&u1.value / &u2.value, rug::float::Round::Up);
+
+                        let min_val = min_float(q1_d, min_float(q2_d, min_float(q3_d, q4_d)));
+                        let max_val = max_float(q1_u, max_float(q2_u, max_float(q3_u, q4_u)));
+
                         NumberValue::Interval {
-                            lower: Float::from_f64(min_val, prec),
-                            upper: Float::from_f64(max_val, prec),
-                        }
-                    } else {
-                        match (self, other) {
-                            (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1
-                                .checked_div(r2)
-                                .map(NumberValue::Rational)
-                                .unwrap_or(NumberValue::NaN),
-                            (NumberValue::Float(f1), NumberValue::Float(f2)) => {
-                                if f2.value == 0.0 {
-                                    NumberValue::NaN
-                                } else {
-                                    NumberValue::Float(Float::from_f64(
-                                        f1.value / f2.value,
-                                        std::cmp::max(f1.prec, f2.prec),
-                                    ))
-                                }
-                            }
-                            (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                                if f.value == 0.0 {
-                                    NumberValue::NaN
-                                } else {
-                                    let val = (r.num as f64 / r.den as f64) / f.value;
-                                    NumberValue::Float(Float::from_f64(val, f.prec))
-                                }
-                            }
-                            (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                                if r.is_zero() {
-                                    NumberValue::NaN
-                                } else {
-                                    let val = f.value / (r.num as f64 / r.den as f64);
-                                    NumberValue::Float(Float::from_f64(val, f.prec))
-                                }
-                            }
-                            _ => NumberValue::NaN,
+                            lower: Float { value: min_val },
+                            upper: Float { value: max_val },
                         }
                     }
-                }
+                    (NumberValue::Interval { lower, upper }, other_val) => {
+                        if other_val.is_real_zero() {
+                            return NumberValue::NaN;
+                        }
+                        let other_f_l =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Down);
+                        let other_f_u =
+                            to_float_val_rnd(other_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(lower.prec(), other_f_l.prec());
+
+                        let mut q1_d = rug::Float::new(prec);
+                        q1_d.assign_round(&lower.value / &other_f_l.value, rug::float::Round::Down);
+                        let mut q2_d = rug::Float::new(prec);
+                        q2_d.assign_round(&lower.value / &other_f_u.value, rug::float::Round::Down);
+                        let mut q3_d = rug::Float::new(prec);
+                        q3_d.assign_round(&upper.value / &other_f_l.value, rug::float::Round::Down);
+                        let mut q4_d = rug::Float::new(prec);
+                        q4_d.assign_round(&upper.value / &other_f_u.value, rug::float::Round::Down);
+
+                        let mut q1_u = rug::Float::new(prec);
+                        q1_u.assign_round(&lower.value / &other_f_l.value, rug::float::Round::Up);
+                        let mut q2_u = rug::Float::new(prec);
+                        q2_u.assign_round(&lower.value / &other_f_u.value, rug::float::Round::Up);
+                        let mut q3_u = rug::Float::new(prec);
+                        q3_u.assign_round(&upper.value / &other_f_l.value, rug::float::Round::Up);
+                        let mut q4_u = rug::Float::new(prec);
+                        q4_u.assign_round(&upper.value / &other_f_u.value, rug::float::Round::Up);
+
+                        let min_val = min_float(q1_d, min_float(q2_d, min_float(q3_d, q4_d)));
+                        let max_val = max_float(q1_u, max_float(q2_u, max_float(q3_u, q4_u)));
+
+                        NumberValue::Interval {
+                            lower: Float { value: min_val },
+                            upper: Float { value: max_val },
+                        }
+                    }
+                    (self_val, NumberValue::Interval { lower, upper }) => {
+                        if lower.value <= 0.0 && upper.value >= 0.0 {
+                            return NumberValue::NaN;
+                        }
+                        let self_f_l =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Down);
+                        let self_f_u =
+                            to_float_val_rnd(self_val, lower.prec(), rug::float::Round::Up);
+                        let prec = std::cmp::max(self_f_l.prec(), lower.prec());
+
+                        let mut q1_d = rug::Float::new(prec);
+                        q1_d.assign_round(&self_f_l.value / &lower.value, rug::float::Round::Down);
+                        let mut q2_d = rug::Float::new(prec);
+                        q2_d.assign_round(&self_f_l.value / &upper.value, rug::float::Round::Down);
+                        let mut q3_d = rug::Float::new(prec);
+                        q3_d.assign_round(&self_f_u.value / &lower.value, rug::float::Round::Down);
+                        let mut q4_d = rug::Float::new(prec);
+                        q4_d.assign_round(&self_f_u.value / &upper.value, rug::float::Round::Down);
+
+                        let mut q1_u = rug::Float::new(prec);
+                        q1_u.assign_round(&self_f_l.value / &lower.value, rug::float::Round::Up);
+                        let mut q2_u = rug::Float::new(prec);
+                        q2_u.assign_round(&self_f_l.value / &upper.value, rug::float::Round::Up);
+                        let mut q3_u = rug::Float::new(prec);
+                        q3_u.assign_round(&self_f_u.value / &lower.value, rug::float::Round::Up);
+                        let mut q4_u = rug::Float::new(prec);
+                        q4_u.assign_round(&self_f_u.value / &upper.value, rug::float::Round::Up);
+
+                        let min_val = min_float(q1_d, min_float(q2_d, min_float(q3_d, q4_d)));
+                        let max_val = max_float(q1_u, max_float(q2_u, max_float(q3_u, q4_u)));
+
+                        NumberValue::Interval {
+                            lower: Float { value: min_val },
+                            upper: Float { value: max_val },
+                        }
+                    }
+                    _ => NumberValue::NaN,
+                },
             }
         }
     }
 
-    /// Returns the absolute value of the number.
+    /// Returns the absolute value of the number value.
     pub fn abs(&self) -> Self {
         match self {
-            NumberValue::Rational(r) => {
-                let num = if r.num == i128::MIN {
-                    return NumberValue::NaN;
-                } else {
-                    r.num.abs()
-                };
-                NumberValue::Rational(Rational::new(num, r.den))
-            }
-            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(f.value.abs(), f.prec)),
+            NumberValue::Rational(r) => NumberValue::Rational(Rational {
+                value: r.value.clone().abs(),
+            }),
+            NumberValue::Float(f) => NumberValue::Float(Float {
+                value: f.value.clone().abs(),
+            }),
             NumberValue::Interval { lower, upper } => {
-                let l = lower.value;
-                let u = upper.value;
-                let (new_l, new_u) = if l >= 0.0 {
-                    (l, u)
-                } else if u <= 0.0 {
-                    (-u, -l)
+                let l = &lower.value;
+                let u = &upper.value;
+                let (new_l, new_u) = if l.is_sign_positive() || l.is_zero() {
+                    (l.clone(), u.clone())
+                } else if u.is_sign_negative() || u.is_zero() {
+                    let nl = rug::Float::with_val(upper.prec(), -u);
+                    let nu = rug::Float::with_val(lower.prec(), -l);
+                    (nl, nu)
                 } else {
-                    (0.0, l.abs().max(u.abs()))
+                    let zero = rug::Float::with_val(lower.prec(), 0.0);
+                    let u_min_abs = l.clone().abs();
+                    let u_max_abs = u.clone().abs();
+                    let max_val = if u_min_abs > u_max_abs {
+                        u_min_abs
+                    } else {
+                        u_max_abs
+                    };
+                    (zero, max_val)
                 };
                 NumberValue::Interval {
-                    lower: Float::from_f64(new_l, lower.prec),
-                    upper: Float::from_f64(new_u, upper.prec),
+                    lower: Float { value: new_l },
+                    upper: Float { value: new_u },
                 }
             }
             NumberValue::Uncertainty { value, uncertainty } => NumberValue::Uncertainty {
@@ -1257,21 +1387,21 @@ impl NumberValue {
     pub fn to_interval_bounds(&self) -> Option<(f64, f64)> {
         match self {
             NumberValue::Rational(r) => {
-                let val = r.num as f64 / r.den as f64;
+                let val = r.num() as f64 / r.den() as f64;
                 Some((val, val))
             }
             NumberValue::Float(f) => {
                 if f.value.is_nan() {
                     None
                 } else {
-                    Some((f.value, f.value))
+                    Some((f.value(), f.value()))
                 }
             }
             NumberValue::Interval { lower, upper } => {
                 if lower.value.is_nan() || upper.value.is_nan() {
                     None
                 } else {
-                    Some((lower.value, upper.value))
+                    Some((lower.value(), upper.value()))
                 }
             }
             NumberValue::Uncertainty { value, uncertainty } => {
@@ -1323,18 +1453,12 @@ impl NumberValue {
 
     /// Returns true if this value is strictly greater than the other value.
     pub fn is_greater_than(&self, other: &Self) -> bool {
-        match self.compare(other) {
-            ComparisonResult::Less => true,
-            _ => false,
-        }
+        matches!(self.compare(other), ComparisonResult::Less)
     }
 
     /// Returns true if this value is strictly less than the other value.
     pub fn is_less_than(&self, other: &Self) -> bool {
-        match self.compare(other) {
-            ComparisonResult::Greater => true,
-            _ => false,
-        }
+        matches!(self.compare(other), ComparisonResult::Greater)
     }
 }
 
@@ -1343,10 +1467,8 @@ fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
         NumberValue::PlusInfinity => Some(true),
         NumberValue::MinusInfinity => Some(false),
         NumberValue::Float(f) => {
-            if f.value == f64::INFINITY {
-                Some(true)
-            } else if f.value == f64::NEG_INFINITY {
-                Some(false)
+            if f.is_infinite() {
+                Some(f.value.is_sign_positive())
             } else {
                 None
             }
@@ -1364,9 +1486,9 @@ fn get_sign_multiplier(val: &NumberValue) -> Option<f64> {
     } else {
         match val {
             NumberValue::Rational(r) => {
-                if r.num == 0 {
+                if r.num() == 0 {
                     Some(0.0)
-                } else if r.num > 0 {
+                } else if r.num() > 0 {
                     Some(1.0)
                 } else {
                     Some(-1.0)
@@ -1400,12 +1522,14 @@ fn get_sign_multiplier(val: &NumberValue) -> Option<f64> {
     }
 }
 
+#[allow(dead_code)]
 fn to_interval(val: &NumberValue) -> Option<(Float, Float)> {
     match val {
         NumberValue::Interval { lower, upper } => Some((lower.clone(), upper.clone())),
         NumberValue::Rational(r) => {
-            let v = r.num as f64 / r.den as f64;
-            let f = Float::from_f64(v, 53);
+            let f = Float {
+                value: rug::Float::with_val(53, &r.value),
+            };
             Some((f.clone(), f))
         }
         NumberValue::Float(f) => Some((f.clone(), f.clone())),
@@ -1420,17 +1544,43 @@ fn to_interval(val: &NumberValue) -> Option<(Float, Float)> {
         NumberValue::Uncertainty { value, uncertainty } => {
             let (v_min, v_max) = to_interval(value)?;
             let (u_min, u_max) = to_interval(uncertainty)?;
-            let u_limit = u_min.value.abs().max(u_max.value.abs());
-            let prec = std::cmp::max(v_min.prec, u_min.prec);
-            Some((
-                Float::from_f64(v_min.value - u_limit, prec),
-                Float::from_f64(v_max.value + u_limit, prec),
-            ))
+            let u_min_abs = u_min.value.clone().abs();
+            let u_max_abs = u_max.value.clone().abs();
+            let u_limit = if u_min_abs > u_max_abs {
+                u_min_abs
+            } else {
+                u_max_abs
+            };
+            let prec = std::cmp::max(v_min.prec(), u_min.prec());
+
+            let mut lower_bound = rug::Float::new(prec);
+            lower_bound.assign_round(&v_min.value - &u_limit, rug::float::Round::Down);
+            let mut upper_bound = rug::Float::new(prec);
+            upper_bound.assign_round(&v_max.value + &u_limit, rug::float::Round::Up);
+
+            Some((Float { value: lower_bound }, Float { value: upper_bound }))
         }
         NumberValue::NaN => None,
     }
 }
 
+fn min_float(a: rug::Float, b: rug::Float) -> rug::Float {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+fn max_float(a: rug::Float, b: rug::Float) -> rug::Float {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
+#[allow(dead_code)]
 fn min4(a: f64, b: f64, c: f64, d: f64) -> f64 {
     if a.is_nan() || b.is_nan() || c.is_nan() || d.is_nan() {
         f64::NAN
@@ -1439,6 +1589,7 @@ fn min4(a: f64, b: f64, c: f64, d: f64) -> f64 {
     }
 }
 
+#[allow(dead_code)]
 fn max4(a: f64, b: f64, c: f64, d: f64) -> f64 {
     if a.is_nan() || b.is_nan() || c.is_nan() || d.is_nan() {
         f64::NAN
@@ -1448,36 +1599,56 @@ fn max4(a: f64, b: f64, c: f64, d: f64) -> f64 {
 }
 
 fn add_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
-    lhs.checked_add(rhs)
+    Some(Rational {
+        value: rug::Rational::from(&lhs.value + &rhs.value),
+    })
 }
 
 fn sub_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
-    lhs.checked_sub(rhs)
+    Some(Rational {
+        value: rug::Rational::from(&lhs.value - &rhs.value),
+    })
 }
 
 fn mul_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
-    lhs.checked_mul(rhs)
+    Some(Rational {
+        value: rug::Rational::from(&lhs.value * &rhs.value),
+    })
 }
 
 fn div_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
-    lhs.checked_div(rhs)
-}
-
-fn to_float_val(val: &NumberValue) -> Float {
-    match val {
-        NumberValue::Float(f) => f.clone(),
-        NumberValue::Rational(r) => Float::from_f64(r.num as f64 / r.den as f64, 53),
-        NumberValue::PlusInfinity => Float::from_f64(f64::INFINITY, 53),
-        NumberValue::MinusInfinity => Float::from_f64(f64::NEG_INFINITY, 53),
-        _ => Float::from_f64(f64::NAN, 53),
+    if rhs.is_zero() {
+        None
+    } else {
+        Some(Rational {
+            value: rug::Rational::from(&lhs.value / &rhs.value),
+        })
     }
 }
 
+fn to_float_val_rnd(val: &NumberValue, default_prec: u32, rnd: rug::float::Round) -> Float {
+    match val {
+        NumberValue::Float(f) => f.clone(),
+        NumberValue::Rational(r) => {
+            let mut f = rug::Float::new(default_prec);
+            f.assign_round(&r.value, rnd);
+            Float { value: f }
+        }
+        NumberValue::PlusInfinity => Float::from_f64(f64::INFINITY, default_prec),
+        NumberValue::MinusInfinity => Float::from_f64(f64::NEG_INFINITY, default_prec),
+        NumberValue::NaN => Float::from_f64(f64::NAN, default_prec),
+        _ => Float::from_f64(f64::NAN, default_prec),
+    }
+}
+
+fn to_float_val(val: &NumberValue) -> Float {
+    to_float_val_rnd(val, 53, rug::float::Round::Nearest)
+}
 
 fn try_unwrap_single_val(val: &NumberValue) -> Option<NumberValue> {
     match val {
         NumberValue::Interval { lower, upper } => {
-            if lower.value == upper.value {
+            if lower == upper {
                 Some(NumberValue::Float(lower.clone()))
             } else {
                 None
@@ -1515,9 +1686,7 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
     }
 
     match (lhs, rhs) {
-        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
-            r1.num == r2.num && r1.den == r2.den
-        }
+        (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1.value == r2.value,
         (NumberValue::Float(f1), NumberValue::Float(f2)) => f1.value == f2.value,
         (NumberValue::Rational(_), NumberValue::Float(_))
         | (NumberValue::Float(_), NumberValue::Rational(_)) => false,
@@ -1530,7 +1699,7 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
                 lower: l2,
                 upper: u2,
             },
-        ) => l1.value == l2.value && u1.value == u2.value,
+        ) => l1 == l2 && u1 == u2,
         (
             NumberValue::Uncertainty {
                 value: v1,
@@ -1561,11 +1730,11 @@ impl PartialOrd for NumberValue {
             (NumberValue::Rational(r1), NumberValue::Rational(r2)) => r1.partial_cmp(r2),
             (NumberValue::Float(f1), NumberValue::Float(f2)) => f1.value.partial_cmp(&f2.value),
             (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                let r_f = r.num as f64 / r.den as f64;
+                let r_f = rug::Float::with_val(f.prec(), &r.value);
                 r_f.partial_cmp(&f.value)
             }
             (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                let r_f = r.num as f64 / r.den as f64;
+                let r_f = rug::Float::with_val(f.prec(), &r.value);
                 f.value.partial_cmp(&r_f)
             }
             (NumberValue::PlusInfinity, NumberValue::PlusInfinity) => {
@@ -1680,7 +1849,7 @@ impl Number {
 
     /// Creates a `Number` from a `Float`.
     pub fn from_float(f: Float) -> Self {
-        let prec = f.prec as i32;
+        let prec = f.prec() as i32;
         Self {
             value: NumberValue::Float(f),
             imaginary: None,
@@ -1692,7 +1861,7 @@ impl Number {
 
     /// Creates a new interval `Number` with given lower and upper bounds.
     pub fn new_interval(lower: Float, upper: Float) -> Self {
-        let prec = lower.prec as i32;
+        let prec = lower.prec() as i32;
         Self {
             value: NumberValue::Interval { lower, upper },
             imaginary: None,
@@ -1877,7 +2046,12 @@ impl Number {
     }
 
     /// Creates a new `Number` from its real and imaginary components.
-    pub fn from_real_imag_values(real_val: NumberValue, imag_val: NumberValue, prec: i32, approx: bool) -> Self {
+    pub fn from_real_imag_values(
+        real_val: NumberValue,
+        imag_val: NumberValue,
+        prec: i32,
+        approx: bool,
+    ) -> Self {
         if imag_val.is_real_zero() {
             Self {
                 value: real_val,
@@ -1949,17 +2123,17 @@ impl Number {
         let bd = b.mul(&d);
         let bc = b.mul(&c);
         let ad = a.mul(&d);
-        
+
         let c2 = c.mul(&c);
         let d2 = d.mul(&d);
         let denom = c2.add(&d2);
-        
+
         let num_real = ac.add(&bd);
         let num_imag = bc.sub(&ad);
-        
+
         let new_real = num_real.div(&denom);
         let new_imag = num_imag.div(&denom);
-        
+
         let prec = std::cmp::max(self.precision, other.precision);
         let approx = self.approximate || other.approximate;
         Self::from_real_imag_values(new_real, new_imag, prec, approx)
@@ -1978,18 +2152,12 @@ impl Number {
 
     /// Returns true if this number is strictly greater than the other number.
     pub fn is_greater_than(&self, other: &Self) -> bool {
-        match self.compare(other) {
-            ComparisonResult::Less => true,
-            _ => false,
-        }
+        matches!(self.compare(other), ComparisonResult::Less)
     }
 
     /// Returns true if this number is strictly less than the other number.
     pub fn is_less_than(&self, other: &Self) -> bool {
-        match self.compare(other) {
-            ComparisonResult::Greater => true,
-            _ => false,
-        }
+        matches!(self.compare(other), ComparisonResult::Greater)
     }
 }
 
@@ -2013,7 +2181,6 @@ impl PartialOrd for Number {
     }
 }
 
-
 /// A 256-bit unsigned integer helper struct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct U256 {
@@ -2021,6 +2188,7 @@ pub struct U256 {
     pub parts: [u64; 4],
 }
 
+#[allow(clippy::should_implement_trait, clippy::needless_range_loop)]
 impl U256 {
     /// Create a U256 from a u128.
     pub fn from_u128(val: u128) -> Self {
@@ -2066,9 +2234,9 @@ impl U256 {
     /// Multiply two u128 values, returning a U256.
     pub fn mul_u128(x: u128, y: u128) -> Self {
         let x0 = x as u64 as u128;
-        let x1 = (x >> 64) as u128;
+        let x1 = x >> 64;
         let y0 = y as u64 as u128;
-        let y1 = (y >> 64) as u128;
+        let y1 = y >> 64;
 
         let w0 = x0 * y0;
         let w1 = x0 * y1;
@@ -2163,6 +2331,7 @@ impl PartialOrd for U256 {
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 impl std::ops::Shl<usize> for U256 {
     type Output = Self;
     fn shl(self, shift: usize) -> Self {
@@ -2185,6 +2354,7 @@ impl std::ops::Shl<usize> for U256 {
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 impl std::ops::Shr<usize> for U256 {
     type Output = Self;
     fn shr(self, shift: usize) -> Self {
@@ -2214,6 +2384,40 @@ fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
         a = temp;
     }
     a
+}
+
+fn gcd(a: i128, b: i128) -> u128 {
+    gcd_u128(a.unsigned_abs(), b.unsigned_abs())
+}
+
+/// A private helper to compare positive rationals without overflow using continued fractions.
+fn cmp_u128_rational(a: u128, b: u128, c: u128, d: u128, invert: bool) -> std::cmp::Ordering {
+    let q1 = a / b;
+    let q2 = c / d;
+    if q1 != q2 {
+        let ord = q1.cmp(&q2);
+        return if invert { ord.reverse() } else { ord };
+    }
+    let r1 = a % b;
+    let r2 = c % d;
+    if r1 == 0 && r2 == 0 {
+        return std::cmp::Ordering::Equal;
+    }
+    if r1 == 0 {
+        return if invert {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        };
+    }
+    if r2 == 0 {
+        return if invert {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        };
+    }
+    cmp_u128_rational(b, r1, d, r2, !invert)
 }
 
 #[cfg(test)]

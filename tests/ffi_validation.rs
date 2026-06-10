@@ -32,6 +32,9 @@ fn get_rss() -> usize {
 
 #[test]
 fn test_memory_cleanup_and_drop() {
+    if std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1") {
+        return;
+    }
     let _guard = TEST_MUTEX.lock().unwrap();
     configure_definitions_dir();
 

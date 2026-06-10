@@ -1,4 +1,4 @@
-use libqalculate_rust::number::{Float, Number, NumberValue, ComparisonResult};
+use libqalculate_rust::number::{ComparisonResult, Float, Number, NumberValue};
 use proptest::prelude::*;
 
 #[test]
@@ -9,22 +9,34 @@ fn test_division_by_interval_containing_zero() {
     // Divisor interval containing zero: [-1.0, 1.0]
     let div_mid = Number::new_interval(Float::from_f64(-1.0, prec), Float::from_f64(1.0, prec));
     let res_mid = numerator.div(&div_mid);
-    assert!(res_mid.is_nan(), "Expected NaN when dividing by interval [-1, 1]");
+    assert!(
+        res_mid.is_nan(),
+        "Expected NaN when dividing by interval [-1, 1]"
+    );
 
     // Divisor interval starting at zero: [0.0, 2.0]
     let div_start = Number::new_interval(Float::from_f64(0.0, prec), Float::from_f64(2.0, prec));
     let res_start = numerator.div(&div_start);
-    assert!(res_start.is_nan(), "Expected NaN when dividing by interval [0, 2]");
+    assert!(
+        res_start.is_nan(),
+        "Expected NaN when dividing by interval [0, 2]"
+    );
 
     // Divisor interval ending at zero: [-2.0, 0.0]
     let div_end = Number::new_interval(Float::from_f64(-2.0, prec), Float::from_f64(0.0, prec));
     let res_end = numerator.div(&div_end);
-    assert!(res_end.is_nan(), "Expected NaN when dividing by interval [-2, 0]");
+    assert!(
+        res_end.is_nan(),
+        "Expected NaN when dividing by interval [-2, 0]"
+    );
 
     // Divisor interval point zero: [0.0, 0.0]
     let div_zero = Number::new_interval(Float::from_f64(0.0, prec), Float::from_f64(0.0, prec));
     let res_zero = numerator.div(&div_zero);
-    assert!(res_zero.is_nan(), "Expected NaN when dividing by interval [0, 0]");
+    assert!(
+        res_zero.is_nan(),
+        "Expected NaN when dividing by interval [0, 0]"
+    );
 
     // Divisor uncertainty containing zero: 1.0 +/- 2.0 -> [-1.0, 3.0]
     // Since nominal divisor is 1.0 (non-zero), division is mathematically defined.
@@ -34,8 +46,15 @@ fn test_division_by_interval_containing_zero() {
     let unc = NumberValue::Float(Float::from_f64(2.0, prec));
     let div_unc = Number::new_uncertainty(val, unc.clone());
     let res_unc = numerator.div(&div_unc);
-    assert!(!res_unc.is_nan(), "Uncertainty division with non-zero nominal divisor should not be NaN");
-    if let NumberValue::Uncertainty { value: r_val, uncertainty: r_unc } = res_unc.value() {
+    assert!(
+        !res_unc.is_nan(),
+        "Uncertainty division with non-zero nominal divisor should not be NaN"
+    );
+    if let NumberValue::Uncertainty {
+        value: r_val,
+        uncertainty: r_unc,
+    } = res_unc.value()
+    {
         if let NumberValue::Float(fv) = &**r_val {
             assert_eq!(fv.value(), 10.0);
         } else {
@@ -61,7 +80,7 @@ fn test_division_by_interval_containing_zero() {
 #[test]
 fn test_comparison_result_exhaustive() {
     let prec = 53;
-    
+
     // A = [10.0, 20.0]
     let a = Number::new_interval(Float::from_f64(10.0, prec), Float::from_f64(20.0, prec));
 
@@ -86,40 +105,50 @@ fn test_comparison_result_exhaustive() {
     assert_eq!(a.compare(&b_contains), ComparisonResult::Contains);
 
     // B contained in A: [12.0, 18.0]
-    let b_contained = Number::new_interval(Float::from_f64(12.0, prec), Float::from_f64(18.0, prec));
+    let b_contained =
+        Number::new_interval(Float::from_f64(12.0, prec), Float::from_f64(18.0, prec));
     assert_eq!(a.compare(&b_contained), ComparisonResult::Contained);
 
     // B overlaps A on the left: [5.0, 15.0]
-    let b_overlap_left = Number::new_interval(Float::from_f64(5.0, prec), Float::from_f64(15.0, prec));
-    assert_eq!(a.compare(&b_overlap_left), ComparisonResult::OverlappingLess);
+    let b_overlap_left =
+        Number::new_interval(Float::from_f64(5.0, prec), Float::from_f64(15.0, prec));
+    assert_eq!(
+        a.compare(&b_overlap_left),
+        ComparisonResult::OverlappingLess
+    );
 
     // B overlaps A on the right: [15.0, 25.0]
-    let b_overlap_right = Number::new_interval(Float::from_f64(15.0, prec), Float::from_f64(25.0, prec));
-    assert_eq!(a.compare(&b_overlap_right), ComparisonResult::OverlappingGreater);
+    let b_overlap_right =
+        Number::new_interval(Float::from_f64(15.0, prec), Float::from_f64(25.0, prec));
+    assert_eq!(
+        a.compare(&b_overlap_right),
+        ComparisonResult::OverlappingGreater
+    );
 }
 
 // proptest strategies
 fn interval_containing_zero_strategy() -> impl Strategy<Value = Number> {
-    (
-        proptest::num::f64::NEGATIVE,
-        proptest::num::f64::POSITIVE,
-    ).prop_map(|(l, u): (f64, f64)| {
+    (proptest::num::f64::NEGATIVE, proptest::num::f64::POSITIVE).prop_map(|(l, u): (f64, f64)| {
         Number::new_interval(Float::from_f64(l, 53), Float::from_f64(u, 53))
     })
 }
 
 fn interval_excluding_zero_strategy() -> impl Strategy<Value = Number> {
     prop_oneof![
-        (proptest::num::f64::POSITIVE, proptest::num::f64::POSITIVE).prop_map(|(x, y): (f64, f64)| {
-            let l = x.min(y);
-            let u = x.max(y);
-            Number::new_interval(Float::from_f64(l, 53), Float::from_f64(u, 53))
-        }),
-        (proptest::num::f64::NEGATIVE, proptest::num::f64::NEGATIVE).prop_map(|(x, y): (f64, f64)| {
-            let l = x.min(y);
-            let u = x.max(y);
-            Number::new_interval(Float::from_f64(l, 53), Float::from_f64(u, 53))
-        })
+        (proptest::num::f64::POSITIVE, proptest::num::f64::POSITIVE).prop_map(
+            |(x, y): (f64, f64)| {
+                let l = x.min(y);
+                let u = x.max(y);
+                Number::new_interval(Float::from_f64(l, 53), Float::from_f64(u, 53))
+            }
+        ),
+        (proptest::num::f64::NEGATIVE, proptest::num::f64::NEGATIVE).prop_map(
+            |(x, y): (f64, f64)| {
+                let l = x.min(y);
+                let u = x.max(y);
+                Number::new_interval(Float::from_f64(l, 53), Float::from_f64(u, 53))
+            }
+        )
     ]
 }
 
