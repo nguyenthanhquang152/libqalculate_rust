@@ -1182,33 +1182,45 @@ impl Number {
         self.is_imaginary
     }
 
-    /// Helper to convert the number into canonical real and imaginary components.
-    pub fn to_canonical_real_imag(&self) -> (NumberValue, NumberValue) {
+    /// Helper to convert the number into canonical real and imaginary components as references.
+    pub fn to_canonical_ref(
+        &self,
+    ) -> (
+        std::borrow::Cow<'_, NumberValue>,
+        std::borrow::Cow<'_, NumberValue>,
+    ) {
         if self.is_imaginary {
             (
-                NumberValue::Rational(Rational::from_i32(0)),
-                self.value.clone(),
+                std::borrow::Cow::Owned(NumberValue::Rational(Rational::from_i32(0))),
+                std::borrow::Cow::Borrowed(&self.value),
             )
         } else {
-            let real_val = self.value.clone();
-            if let Some(imag) = &self.imaginary {
-                let (_, imag_coeff) = imag.to_canonical_real_imag();
-                (real_val, imag_coeff)
+            let real = std::borrow::Cow::Borrowed(&self.value);
+            let imag = if let Some(imag) = &self.imaginary {
+                let (_, imag_coeff) = imag.to_canonical_ref();
+                imag_coeff
             } else {
-                (real_val, NumberValue::Rational(Rational::from_i32(0)))
-            }
+                std::borrow::Cow::Owned(NumberValue::Rational(Rational::from_i32(0)))
+            };
+            (real, imag)
         }
+    }
+
+    /// Helper to convert the number into canonical real and imaginary components.
+    pub fn to_canonical_real_imag(&self) -> (NumberValue, NumberValue) {
+        let (real, imag) = self.to_canonical_ref();
+        (real.into_owned(), imag.into_owned())
     }
 
     /// Returns true if the number has an imaginary part or is itself marked imaginary.
     pub fn is_complex(&self) -> bool {
-        let (_, imag) = self.to_canonical_real_imag();
+        let (_, imag) = self.to_canonical_ref();
         !imag.is_real_zero()
     }
 
     /// Returns true if the number has a real part (is not purely imaginary).
     pub fn has_real_part(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         !real.is_real_zero() || imag.is_real_zero()
     }
 
@@ -1219,55 +1231,55 @@ impl Number {
 
     /// Returns true if the entire number is zero.
     pub fn is_zero(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         real.is_real_zero() && imag.is_real_zero()
     }
 
     /// Returns true if the real part of the number is zero.
     pub fn is_real_zero(&self) -> bool {
-        let (real, _) = self.to_canonical_real_imag();
+        let (real, _) = self.to_canonical_ref();
         real.is_real_zero()
     }
 
     /// Returns true if the number is exactly one.
     pub fn is_one(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         real.is_real_one() && imag.is_real_zero()
     }
 
     /// Returns true if the real part of the number is exactly one.
     pub fn is_real_one(&self) -> bool {
-        let (real, _) = self.to_canonical_real_imag();
+        let (real, _) = self.to_canonical_ref();
         real.is_real_one()
     }
 
     /// Returns true if either the real or the imaginary part is an interval.
     pub fn is_interval(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         real.is_interval() || imag.is_interval()
     }
 
     /// Returns true if either the real or the imaginary part is infinite.
     pub fn is_infinite(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         real.is_infinite() || imag.is_infinite()
     }
 
     /// Returns true if either the real or imaginary part is or contains infinity.
     pub fn includes_infinity(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         real.includes_infinity() || imag.includes_infinity()
     }
 
     /// Returns true if either the real or the imaginary part is NaN.
     pub fn is_nan(&self) -> bool {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         real.is_nan() || imag.is_nan()
     }
 
     /// Negates the number
     pub fn negate(&self) -> Self {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         let real_num = Number {
             value: real.negate(),
             imaginary: None,
@@ -1291,8 +1303,8 @@ impl Number {
 
     /// Adds two numbers
     pub fn add(&self, other: &Self) -> Self {
-        let (a, b) = self.to_canonical_real_imag();
-        let (c, d) = other.to_canonical_real_imag();
+        let (a, b) = self.to_canonical_ref();
+        let (c, d) = other.to_canonical_ref();
 
         let real_val = a.add(&c);
         let imag_val = b.add(&d);
@@ -1326,8 +1338,8 @@ impl Number {
 
     /// Multiplies self by other
     pub fn mul(&self, other: &Self) -> Self {
-        let (x1, y1) = self.to_canonical_real_imag();
-        let (x2, y2) = other.to_canonical_real_imag();
+        let (x1, y1) = self.to_canonical_ref();
+        let (x2, y2) = other.to_canonical_ref();
 
         let y1_zero = y1.is_real_zero();
         let y2_zero = y2.is_real_zero();
@@ -1386,8 +1398,8 @@ impl Number {
 
     /// Divides self by other
     pub fn div(&self, other: &Self) -> Self {
-        let (x1, y1) = self.to_canonical_real_imag();
-        let (x2, y2) = other.to_canonical_real_imag();
+        let (x1, y1) = self.to_canonical_ref();
+        let (x2, y2) = other.to_canonical_ref();
 
         let y2_zero = y2.is_real_zero();
         let x2_zero = x2.is_real_zero();
@@ -1434,9 +1446,9 @@ impl Number {
 
     /// Returns the complex conjugate
     pub fn conjugate(&self) -> Self {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         let real_num = Number {
-            value: real,
+            value: real.into_owned(),
             imaginary: None,
             precision: self.precision,
             approximate: self.approximate,
@@ -1458,17 +1470,18 @@ impl Number {
 
     /// Returns the norm (magnitude)
     pub fn norm(&self) -> Self {
-        let (real, imag) = self.to_canonical_real_imag();
+        let (real, imag) = self.to_canonical_ref();
         let real_sq = real.mul(&real);
         let imag_sq = imag.mul(&imag);
         let sum_sq = real_sq.add(&imag_sq);
         let norm_val = sum_sq.sqrt();
 
+        let is_approx = self.approximate || norm_val.approximate();
         Self {
-            value: norm_val.clone(),
+            value: norm_val,
             imaginary: None,
             precision: self.precision,
-            approximate: self.approximate || norm_val.approximate(),
+            approximate: is_approx,
             is_imaginary: false,
         }
     }
@@ -1476,8 +1489,8 @@ impl Number {
 
 impl PartialEq for Number {
     fn eq(&self, other: &Self) -> bool {
-        let (lhs_real, lhs_imag) = self.to_canonical_real_imag();
-        let (rhs_real, rhs_imag) = other.to_canonical_real_imag();
+        let (lhs_real, lhs_imag) = self.to_canonical_ref();
+        let (rhs_real, rhs_imag) = other.to_canonical_ref();
         lhs_real == rhs_real && lhs_imag == rhs_imag
     }
 }
