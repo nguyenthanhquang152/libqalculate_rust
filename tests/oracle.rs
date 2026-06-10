@@ -715,6 +715,12 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("fixed-power-of-ten-qalc-format", "1e10"),
         ("absolute-uncertainty", "2+/-0.002"),
         ("relative-uncertainty", "100+/-5%"),
+        (
+            "mixed-absolute-relative-uncertainty-addition",
+            "100+/-5 + 200+/-10%",
+        ),
+        ("relative-uncertainty-addition", "100+/-5% + 200+/-10%"),
+        ("relative-uncertainty-scalar-multiplication", "100+/-5% * 2"),
         ("uncertainty-addition", "20+/-3 + 10+/-4"),
         ("uncertainty-multiplication", "3+/-0.2 * 4+/-0.1"),
         ("uncertainty-division", "12+/-0.5 / 3+/-0.2"),

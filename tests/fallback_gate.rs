@@ -97,6 +97,9 @@ fn cli_native_expression_succeeds_when_fallback_disabled() {
         ("-123", "−123"),
         ("(1 + 2i) + (3 + 4i)", "4 + 6i"),
         ("(1 + 2i) / (3 + 4i)", "0.44 + 0.08i"),
+        ("100+/-5 + 200+/-10%", "300±21"),
+        ("100+/-5% + 200+/-10%", "300±6.9%"),
+        ("100+/-5% * 2", "200±5.0%"),
     ];
     for (expression, expected) in native_cases {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
@@ -143,7 +146,6 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "[1,2]",
         "[1,2] + [3,4]",
         "1/[2,3]",
-        "100+/-5% * 2",
         "170141183460469231731687303715884105728 + 1",
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));

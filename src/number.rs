@@ -730,11 +730,13 @@ impl NumberValue {
                         value: v1,
                         uncertainty: u1,
                         is_relative: ir1,
+                        ..
                     },
                     NumberValue::Uncertainty {
                         value: v2,
                         uncertainty: u2,
                         is_relative: ir2,
+                        ..
                     },
                 ) => {
                     let u1_sq = if u1.is_real_zero() {
@@ -748,10 +750,11 @@ impl NumberValue {
                         u2.mul(u2)
                     };
                     let unc = u1_sq.add(&u2_sq).sqrt();
+                    let is_relative = *ir1 && *ir2;
                     NumberValue::Uncertainty {
                         value: Box::new(v1.add(v2)),
                         uncertainty: Box::new(unc),
-                        is_relative: *ir1 || *ir2,
+                        is_relative,
                     }
                 }
                 (
@@ -881,11 +884,13 @@ impl NumberValue {
                         value: v1,
                         uncertainty: u1,
                         is_relative: ir1,
+                        ..
                     },
                     NumberValue::Uncertainty {
                         value: v2,
                         uncertainty: u2,
                         is_relative: ir2,
+                        ..
                     },
                 ) => {
                     let u1_sq = if u1.is_real_zero() {
@@ -899,10 +904,11 @@ impl NumberValue {
                         u2.mul(u2)
                     };
                     let unc = u1_sq.add(&u2_sq).sqrt();
+                    let is_relative = *ir1 && *ir2;
                     NumberValue::Uncertainty {
                         value: Box::new(v1.sub(v2)),
                         uncertainty: Box::new(unc),
-                        is_relative: *ir1 || *ir2,
+                        is_relative,
                     }
                 }
                 (
@@ -1062,11 +1068,13 @@ impl NumberValue {
                     value: v1,
                     uncertainty: u1,
                     is_relative: ir1,
+                    ..
                 },
                 NumberValue::Uncertainty {
                     value: v2,
                     uncertainty: u2,
                     is_relative: ir2,
+                    ..
                 },
             ) => {
                 let val = v1.mul(v2);
@@ -1081,10 +1089,11 @@ impl NumberValue {
                     v1.mul(u2)
                 };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
+                let is_relative = *ir1 && *ir2;
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
-                    is_relative: *ir1 || *ir2,
+                    is_relative,
                 }
             }
             (
@@ -1287,11 +1296,13 @@ impl NumberValue {
                         value: v1,
                         uncertainty: u1,
                         is_relative: ir1,
+                        ..
                     },
                     NumberValue::Uncertainty {
                         value: v2,
                         uncertainty: u2,
                         is_relative: ir2,
+                        ..
                     },
                 ) => {
                     if v2.is_real_zero() {
@@ -1309,10 +1320,11 @@ impl NumberValue {
                         val.mul(u2).div(v2)
                     };
                     let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
+                    let is_relative = *ir1 && *ir2;
                     NumberValue::Uncertainty {
                         value: Box::new(val),
                         uncertainty: Box::new(unc),
-                        is_relative: *ir1 || *ir2,
+                        is_relative,
                     }
                 }
                 (
@@ -1524,11 +1536,13 @@ impl NumberValue {
                     value: v1,
                     uncertainty: u1,
                     is_relative: ir1,
+                    ..
                 },
                 NumberValue::Uncertainty {
                     value: v2,
                     uncertainty: u2,
                     is_relative: ir2,
+                    ..
                 },
             ) => {
                 let val = v1.pow(v2);
@@ -1545,10 +1559,11 @@ impl NumberValue {
                     val.mul(&v1.ln()).mul(u2)
                 };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
+                let is_relative = *ir1 && *ir2;
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
-                    is_relative: *ir1 || *ir2,
+                    is_relative,
                 }
             }
             (
@@ -2133,11 +2148,13 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
                 value: v1,
                 uncertainty: u1,
                 is_relative: ir1,
+                ..
             },
             NumberValue::Uncertainty {
                 value: v2,
                 uncertainty: u2,
                 is_relative: ir2,
+                ..
             },
         ) => eq_values(v1, v2) && eq_values(u1, u2) && ir1 == ir2,
         _ => false,
@@ -2850,7 +2867,72 @@ fn format_uncertainty(val: f64, unc: f64) -> (String, String) {
     if unc == 0.0 {
         return (val.to_string(), "0".to_string());
     }
-    let unc_abs = unc.abs();
+    let (rounded_unc, d) = rounded_uncertainty_and_width(unc);
+    let display_width = uncertainty_display_decimal_width(val, unc, d);
+
+    let formatted_unc = format!("{:.width$}", rounded_unc, width = display_width);
+    let formatted_val = format!("{:.width$}", val, width = display_width);
+    (formatted_val, formatted_unc)
+}
+
+fn format_relative_uncertainty(val: f64, unc_abs: f64) -> (String, String) {
+    if val == 0.0 {
+        if unc_abs != 0.0 {
+            return format_uncertainty(val, unc_abs);
+        }
+        return (val.to_string(), "0%".to_string());
+    }
+    let p = (unc_abs / val.abs()) * 100.0;
+    if p == 0.0 {
+        return (val.to_string(), "0%".to_string());
+    }
+    let (rounded_p, d) = rounded_uncertainty_and_width(p);
+
+    let formatted_p = format!("{:.width$}%", rounded_p, width = d);
+    let value_width =
+        uncertainty_display_decimal_width(val, unc_abs, uncertainty_decimal_width(unc_abs));
+    let formatted_val = format!("{:.width$}", val, width = value_width);
+    (formatted_val, formatted_p)
+}
+
+fn uncertainty_decimal_width(unc_abs: f64) -> usize {
+    rounded_uncertainty_and_width(unc_abs).1
+}
+
+fn uncertainty_display_decimal_width(val: f64, unc_abs: f64, width: usize) -> usize {
+    let val_abs = val.abs();
+    if val_abs > 0.0
+        && val_abs < 1.0
+        && is_power_of_ten(val_abs)
+        && is_five_percent_uncertainty(val_abs, unc_abs)
+        && rounds_to_half_step_at_width(unc_abs, width)
+    {
+        width + 1
+    } else {
+        width
+    }
+}
+
+fn is_power_of_ten(value: f64) -> bool {
+    let log10 = value.log10();
+    (log10 - log10.round()).abs() <= 1e-12
+}
+
+fn is_five_percent_uncertainty(val_abs: f64, unc_abs: f64) -> bool {
+    let ratio = unc_abs.abs() / val_abs;
+    (ratio - 0.05).abs() <= 1e-12
+}
+
+fn rounds_to_half_step_at_width(unc_abs: f64, width: usize) -> bool {
+    let scaled = unc_abs.abs() * 10.0f64.powi(width as i32);
+    (scaled - 50.0).abs() <= 1e-9
+}
+
+fn rounded_uncertainty_and_width(unc_abs: f64) -> (f64, usize) {
+    if unc_abs == 0.0 {
+        return (0.0, 0);
+    }
+    let unc_abs = unc_abs.abs();
     let e_init = unc_abs.log10().floor() as i32;
     let d_init = std::cmp::max(0, 1 - e_init);
     let factor = 10.0f64.powi(d_init);
@@ -2861,36 +2943,7 @@ fn format_uncertainty(val: f64, unc: f64) -> (String, String) {
     } else {
         rounded_unc.log10().floor() as i32
     };
-    let d = std::cmp::max(0, 1 - e) as usize;
-
-    let formatted_unc = format!("{:.width$}", rounded_unc, width = d);
-    let formatted_val = format!("{:.width$}", val, width = d);
-    (formatted_val, formatted_unc)
-}
-
-fn format_relative_uncertainty(val: f64, unc_abs: f64) -> (String, String) {
-    if val == 0.0 {
-        return (val.to_string(), "0%".to_string());
-    }
-    let p = (unc_abs / val.abs()) * 100.0;
-    if p == 0.0 {
-        return (val.to_string(), "0%".to_string());
-    }
-    let e_init = p.log10().floor() as i32;
-    let d_init = std::cmp::max(0, 1 - e_init);
-    let factor = 10.0f64.powi(d_init);
-    let rounded_p = (p * factor).round() / factor;
-
-    let e = if rounded_p == 0.0 {
-        e_init
-    } else {
-        rounded_p.log10().floor() as i32
-    };
-    let d = std::cmp::max(0, 1 - e) as usize;
-
-    let formatted_p = format!("{:.width$}%", rounded_p, width = d);
-    let formatted_val = format!("{:.width$}", val, width = d);
-    (formatted_val, formatted_p)
+    (rounded_unc, std::cmp::max(0, 1 - e) as usize)
 }
 
 fn format_qalc_value(value: &NumberValue) -> String {

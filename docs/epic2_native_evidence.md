@@ -1,6 +1,6 @@
 # Epic 2 Native Numeric Evidence
 
-Date: 2026-06-10
+Date: 2026-06-11
 
 This note records fallback-disabled Rust-vs-upstream evidence for the current
 Epic 2 numeric slice. It is evidence for the cases listed here only; it does not
@@ -40,6 +40,9 @@ non-batch expressions with fallback disabled:
 - `1e10`
 - `2+/-0.002`
 - `100+/-5%`
+- `100+/-5 + 200+/-10%`
+- `100+/-5% + 200+/-10%`
+- `100+/-5% * 2`
 - `20+/-3 + 10+/-4`
 - `3+/-0.2 * 4+/-0.1`
 - `12+/-0.5 / 3+/-0.2`
