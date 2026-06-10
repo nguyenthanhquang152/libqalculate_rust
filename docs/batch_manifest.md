@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **29** |
-| Inventory-only test cases | **627** |
+| Native-pass test cases | **35** |
+| Inventory-only test cases | **621** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -647,12 +647,12 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 14 | `operators.batch:30` | `6/2` | `3` | — | native-pass |
 | 15 | `operators.batch:32` | `12 per 3` | `4` | — | inventory-only |
 | 16 | `operators.batch:34` | `1/2` | `0.5` | — | native-pass |
-| 17 | `operators.batch:37` | `6%2` | `0` | — | inventory-only |
-| 18 | `operators.batch:39` | `7 rem 2` | `1` | — | inventory-only |
-| 19 | `operators.batch:41` | `-8%3` | `-2` | — | inventory-only |
-| 20 | `operators.batch:44` | `3 %% 2` | `1` | — | inventory-only |
-| 21 | `operators.batch:46` | `3 %% -2` | `-1` | — | inventory-only |
-| 22 | `operators.batch:48` | `3 mod -2` | `-1` | — | inventory-only |
+| 17 | `operators.batch:37` | `6%2` | `0` | — | native-pass |
+| 18 | `operators.batch:39` | `7 rem 2` | `1` | — | native-pass |
+| 19 | `operators.batch:41` | `-8%3` | `-2` | — | native-pass |
+| 20 | `operators.batch:44` | `3 %% 2` | `1` | — | native-pass |
+| 21 | `operators.batch:46` | `3 %% -2` | `-1` | — | native-pass |
+| 22 | `operators.batch:48` | `3 mod -2` | `-1` | — | native-pass |
 | 23 | `operators.batch:51` | `5//2` | `2` | — | inventory-only |
 | 24 | `operators.batch:53` | `5\2` | `2` | — | inventory-only |
 | 25 | `operators.batch:55` | `5 div 2` | `2` | — | inventory-only |

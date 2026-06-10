@@ -17,11 +17,12 @@ claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 29 rows as `native-pass`.
+`docs/batch_manifest.md` now marks 35 rows as `native-pass`.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.
-- `operators.batch`: lines 1, 10, 12, 14, 21, 30, 34, 58, 60, 62.
+- `operators.batch`: lines 1, 10, 12, 14, 21, 30, 34, 37, 39, 41, 44, 46,
+  48, 58, 60, 62.
 
 The oracle runner disables C++ fallback for these rows and verifies
 `fallback=native`.
@@ -80,6 +81,10 @@ focused expressions with fallback disabled:
   power syntax. Upstream `operators.batch` rows `5 ^ 2`, `5 ** 3`, and
   `4 ** 3 ** 2` are promoted to fallback-disabled native evidence; focused
   oracle probes also cover `2 ^ -3`, `(-2) ^ -3`, and `(1/2) ^ -3`.
+- Exact rational remainder and modulo now match upstream qalc for the promoted
+  operator rows. `%` and `rem` use quotient truncation toward zero, while `%%`
+  and `mod` use floor-division semantics, including negative operands and
+  divisors.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -115,6 +120,7 @@ rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_lik
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
 rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
 rtk cargo test --lib exact_integer_powers_remain_rational_and_parse_starstar -- --nocapture
+rtk cargo test --lib rational_modulo_and_remainder_match_qalc_operators -- --nocapture
 rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture

@@ -521,6 +521,40 @@ fn exact_integer_powers_have_result_size_guard() {
 }
 
 #[test]
+fn rational_modulo_and_remainder_match_qalc_operators() {
+    for (expression, expected) in [
+        ("6%2", "0"),
+        ("7 rem 2", "1"),
+        ("-8%3", "-2"),
+        ("3 %% 2", "1"),
+        ("3 %% -2", "-1"),
+        ("3 mod -2", "-1"),
+    ] {
+        assert_eq!(
+            evaluate_expr(expression).unwrap().to_qalc_string(),
+            expected,
+            "{expression} should match upstream qalc"
+        );
+    }
+
+    assert_eq!(
+        evaluate_expr("7/2 rem 1").unwrap().value(),
+        &NumberValue::Rational(Rational::new(1, 2))
+    );
+    assert_eq!(
+        evaluate_expr("7/2 mod -1").unwrap().value(),
+        &NumberValue::Rational(Rational::new(-1, 2))
+    );
+
+    for expression in ["7rem 2", "3mod -2", "7 rem2", "3 mod-2", "7 rem+2"] {
+        assert!(
+            evaluate_expr(expression).is_err(),
+            "{expression} should require separated word operators"
+        );
+    }
+}
+
+#[test]
 fn decimal_and_scientific_literals_parse_without_f64_loss() {
     let decimal = "0.01"
         .parse::<Number>()
