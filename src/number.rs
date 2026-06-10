@@ -534,9 +534,9 @@ impl NumberValue {
             NumberValue::Rational(_) => 0,
             NumberValue::Float(f) => f.prec() as i32,
             NumberValue::Interval { lower, .. } => lower.prec() as i32,
-            NumberValue::Uncertainty { value, uncertainty, .. } => {
-                std::cmp::max(value.precision(), uncertainty.precision())
-            }
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } => std::cmp::max(value.precision(), uncertainty.precision()),
             _ => 0,
         }
     }
@@ -954,7 +954,7 @@ impl NumberValue {
                         }
                     }
                     _ => NumberValue::NaN,
-                }
+                },
             }
         }
     }
@@ -1200,7 +1200,7 @@ impl NumberValue {
                     }
                 }
                 _ => NumberValue::NaN,
-            }
+            },
         }
     }
 
@@ -1562,12 +1562,16 @@ impl NumberValue {
                         return NumberValue::Rational(Rational::new(num, den));
                     }
                 }
-                let val = (r1.num() as f64 / r1.den() as f64).powf(r2.num() as f64 / r2.den() as f64);
+                let val =
+                    (r1.num() as f64 / r1.den() as f64).powf(r2.num() as f64 / r2.den() as f64);
                 NumberValue::Float(Float::from_f64(val, 53))
             }
-            (NumberValue::Float(f1), NumberValue::Float(f2)) => NumberValue::Float(
-                Float::from_f64(f1.value().powf(f2.value()), std::cmp::max(f1.prec(), f2.prec())),
-            ),
+            (NumberValue::Float(f1), NumberValue::Float(f2)) => {
+                NumberValue::Float(Float::from_f64(
+                    f1.value().powf(f2.value()),
+                    std::cmp::max(f1.prec(), f2.prec()),
+                ))
+            }
             (NumberValue::Rational(r), NumberValue::Float(f)) => {
                 let val = (r.num() as f64 / r.den() as f64).powf(f.value());
                 NumberValue::Float(Float::from_f64(val, f.prec()))
@@ -1771,7 +1775,9 @@ impl NumberValue {
                     Some((lower.value(), upper.value()))
                 }
             }
-            NumberValue::Uncertainty { value, uncertainty, .. } => {
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } => {
                 let (v_min, v_max) = value.to_interval_bounds()?;
                 let (u_min, u_max) = uncertainty.to_interval_bounds()?;
                 let u_limit = u_min.abs().max(u_max.abs());
@@ -1908,7 +1914,9 @@ fn to_interval(val: &NumberValue) -> Option<(Float, Float)> {
             let f = Float::from_f64(f64::NEG_INFINITY, 53);
             Some((f.clone(), f))
         }
-        NumberValue::Uncertainty { value, uncertainty, .. } => {
+        NumberValue::Uncertainty {
+            value, uncertainty, ..
+        } => {
             let (v_min, v_max) = to_interval(value)?;
             let (u_min, u_max) = to_interval(uncertainty)?;
             let u_min_abs = u_min.value.clone().abs();
@@ -2040,9 +2048,7 @@ fn from_f64_and_prec(val: f64, prec: u32) -> NumberValue {
 }
 
 fn to_float_val(val: &NumberValue) -> Float {
-
     to_float_val_rnd(val, 53, rug::float::Round::Nearest)
-
 }
 
 fn try_unwrap_single_val(val: &NumberValue) -> Option<NumberValue> {
@@ -2501,7 +2507,6 @@ impl Number {
         }
     }
 
-
     /// Negates the number
     pub fn negate(&self) -> Self {
         let (real, imag) = self.to_canonical_ref();
@@ -2622,11 +2627,10 @@ impl Number {
     }
 
     fn contains_interval_or_uncertainty_val(val: &NumberValue) -> bool {
-        match val {
-            NumberValue::Interval { .. } => true,
-            NumberValue::Uncertainty { .. } => true,
-            _ => false,
-        }
+        matches!(
+            val,
+            NumberValue::Interval { .. } | NumberValue::Uncertainty { .. }
+        )
     }
 
     fn contains_interval_or_uncertainty(&self) -> bool {
@@ -2775,7 +2779,6 @@ impl Number {
             approximate: is_approx,
             is_imaginary: false,
         }
-
     }
 
     /// Compares this `Number` with another `Number`.
@@ -2797,7 +2800,6 @@ impl Number {
     /// Returns true if this number is strictly less than the other number.
     pub fn is_less_than(&self, other: &Self) -> bool {
         matches!(self.compare(other), ComparisonResult::Greater)
-
     }
 }
 

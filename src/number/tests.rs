@@ -1315,3 +1315,285 @@ fn test_critic_no_regressions_float_interval_rational() {
         panic!("Expected Rational");
     }
 }
+
+#[test]
+fn test_coverage_boost() {
+    // 1. NextAfter trait usage on f64
+    let zero = 0.0f64;
+    assert_ne!(zero.next_after(1.0), 0.0);
+    assert_ne!(zero.next_after(-1.0), 0.0);
+    assert!(f64::NAN.next_after(1.0).is_nan());
+    assert_eq!(1.0f64.next_after(1.0), 1.0);
+
+    // 2. is_negative_value helper function
+    let v_rat_pos = NumberValue::Rational(Rational::from_i32(5));
+    let v_rat_neg = NumberValue::Rational(Rational::from_i32(-5));
+    let v_fl_pos = NumberValue::Float(Float::from_f64(5.0, 53));
+    let v_fl_neg = NumberValue::Float(Float::from_f64(-5.0, 53));
+    let v_plus_inf = NumberValue::PlusInfinity;
+    let v_minus_inf = NumberValue::MinusInfinity;
+    let v_nan = NumberValue::NaN;
+    let v_interval_neg = NumberValue::Interval {
+        lower: Float::from_f64(-10.0, 53),
+        upper: Float::from_f64(-5.0, 53),
+    };
+    let v_interval_pos = NumberValue::Interval {
+        lower: Float::from_f64(5.0, 53),
+        upper: Float::from_f64(10.0, 53),
+    };
+    let v_interval_mixed = NumberValue::Interval {
+        lower: Float::from_f64(-5.0, 53),
+        upper: Float::from_f64(5.0, 53),
+    };
+    let v_unc = NumberValue::Uncertainty {
+        value: Box::new(v_rat_neg.clone()),
+        uncertainty: Box::new(v_rat_pos.clone()),
+        is_relative: false,
+    };
+
+    assert_eq!(is_negative_value(&v_rat_pos), Some(false));
+    assert_eq!(is_negative_value(&v_rat_neg), Some(true));
+    assert_eq!(is_negative_value(&v_fl_pos), Some(false));
+    assert_eq!(is_negative_value(&v_fl_neg), Some(true));
+    assert_eq!(is_negative_value(&v_plus_inf), Some(false));
+    assert_eq!(is_negative_value(&v_minus_inf), Some(true));
+    assert_eq!(is_negative_value(&v_interval_neg), Some(true));
+    assert_eq!(is_negative_value(&v_interval_pos), Some(false));
+    assert_eq!(is_negative_value(&v_interval_mixed), None);
+    assert_eq!(is_negative_value(&v_unc), Some(true));
+    assert_eq!(is_negative_value(&v_nan), None);
+
+    // 3. is_value_negative helper function
+    assert!(!is_value_negative(&v_rat_pos));
+    assert!(is_value_negative(&v_rat_neg));
+    assert!(!is_value_negative(&v_fl_pos));
+    assert!(is_value_negative(&v_fl_neg));
+    assert!(!is_value_negative(&v_plus_inf));
+    assert!(is_value_negative(&v_minus_inf));
+    assert!(is_value_negative(&v_unc));
+    assert!(!is_value_negative(&v_nan));
+
+    // 4. get_finite_sign helper function
+    assert_eq!(get_finite_sign(&v_rat_pos), Some(true));
+    assert_eq!(get_finite_sign(&v_rat_neg), Some(false));
+    assert_eq!(get_finite_sign(&v_fl_pos), Some(true));
+    assert_eq!(get_finite_sign(&v_fl_neg), Some(false));
+    assert_eq!(get_finite_sign(&v_interval_pos), Some(true));
+    assert_eq!(get_finite_sign(&v_interval_neg), Some(false));
+    assert_eq!(get_finite_sign(&v_interval_mixed), None);
+    assert_eq!(get_finite_sign(&v_unc), Some(false));
+    assert_eq!(get_finite_sign(&v_nan), None);
+
+    // 5. get_sign_multiplier helper function
+    assert_eq!(get_sign_multiplier(&v_rat_pos), Some(1.0));
+    assert_eq!(get_sign_multiplier(&v_rat_neg), Some(-1.0));
+    assert_eq!(get_sign_multiplier(&v_fl_pos), Some(1.0));
+    assert_eq!(get_sign_multiplier(&v_fl_neg), Some(-1.0));
+    assert_eq!(get_sign_multiplier(&v_plus_inf), Some(1.0));
+    assert_eq!(get_sign_multiplier(&v_minus_inf), Some(-1.0));
+    assert_eq!(get_sign_multiplier(&v_interval_pos), Some(1.0));
+    assert_eq!(get_sign_multiplier(&v_interval_neg), Some(-1.0));
+    assert_eq!(get_sign_multiplier(&v_interval_mixed), None);
+    assert_eq!(get_sign_multiplier(&v_unc), Some(-1.0));
+    assert_eq!(get_sign_multiplier(&v_nan), None);
+
+    // 6. Number constructors and predicates coverage
+    let n_default = Number::default();
+    assert!(n_default.is_zero());
+
+    let n_one = Number::from_i32(1);
+    assert!(n_one.is_one());
+    assert!(n_one.is_real_one());
+    assert!(!n_one.is_interval());
+    assert!(!n_one.is_complex());
+    assert!(!n_one.is_imaginary());
+
+    let n_interval = Number::new_interval(Float::from_f64(1.0, 53), Float::from_f64(2.0, 53));
+    assert!(n_interval.is_interval());
+
+    let n_real = NumberValue::Rational(Rational::from_i32(1));
+    let n_imag = NumberValue::Rational(Rational::from_i32(2));
+    let n_complex = Number::from_real_imag_values(n_real, n_imag, 53, false);
+    assert!(n_complex.is_complex());
+    assert!(n_complex.is_imaginary() || n_complex.has_real_part());
+
+    // 7. norm and conjugate
+    let n_comp = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
+    assert_eq!(n_comp.conjugate().to_string(), "3 - 4i");
+    assert_eq!(n_comp.norm().to_string(), "5");
+
+    // 8. cmp_u128_rational
+    assert_eq!(
+        cmp_u128_rational(1, 2, 2, 3, false),
+        std::cmp::Ordering::Less
+    );
+
+    // 9. min4 / max4
+    assert_eq!(min4(1.0, 2.0, 3.0, 4.0), 1.0);
+    assert_eq!(max4(1.0, 2.0, 3.0, 4.0), 4.0);
+
+    // 10. to_interval
+    let int_bounds = to_interval(&v_rat_pos);
+    assert!(int_bounds.is_some());
+    let int_bounds_unc = to_interval(&v_unc);
+    assert!(int_bounds_unc.is_some());
+
+    // 11. from_f64_and_prec
+    let val_f64_prec = from_f64_and_prec(1.5, 64);
+    if let NumberValue::Float(f) = val_f64_prec {
+        assert_eq!(f.prec(), 64);
+        assert_eq!(f.value(), 1.5);
+    } else {
+        panic!("Expected Float");
+    }
+
+    // 12. NumberValue is_zero, approximate, precision, contains_interval_or_uncertainty
+    let val_zero = NumberValue::Rational(Rational::from_i32(0));
+    assert!(val_zero.is_zero());
+    assert!(!val_zero.approximate());
+    assert_eq!(val_zero.precision(), 0);
+
+    let val_fl = NumberValue::Float(Float::from_f64(1.23, 64));
+    assert!(val_fl.approximate());
+    assert_eq!(val_fl.precision(), 64);
+
+    let val_unc = NumberValue::Uncertainty {
+        value: Box::new(val_zero),
+        uncertainty: Box::new(val_fl),
+        is_relative: false,
+    };
+    assert!(val_unc.approximate());
+    assert_eq!(val_unc.precision(), 64);
+
+    // contains_interval_or_uncertainty
+    let n_unc_wrapped = Number::from_rational(Rational::from_i32(1));
+    assert!(!n_unc_wrapped.contains_interval_or_uncertainty());
+
+    let val_unc_wrapped = Number::new_uncertainty(
+        NumberValue::Rational(Rational::from_i32(5)),
+        NumberValue::Rational(Rational::from_i32(1)),
+        false,
+    );
+    assert!(val_unc_wrapped.contains_interval_or_uncertainty());
+
+    // 13. NumberValue::ln & pow
+    let ln_val = NumberValue::Rational(Rational::from_i32(2)).ln();
+    if let NumberValue::Float(f) = ln_val {
+        assert!((f.value() - 2.0f64.ln()).abs() < 1e-9);
+    }
+    let ln_fl = NumberValue::Float(Float::from_f64(2.0, 53)).ln();
+    if let NumberValue::Float(f) = ln_fl {
+        assert!((f.value() - 2.0f64.ln()).abs() < 1e-9);
+    }
+    let ln_interval = NumberValue::Interval {
+        lower: Float::from_f64(2.0, 53),
+        upper: Float::from_f64(3.0, 53),
+    }
+    .ln();
+    if let NumberValue::Interval { lower, upper } = ln_interval {
+        assert!((lower.value() - 2.0f64.ln()).abs() < 1e-9);
+        assert!((upper.value() - 3.0f64.ln()).abs() < 1e-9);
+    }
+
+    let pow_val = NumberValue::Rational(Rational::from_i32(2))
+        .pow(&NumberValue::Rational(Rational::from_i32(3)));
+    if let NumberValue::Rational(r) = pow_val {
+        assert_eq!(r.num(), 8);
+    }
+
+    // 14. Rational and Float arithmetic operations
+    let rat1 = Rational::from_i32(2);
+    let rat2 = Rational::from_i32(3);
+    assert_eq!(rat1.add(&rat2), Some(Rational::from_i32(5)));
+    assert_eq!(rat1.sub(&rat2), Some(Rational::from_i32(-1)));
+    assert_eq!(rat1.mul(&rat2), Some(Rational::from_i32(6)));
+    assert_eq!(rat1.div(&rat2), Some(Rational::new(2, 3)));
+
+    let fl1 = Float::from_f64(2.0, 53);
+    let fl2 = Float::from_f64(3.0, 53);
+    assert_eq!(fl1.add(&fl2).value(), 5.0);
+    assert_eq!(fl1.sub(&fl2).value(), -1.0);
+    assert_eq!(fl1.mul(&fl2).value(), 6.0);
+    assert_eq!(fl1.div(&fl2).value(), 2.0 / 3.0);
+
+    // 15. ComparisonResult and NumberValue orderings
+    let cmp_less = NumberValue::Rational(rat1).partial_cmp(&NumberValue::Rational(rat2));
+    assert_eq!(cmp_less, Some(std::cmp::Ordering::Less));
+
+    let val_less_than = NumberValue::Rational(Rational::from_i32(1));
+    let val_greater_than = NumberValue::Rational(Rational::from_i32(3));
+    assert!(val_less_than.is_less_than(&val_greater_than));
+    assert!(val_greater_than.is_greater_than(&val_less_than));
+
+    let n_less = Number::from_i32(1);
+    let n_greater = Number::from_i32(3);
+    assert!(n_less.is_less_than(&n_greater));
+
+    // 16. Subtraction of uncertainties
+    let u1 = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Rational(Rational::from_i32(10))),
+        uncertainty: Box::new(NumberValue::Rational(Rational::from_i32(1))),
+        is_relative: false,
+    };
+    let u2 = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Rational(Rational::from_i32(4))),
+        uncertainty: Box::new(NumberValue::Rational(Rational::from_i32(2))),
+        is_relative: false,
+    };
+    let sub_unc = u1.sub(&u2);
+    if let NumberValue::Uncertainty { value, .. } = sub_unc {
+        assert_eq!(*value, NumberValue::Rational(Rational::from_i32(6)));
+    }
+
+    // 17. Left-hand side plain value / right-hand side uncertainty multiplication
+    let plain = NumberValue::Rational(Rational::from_i32(2));
+    let unc_rhs = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Rational(Rational::from_i32(5))),
+        uncertainty: Box::new(NumberValue::Rational(Rational::from_i32(1))),
+        is_relative: false,
+    };
+    let mul_unc = plain.mul(&unc_rhs);
+    if let NumberValue::Uncertainty { value, .. } = mul_unc {
+        assert_eq!(*value, NumberValue::Rational(Rational::from_i32(10)));
+    }
+
+    // 18. Division of two uncertainties
+    let div_unc = u1.div(&u2);
+    if let NumberValue::Uncertainty { value, .. } = div_unc {
+        assert_eq!(*value, NumberValue::Rational(Rational::new(5, 2)));
+    }
+
+    // 19. Plain value multiplied by Interval
+    let plain_mul = NumberValue::Rational(Rational::from_i32(2));
+    let interval_mul = NumberValue::Interval {
+        lower: Float::from_f64(1.0, 53),
+        upper: Float::from_f64(3.0, 53),
+    };
+    let res_interval_mul = plain_mul.mul(&interval_mul);
+    if let NumberValue::Interval { lower, upper } = res_interval_mul {
+        assert_eq!(lower.value(), 2.0);
+        assert_eq!(upper.value(), 6.0);
+    }
+
+    // 20. Division of infinity by plain negative value
+    let inf = NumberValue::PlusInfinity;
+    let plain_neg = NumberValue::Rational(Rational::from_i32(-2));
+    let div_inf = inf.div(&plain_neg);
+    assert_eq!(div_inf, NumberValue::MinusInfinity);
+
+    // 21. Complex power fallback
+    let base_comp = Number::new_complex(Number::from_i32(1), Number::from_i32(1));
+    let exp_comp = Number::from_i32(2);
+    let pow_comp_res = base_comp.pow(&exp_comp);
+    assert!(!pow_comp_res.is_nan());
+
+    // 22. Complex uncertainty in contains_interval_or_uncertainty
+    let real_part = Number::from_i32(5);
+    let imag_part_unc = Number::new_uncertainty(
+        NumberValue::Rational(Rational::from_i32(2)),
+        NumberValue::Rational(Rational::from_i32(1)),
+        false,
+    );
+    let complex_unc = Number::new_complex(real_part, imag_part_unc);
+    assert!(complex_unc.contains_interval_or_uncertainty());
+}

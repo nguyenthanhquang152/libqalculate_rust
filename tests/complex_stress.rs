@@ -217,7 +217,10 @@ fn test_complex_stress_mixed_interval_uncertainty() {
     // 1. conjugate(z) = (2 +/- 0.1) - [3, 4]i = (2 +/- 0.1) + [-4, -3]i
     let conj = z.conjugate();
     let (real_conj, imag_conj) = conj.to_canonical_real_imag();
-    if let NumberValue::Uncertainty { value, uncertainty, .. } = real_conj {
+    if let NumberValue::Uncertainty {
+        value, uncertainty, ..
+    } = real_conj
+    {
         assert_eq!(*value, NumberValue::Rational(Rational::new(2, 1)));
         if let NumberValue::Float(u) = &*uncertainty {
             assert!((u.value() - 0.1).abs() < 1e-9);
@@ -238,7 +241,10 @@ fn test_complex_stress_mixed_interval_uncertainty() {
     let one_plus_i = Number::new_complex(Number::from_i32(1), Number::from_i32(1));
     let sum = z.add(&one_plus_i);
     let (real_sum, imag_sum) = sum.to_canonical_real_imag();
-    if let NumberValue::Uncertainty { value, uncertainty, .. } = real_sum {
+    if let NumberValue::Uncertainty {
+        value, uncertainty, ..
+    } = real_sum
+    {
         assert_eq!(*value, NumberValue::Rational(Rational::new(3, 1)));
         if let NumberValue::Float(u) = &*uncertainty {
             assert!((u.value() - 0.1).abs() < 1e-9);
@@ -259,7 +265,10 @@ fn test_complex_stress_mixed_interval_uncertainty() {
     let scalar_two = Number::from_i32(2);
     let prod_scalar = z.mul(&scalar_two);
     let (real_prod_scalar, imag_prod_scalar) = prod_scalar.to_canonical_real_imag();
-    if let NumberValue::Uncertainty { value, uncertainty, .. } = real_prod_scalar {
+    if let NumberValue::Uncertainty {
+        value, uncertainty, ..
+    } = real_prod_scalar
+    {
         assert_eq!(*value, NumberValue::Rational(Rational::new(4, 1)));
         if let NumberValue::Float(u) = &*uncertainty {
             assert!((u.value() - 0.2).abs() < 1e-9);
@@ -286,7 +295,10 @@ fn test_complex_stress_mixed_interval_uncertainty() {
     } else {
         panic!("Expected interval real part");
     }
-    if let NumberValue::Uncertainty { value, uncertainty, .. } = imag_prod_i {
+    if let NumberValue::Uncertainty {
+        value, uncertainty, ..
+    } = imag_prod_i
+    {
         assert_eq!(*value, NumberValue::Rational(Rational::new(2, 1)));
         if let NumberValue::Float(u) = &*uncertainty {
             assert!((u.value() - 0.1).abs() < 1e-9);
