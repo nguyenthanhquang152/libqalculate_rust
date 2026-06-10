@@ -57,7 +57,18 @@ non-batch expressions with fallback disabled:
   return `i128` and intentionally panic when the exact value exceeds that range.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
-  accepted and stored in lower/upper order.
+  accepted and stored in lower/upper order, and equal finite endpoints collapse
+  to a scalar value. Focused upstream probes confirm `interval(5;2)` and
+  `interval(2;5)` both print `interval(2.000000000, 5.000000000)` with
+  interval-display mode, while `interval(2;2)` prints `2`.
+- Native interval literal parsing is an internal `Number` parser surface, not
+  qalc bracket syntax parity. It now uses the same public constructor invariant
+  for finite reversed endpoints, so `"[5, 1]".parse::<Number>()` stores lower
+  `1` and upper `5` instead of rejecting the literal. Exactly equal parsed
+  endpoints collapse before float conversion, preserving exact scalar metadata
+  for `"[2, 2]"`. Upstream default qalc still treats `[5,2]` as vector-like
+  syntax (`[5  2]`), so bracket syntax remains outside native qalc oracle
+  claims.
 - `Number::try_new_interval` rejects NaN bounds, and `Number::new_interval`
   maps NaN-bound inputs to `NaN` instead of storing an invalid interval.
 - The public safe interval constructors enforce ordered non-NaN endpoints; the
@@ -73,8 +84,15 @@ non-batch expressions with fallback disabled:
 ```sh
 rtk cargo check --tests
 rtk cargo test --test number_behavior rational_from_str_exposes_lossless_arbitrary_precision_surface -- --nocapture
+rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
+rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
+rtk cargo test --test number_properties interval_constructor_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_properties interval_constructor -- --nocapture
 rtk cargo test --lib
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(5;2)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;5)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;2)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '[5,2]'
 rtk cargo test --test uncertainty_adversarial
 rtk cargo test --test fallback_gate cli_native_expression_succeeds_when_fallback_disabled -- --nocapture
 rtk cargo test --test fallback_gate cli_invalid_native_expression_fails_when_fallback_disabled -- --nocapture

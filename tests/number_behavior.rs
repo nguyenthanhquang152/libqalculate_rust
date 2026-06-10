@@ -42,6 +42,35 @@ fn rational_from_str_exposes_lossless_arbitrary_precision_surface() {
 }
 
 #[test]
+fn interval_literal_parsing_normalizes_reversed_bounds() {
+    let number = "[5, 1]"
+        .parse::<Number>()
+        .expect("finite reversed interval bounds should parse");
+    let NumberValue::Interval { lower, upper } = number.value() else {
+        panic!("expected interval number");
+    };
+
+    assert_eq!(lower.value(), 1.0);
+    assert_eq!(upper.value(), 5.0);
+}
+
+#[test]
+fn interval_literal_parsing_collapses_equal_bounds_to_scalar() {
+    let number = "[2, 2]"
+        .parse::<Number>()
+        .expect("equal finite interval bounds should parse");
+
+    assert!(!number.is_interval());
+    assert!(!number.approximate());
+    let NumberValue::Rational(value) = number.value() else {
+        panic!("expected equal exact interval bounds to collapse to a rational scalar");
+    };
+    assert_eq!(value.num(), 2);
+    assert_eq!(value.den(), 1);
+    assert_eq!(number.to_qalc_string(), "2");
+}
+
+#[test]
 fn nested_complex_numbers_are_flattened() {
     let real_part = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
     let imag_part = Number::new_complex(Number::from_i32(3), Number::from_i32(4));

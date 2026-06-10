@@ -2346,11 +2346,12 @@ impl Number {
 
     /// Creates a new interval `Number` with given lower and upper bounds.
     ///
-    /// Reversed finite bounds are stored in lower/upper order, matching
-    /// upstream `Number::setInterval`. If either bound is NaN, the result is
-    /// `NaN`; use [`Number::try_new_interval`] to reject those inputs.
+    /// Reversed finite bounds are stored in lower/upper order, and equal bounds
+    /// collapse to a scalar value, matching upstream `Number::setInterval`. If
+    /// either bound is NaN, the result is `NaN`; use
+    /// [`Number::try_new_interval`] to reject those inputs.
     pub fn new_interval(lower: Float, upper: Float) -> Self {
-        let Some((lower, upper)) = ordered_interval_bounds(lower, upper) else {
+        let Some(number) = Self::from_interval_bounds(lower, upper) else {
             return Self {
                 value: NumberValue::NaN,
                 imaginary: None,
@@ -2359,15 +2360,25 @@ impl Number {
                 is_imaginary: false,
             };
         };
-        Self::from_ordered_interval(lower, upper)
+        number
     }
 
     /// Tries to create a new interval `Number`.
     ///
-    /// Reversed finite bounds are stored in lower/upper order. Returns `None`
-    /// if either bound is NaN.
+    /// Reversed finite bounds are stored in lower/upper order, and equal bounds
+    /// collapse to a scalar value. Returns `None` if either bound is NaN.
     pub fn try_new_interval(lower: Float, upper: Float) -> Option<Self> {
+        Self::from_interval_bounds(lower, upper)
+    }
+
+    fn from_interval_bounds(lower: Float, upper: Float) -> Option<Self> {
         let (lower, upper) = ordered_interval_bounds(lower, upper)?;
+        if lower.value == upper.value {
+            let prec = std::cmp::max(lower.prec(), upper.prec());
+            return Some(Self::from_float(Float {
+                value: rug::Float::with_val(prec, &lower.value),
+            }));
+        }
         Some(Self::from_ordered_interval(lower, upper))
     }
 
@@ -3280,16 +3291,18 @@ fn parse_interval_literal(s: &str) -> Result<Option<NumberValue>, String> {
         .ok_or_else(|| format!("Failed to parse interval bounds: {s}"))?;
     let lower = parse_single_value(lower)?;
     let upper = parse_single_value(upper)?;
+    if lower == upper {
+        return Ok(Some(lower));
+    }
     let (lower, _) =
         to_interval(&lower).ok_or_else(|| format!("Invalid interval lower bound: {lower}"))?;
     let (_, upper) =
         to_interval(&upper).ok_or_else(|| format!("Invalid interval upper bound: {upper}"))?;
 
-    if lower.value > upper.value {
-        return Err(format!("Interval lower bound exceeds upper bound: {s}"));
-    }
+    let number = Number::try_new_interval(lower, upper)
+        .ok_or_else(|| format!("Invalid interval bounds: {s}"))?;
 
-    Ok(Some(NumberValue::Interval { lower, upper }))
+    Ok(Some(number.value().clone()))
 }
 
 fn split_interval_bounds(inner: &str) -> Option<(&str, &str)> {

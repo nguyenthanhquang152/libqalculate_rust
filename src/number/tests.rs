@@ -589,7 +589,7 @@ fn internal_interval_literals_parse_for_scaffold() {
         evaluate_expr("[1,2] + [3,4]").unwrap().to_qalc_string(),
         "[4  6]"
     );
-    assert!(evaluate_expr("[2,1]").is_err());
+    assert_eq!(evaluate_expr("[2,1]").unwrap().to_qalc_string(), "[1  2]");
 }
 
 #[test]

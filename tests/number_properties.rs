@@ -138,6 +138,42 @@ fn interval_constructor_normalizes_reversed_bounds() {
 }
 
 #[test]
+fn interval_constructor_collapses_equal_bounds_to_scalar() {
+    let number = Number::new_interval(Float::from_f64(2.0, 53), Float::from_f64(2.0, 53));
+
+    assert!(!number.is_interval());
+    let NumberValue::Float(value) = number.value() else {
+        panic!("expected equal finite interval bounds to collapse to a scalar float");
+    };
+    assert_eq!(value.value(), 2.0);
+    assert_eq!(value.prec(), 53);
+
+    let number = Number::try_new_interval(Float::from_f64(-3.0, 53), Float::from_f64(-3.0, 53))
+        .expect("equal finite bounds should construct a scalar number");
+    assert!(!number.is_interval());
+
+    let mixed_precision =
+        Number::try_new_interval(Float::from_f64(4.0, 24), Float::from_f64(4.0, 128))
+            .expect("equal finite bounds should construct a scalar number");
+    let NumberValue::Float(value) = mixed_precision.value() else {
+        panic!("expected equal finite interval bounds to collapse to a scalar float");
+    };
+    assert_eq!(value.value(), 4.0);
+    assert_eq!(value.prec(), 128);
+    assert_eq!(mixed_precision.precision(), 128);
+
+    let mixed_precision_reversed =
+        Number::try_new_interval(Float::from_f64(4.0, 128), Float::from_f64(4.0, 24))
+            .expect("equal finite bounds should construct a scalar number");
+    let NumberValue::Float(value) = mixed_precision_reversed.value() else {
+        panic!("expected equal finite interval bounds to collapse to a scalar float");
+    };
+    assert_eq!(value.value(), 4.0);
+    assert_eq!(value.prec(), 128);
+    assert_eq!(mixed_precision_reversed.precision(), 128);
+}
+
+#[test]
 fn interval_constructor_rejects_nan_bounds() {
     for (lower, upper) in [(f64::NAN, 1.0), (1.0, f64::NAN), (f64::NAN, f64::NAN)] {
         assert!(
