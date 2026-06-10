@@ -27,6 +27,11 @@ claim full `Number.cc` parity.
 The oracle runner disables C++ fallback for these rows and verifies
 `fallback=native`.
 
+`1 + 1` is also kept as focused native scaffold evidence because
+`ORIGINAL_REQUEST.md` explicitly names it as a fallback-disabled scaffold
+expression. It is not an upstream batch-manifest promotion and is not counted in
+the 35 `native-pass` batch rows above.
+
 ## Focused Native Oracle Cases
 
 `tests/oracle.rs::focused_epic2_native_numeric_oracle_cases` compares these
@@ -39,6 +44,7 @@ focused expressions with fallback disabled:
 - `(1 + 2i) / (3 + 4i)`
 - `1/3`
 - `1e10`
+- `1 + 1`
 - `5 ^ 2`
 - `2 ^ -3`
 - `(-2) ^ -3`
