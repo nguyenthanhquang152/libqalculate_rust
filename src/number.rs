@@ -1868,6 +1868,13 @@ impl NumberValue {
         if self.is_nan() || other.is_nan() {
             return ComparisonResult::Unknown;
         }
+        if let (NumberValue::Rational(lhs), NumberValue::Rational(rhs)) = (self, other) {
+            return match lhs.cmp(rhs) {
+                std::cmp::Ordering::Less => ComparisonResult::Greater,
+                std::cmp::Ordering::Equal => ComparisonResult::Equal,
+                std::cmp::Ordering::Greater => ComparisonResult::Less,
+            };
+        }
         let self_bounds = self.to_interval_bounds();
         let other_bounds = other.to_interval_bounds();
         match (self_bounds, other_bounds) {
@@ -3319,6 +3326,9 @@ fn parse_decimal_or_scientific_rational(s: &str) -> Option<rug::Rational> {
         }
     }
 
+    if digits.is_empty() && has_exponent {
+        return None;
+    }
     if digits.is_empty() {
         digits.push('0');
     }

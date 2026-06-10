@@ -532,8 +532,31 @@ fn scientific_literals_with_impractical_exponents_are_rejected() {
     assert!("1e-10001".parse::<Number>().is_err());
     assert!("1e2147483647".parse::<Number>().is_err());
     assert!("1e-2147483648".parse::<Number>().is_err());
+    assert!("e1".parse::<Number>().is_err());
+    assert!("+e1".parse::<Number>().is_err());
+    assert!(".e1".parse::<Number>().is_err());
+    assert!("- . e1".parse::<Number>().is_err());
 
     assert_eq!("1e303".parse::<Number>().unwrap().to_qalc_string(), "1E303");
+}
+
+#[test]
+fn exact_large_rational_compare_does_not_collapse_to_f64_infinity() {
+    let smaller = "1e10000".parse::<Number>().unwrap();
+    let larger = "2e10000".parse::<Number>().unwrap();
+
+    assert_eq!(
+        smaller.value().compare(larger.value()),
+        ComparisonResult::Greater
+    );
+    assert_eq!(
+        larger.value().compare(smaller.value()),
+        ComparisonResult::Less
+    );
+    assert_ne!(
+        smaller.value().compare(larger.value()),
+        ComparisonResult::Equal
+    );
 }
 
 #[test]

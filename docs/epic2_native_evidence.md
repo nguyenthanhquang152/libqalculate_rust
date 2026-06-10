@@ -1,6 +1,6 @@
 # Epic 2 Native Numeric Evidence
 
-Date: 2026-06-11
+Date: 2026-06-10
 
 This note records fallback-disabled Rust-vs-upstream evidence for the current
 Epic 2 numeric slice. It is evidence for the cases listed here only; it does not
