@@ -1462,6 +1462,20 @@ impl NumberValue {
         }
     }
 
+    /// Integer division with quotient truncated toward zero, matching qalc `//` / `\` / `div`.
+    pub fn int_div(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() || self.is_infinite() || other.is_infinite() {
+            return NumberValue::NaN;
+        }
+
+        match (self, other) {
+            (NumberValue::Rational(lhs), NumberValue::Rational(rhs)) => int_div_rationals(lhs, rhs)
+                .map(NumberValue::Rational)
+                .unwrap_or(NumberValue::NaN),
+            _ => NumberValue::NaN,
+        }
+    }
+
     /// Exponentiate to a power mathematically.
     pub fn pow(&self, other: &Self) -> Self {
         if self.is_nan() || other.is_nan() {
@@ -2021,18 +2035,33 @@ enum RemainderMode {
 }
 
 fn rem_rationals(lhs: &Rational, rhs: &Rational, mode: RemainderMode) -> Option<Rational> {
+    let integer_quotient = rational_integer_quotient(lhs, rhs, mode)?;
+    let scaled_divisor = rug::Rational::from(integer_quotient) * &rhs.value;
+    Some(Rational {
+        value: &lhs.value - scaled_divisor,
+    })
+}
+
+fn int_div_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
+    let integer_quotient = rational_integer_quotient(lhs, rhs, RemainderMode::Truncate)?;
+    Some(Rational {
+        value: rug::Rational::from(integer_quotient),
+    })
+}
+
+fn rational_integer_quotient(
+    lhs: &Rational,
+    rhs: &Rational,
+    mode: RemainderMode,
+) -> Option<rug::Integer> {
     if rhs.is_zero() {
         return None;
     }
 
     let quotient = rug::Rational::from(&lhs.value / &rhs.value);
-    let integer_quotient = match mode {
+    Some(match mode {
         RemainderMode::Truncate => quotient.numer().clone().div_trunc(quotient.denom()),
         RemainderMode::Floor => quotient.numer().clone().div_floor(quotient.denom()),
-    };
-    let scaled_divisor = rug::Rational::from(integer_quotient) * &rhs.value;
-    Some(Rational {
-        value: &lhs.value - scaled_divisor,
     })
 }
 
@@ -2788,6 +2817,27 @@ impl Number {
 
         Number {
             value: lhs_real.modulo(&rhs_real),
+            imaginary: None,
+            precision: std::cmp::max(self.precision, other.precision),
+            approximate: self.approximate || other.approximate,
+            is_imaginary: false,
+        }
+    }
+
+    /// Integer division with quotient truncated toward zero.
+    pub fn int_div(&self, other: &Self) -> Self {
+        if other.is_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        let (lhs_real, lhs_imag) = self.to_canonical_ref();
+        let (rhs_real, rhs_imag) = other.to_canonical_ref();
+        if !lhs_imag.is_real_zero() || !rhs_imag.is_real_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        Number {
+            value: lhs_real.int_div(&rhs_real),
             imaginary: None,
             precision: std::cmp::max(self.precision, other.precision),
             approximate: self.approximate || other.approximate,
@@ -3696,6 +3746,10 @@ pub fn evaluate_expr(s: &str) -> Result<Number, String> {
             tokens.push(Token::OpMod);
             has_word_operator_left_boundary = false;
             rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix("//") {
+            tokens.push(Token::OpIntDiv);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
         } else if let Some(remaining) =
             strip_word_operator(rest, "rem", has_word_operator_left_boundary)
         {
@@ -3708,8 +3762,18 @@ pub fn evaluate_expr(s: &str) -> Result<Number, String> {
             tokens.push(Token::OpMod);
             has_word_operator_left_boundary = false;
             rest = remaining.trim_start();
+        } else if let Some(remaining) =
+            strip_word_operator(rest, "div", has_word_operator_left_boundary)
+        {
+            tokens.push(Token::OpIntDiv);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
         } else if let Some(remaining) = rest.strip_prefix('%') {
             tokens.push(Token::OpRem);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix('\\') {
+            tokens.push(Token::OpIntDiv);
             has_word_operator_left_boundary = false;
             rest = remaining.trim_start();
         } else {
@@ -3755,6 +3819,7 @@ enum Token {
     OpDiv,
     OpRem,
     OpMod,
+    OpIntDiv,
     OpPow,
     LParen,
     RParen,
@@ -3820,7 +3885,9 @@ impl ExprParser {
         while let Some(tok) = self.peek() {
             let (op_prec, assoc) = match tok {
                 Token::OpAdd | Token::OpSub => (1, Assoc::Left),
-                Token::OpMul | Token::OpDiv | Token::OpRem | Token::OpMod => (2, Assoc::Left),
+                Token::OpMul | Token::OpDiv | Token::OpRem | Token::OpMod | Token::OpIntDiv => {
+                    (2, Assoc::Left)
+                }
                 Token::OpPow => (3, Assoc::Right),
                 _ => break,
             };
@@ -3844,6 +3911,7 @@ impl ExprParser {
                 Token::OpDiv => lhs.div(&rhs),
                 Token::OpRem => lhs.rem(&rhs),
                 Token::OpMod => lhs.modulo(&rhs),
+                Token::OpIntDiv => lhs.int_div(&rhs),
                 Token::OpPow => lhs.pow(&rhs),
                 _ => unreachable!(),
             };

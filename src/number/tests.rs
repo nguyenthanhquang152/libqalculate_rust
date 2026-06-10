@@ -555,6 +555,33 @@ fn rational_modulo_and_remainder_match_qalc_operators() {
 }
 
 #[test]
+fn rational_integer_division_matches_qalc_operators() {
+    for (expression, expected) in [
+        ("5//2", "2"),
+        ("5\\2", "2"),
+        ("5 div 2", "2"),
+        ("-5//2", "-2"),
+        ("5//-2", "-2"),
+        ("-5//-2", "2"),
+        ("7/2 div 1", "3"),
+        ("-7/2 div 1", "-3"),
+    ] {
+        assert_eq!(
+            evaluate_expr(expression).unwrap().to_qalc_string(),
+            expected,
+            "{expression} should match upstream qalc"
+        );
+    }
+
+    for expression in ["5div 2", "5 div2", "5 div+2"] {
+        assert!(
+            evaluate_expr(expression).is_err(),
+            "{expression} should require separated word operators"
+        );
+    }
+}
+
+#[test]
 fn decimal_and_scientific_literals_parse_without_f64_loss() {
     let decimal = "0.01"
         .parse::<Number>()

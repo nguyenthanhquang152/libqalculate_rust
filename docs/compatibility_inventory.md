@@ -15,11 +15,11 @@
 | Implementation Files | 41 | 0 | 0 | 1 | 3 | 37 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
 | Batch Test Files | 17 | 0 | 0 | 2 | 0 | 15 | 0 |
-| Batch Test Cases | 656 | 35 | 0 | 0 | 0 | 621 | 0 |
+| Batch Test Cases | 656 | 38 | 0 | 0 | 0 | 618 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 0 | 1 | 4 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 35 `native-pass` rows across `parser.batch` and `operators.batch`; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 38 `native-pass` rows across `parser.batch` and `operators.batch`; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
 
 ---
 
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 35 |
-| Inventory-only batch cases | 621 |
+| Native-pass batch cases | 38 |
+| Inventory-only batch cases | 618 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -524,11 +524,11 @@ status_summary:
     unstarted: 15
     out_of_scope: 0
   batch_test_cases:
-    native_pass: 35
+    native_pass: 38
     tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 621
+    unstarted: 618
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2
