@@ -348,7 +348,7 @@ impl NumberValue {
                 is_relative,
             } => NumberValue::Uncertainty {
                 value: Box::new(value.negate()),
-                uncertainty: Box::new((**uncertainty).clone()),
+                uncertainty: uncertainty.clone(),
                 is_relative: *is_relative,
             },
             NumberValue::PlusInfinity => NumberValue::MinusInfinity,
@@ -386,8 +386,16 @@ impl NumberValue {
                         is_relative: ir2,
                     },
                 ) => {
-                    let u1_sq = u1.mul(u1);
-                    let u2_sq = u2.mul(u2);
+                    let u1_sq = if u1.is_real_zero() {
+                        NumberValue::Rational(Rational::from_i32(0))
+                    } else {
+                        u1.mul(u1)
+                    };
+                    let u2_sq = if u2.is_real_zero() {
+                        NumberValue::Rational(Rational::from_i32(0))
+                    } else {
+                        u2.mul(u2)
+                    };
                     let unc = u1_sq.add(&u2_sq).sqrt();
                     NumberValue::Uncertainty {
                         value: Box::new(v1.add(v2)),
@@ -404,7 +412,7 @@ impl NumberValue {
                     other,
                 ) => NumberValue::Uncertainty {
                     value: Box::new(value.add(other)),
-                    uncertainty: Box::new((**uncertainty).clone()),
+                    uncertainty: uncertainty.clone(),
                     is_relative: *is_relative,
                 },
                 (
@@ -416,7 +424,7 @@ impl NumberValue {
                     },
                 ) => NumberValue::Uncertainty {
                     value: Box::new(self_val.add(value)),
-                    uncertainty: Box::new((**uncertainty).clone()),
+                    uncertainty: uncertainty.clone(),
                     is_relative: *is_relative,
                 },
                 _ => match (self, other) {
@@ -523,8 +531,16 @@ impl NumberValue {
                 },
             ) => {
                 let val = v1.mul(v2);
-                let term1 = v2.mul(u1);
-                let term2 = v1.mul(u2);
+                let term1 = if u1.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    v2.mul(u1)
+                };
+                let term2 = if u2.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    v1.mul(u2)
+                };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
                 NumberValue::Uncertainty {
                     value: Box::new(val),
@@ -541,7 +557,11 @@ impl NumberValue {
                 other,
             ) => {
                 let val = value.mul(other);
-                let unc = uncertainty.mul(&other.abs());
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    uncertainty.mul(&other.abs())
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -557,7 +577,11 @@ impl NumberValue {
                 },
             ) => {
                 let val = self_val.mul(value);
-                let unc = uncertainty.mul(&self_val.abs());
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    uncertainty.mul(&self_val.abs())
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -665,8 +689,16 @@ impl NumberValue {
                 },
             ) => {
                 let val = v1.div(v2);
-                let term1 = u1.div(v2);
-                let term2 = val.mul(u2).div(v2);
+                let term1 = if u1.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    u1.div(v2)
+                };
+                let term2 = if u2.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    val.mul(u2).div(v2)
+                };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
                 NumberValue::Uncertainty {
                     value: Box::new(val),
@@ -683,7 +715,11 @@ impl NumberValue {
                 other,
             ) => {
                 let val = value.div(other);
-                let unc = uncertainty.div(&other.abs());
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    uncertainty.div(&other.abs())
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -699,7 +735,11 @@ impl NumberValue {
                 },
             ) => {
                 let val = self_val.div(value);
-                let term2 = val.mul(uncertainty).div(value);
+                let term2 = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    val.mul(uncertainty).div(value)
+                };
                 let unc = term2.abs();
                 NumberValue::Uncertainty {
                     value: Box::new(val),
@@ -792,8 +832,16 @@ impl NumberValue {
                 let val = v1.pow(v2);
                 let one = NumberValue::Rational(Rational::from_i32(1));
                 let v2_minus_1 = v2.sub(&one);
-                let term1 = v2.mul(&v1.pow(&v2_minus_1)).mul(u1);
-                let term2 = val.mul(&v1.ln()).mul(u2);
+                let term1 = if u1.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    v2.mul(&v1.pow(&v2_minus_1)).mul(u1)
+                };
+                let term2 = if u2.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    val.mul(&v1.ln()).mul(u2)
+                };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
                 NumberValue::Uncertainty {
                     value: Box::new(val),
@@ -812,7 +860,11 @@ impl NumberValue {
                 let val = value.pow(other);
                 let one = NumberValue::Rational(Rational::from_i32(1));
                 let other_minus_1 = other.sub(&one);
-                let unc = other.mul(&value.pow(&other_minus_1)).mul(uncertainty).abs();
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    other.mul(&value.pow(&other_minus_1)).mul(uncertainty).abs()
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -828,7 +880,11 @@ impl NumberValue {
                 },
             ) => {
                 let val = self_val.pow(value);
-                let unc = val.mul(&self_val.ln()).mul(uncertainty).abs();
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    val.mul(&self_val.ln()).mul(uncertainty).abs()
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -899,7 +955,11 @@ impl NumberValue {
             } => {
                 let val = value.sqrt();
                 let two = NumberValue::Rational(Rational::from_i32(2));
-                let unc = uncertainty.div(&two.mul(&val));
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    uncertainty.div(&two.mul(&val))
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -931,7 +991,11 @@ impl NumberValue {
                 is_relative,
             } => {
                 let val = value.ln();
-                let unc = uncertainty.div(&value.abs());
+                let unc = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    uncertainty.div(&value.abs())
+                };
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
@@ -970,7 +1034,7 @@ impl NumberValue {
                 is_relative,
             } => NumberValue::Uncertainty {
                 value: Box::new(value.abs()),
-                uncertainty: Box::new((**uncertainty).clone()),
+                uncertainty: uncertainty.clone(),
                 is_relative: *is_relative,
             },
             NumberValue::PlusInfinity | NumberValue::MinusInfinity => NumberValue::PlusInfinity,
@@ -1696,7 +1760,7 @@ impl std::str::FromStr for Number {
                 let pct_str = stripped.trim();
                 let unc_pct = parse_single_value(pct_str)?;
                 let hundred = NumberValue::Rational(Rational::from_i32(100));
-                let u_abs = value.abs().mul(&unc_pct).div(&hundred);
+                let u_abs = value.abs().mul(&unc_pct.abs()).div(&hundred);
                 return Ok(Number::new_uncertainty(value, u_abs, true));
             } else {
                 let unc = parse_single_value(u_clean)?;
@@ -1712,16 +1776,28 @@ impl std::str::FromStr for Number {
                     let u_str = s[open_idx + 1..close_idx].trim();
                     let value = parse_single_value(v_str)?;
                     let u_raw = parse_single_value(u_str)?;
-                    let d = if let Some(dot_idx) = v_str.find('.') {
-                        let after_dot = &v_str[dot_idx + 1..];
+
+                    let mut exp = 0i32;
+                    let mantissa = if let Some(e_idx) = v_str.find(['e', 'E']) {
+                        if let Ok(val) = v_str[e_idx + 1..].parse::<i32>() {
+                            exp = val;
+                        }
+                        &v_str[..e_idx]
+                    } else {
+                        v_str
+                    };
+
+                    let d = if let Some(dot_idx) = mantissa.find('.') {
+                        let after_dot = &mantissa[dot_idx + 1..];
                         after_dot.chars().take_while(|c| c.is_ascii_digit()).count()
                     } else {
                         0
                     };
                     let ten = NumberValue::Rational(Rational::from_i32(10));
-                    let d_val = NumberValue::Rational(Rational::from_i32(d as i32));
-                    let factor = ten.pow(&d_val.negate());
-                    let u_abs = u_raw.mul(&factor);
+                    let shift = exp - (d as i32);
+                    let shift_val = NumberValue::Rational(Rational::from_i32(shift));
+                    let factor = ten.pow(&shift_val);
+                    let u_abs = u_raw.mul(&factor).abs();
                     return Ok(Number::new_uncertainty(value, u_abs, false));
                 }
             }
