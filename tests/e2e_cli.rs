@@ -130,13 +130,13 @@ fn cli_reports_definition_load_failure_for_expressions() {
 fn cli_native_scaffold_does_not_require_definitions_when_fallback_disabled() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
-    cmd.arg("1 + 1")
+    cmd.arg("1 + 2")
         .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .env("QALCULATE_REPORT_FALLBACK", "1")
         .assert()
         .success()
-        .stdout("2\n")
+        .stdout("3\n")
         .stderr(predicate::str::contains(
             "[qalc-rs-metadata] fallback=native",
         ));

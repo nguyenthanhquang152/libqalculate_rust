@@ -17,7 +17,7 @@ claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 25 rows as `native-pass`.
+`docs/batch_manifest.md` now marks 26 rows as `native-pass`.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.

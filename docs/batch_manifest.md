@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **25** |
-| Inventory-only test cases | **631** |
+| Native-pass test cases | **26** |
+| Inventory-only test cases | **630** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |

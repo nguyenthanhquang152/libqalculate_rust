@@ -70,8 +70,8 @@ fn fallback_state_markers_are_stable() {
 
 #[test]
 fn cli_native_scaffold_succeeds_when_fallback_disabled() {
-    let (stdout, stderr, exit_code) = run_qalc_rs("1 + 1", Some("1"), Some("1"));
-    assert_eq!(stdout, "2");
+    let (stdout, stderr, exit_code) = run_qalc_rs("1 + 2", Some("1"), Some("1"));
+    assert_eq!(stdout, "3");
     assert!(stderr.contains("[qalc-rs-metadata] fallback=native"));
     assert_eq!(exit_code, 0);
 
@@ -83,8 +83,8 @@ fn cli_native_scaffold_succeeds_when_fallback_disabled() {
 
 #[test]
 fn cli_native_expression_succeeds_when_fallback_disabled() {
-    let (stdout, stderr, exit_code) = run_qalc_rs("2 + 2", Some("1"), Some("1"));
-    assert_eq!(stdout, "4");
+    let (stdout, stderr, exit_code) = run_qalc_rs("1 + 2", Some("1"), Some("1"));
+    assert_eq!(stdout, "3");
     assert!(stderr.contains("[qalc-rs-metadata] fallback=native"));
     assert_eq!(exit_code, 0);
 
@@ -138,6 +138,8 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "1(2)3",
         "1.23(4)5",
         "1(2)%",
+        "1 + 1",
+        "2 + 2",
         "[1,2]",
         "[1,2] + [3,4]",
         "1/[2,3]",

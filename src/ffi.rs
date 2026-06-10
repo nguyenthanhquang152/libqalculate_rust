@@ -315,9 +315,7 @@ fn is_vetted_native_numeric_expr(expr: &str) -> bool {
             | "1e-3"
             | "1e10"
             | "1e303"
-            | "1 + 1"
             | "1 + 2"
-            | "2 + 2"
             | "5--2"
             | "5---2"
             | "-5-2"
@@ -482,16 +480,18 @@ mod tests {
         calc.load_global_definitions();
 
         let addition = calc
-            .calculate_and_print_with_fallback_state("1 + 1", 1000)
+            .calculate_and_print_with_fallback_state("1 + 2", 1000)
             .unwrap();
-        assert_eq!(addition.output, "2");
+        assert_eq!(addition.output, "3");
         assert_eq!(addition.fallback_state, FallbackState::Native);
 
-        let general_addition = calc
-            .calculate_and_print_with_fallback_state("2 + 2", 1000)
-            .unwrap();
-        assert_eq!(general_addition.output, "4");
-        assert_eq!(general_addition.fallback_state, FallbackState::Native);
+        for expression in ["1 + 1", "2 + 2"] {
+            let err = calc.calculate_and_print(expression, 1000).unwrap_err();
+            match err {
+                CalculatorError::FallbackDisabled(expr) => assert_eq!(expr, expression),
+                _ => panic!("expected fallback-disabled error for {expression}"),
+            }
+        }
 
         let scaffold = calc
             .calculate_and_print_with_fallback_state("native-scaffold-test", 1000)
