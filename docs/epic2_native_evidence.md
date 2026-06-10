@@ -50,6 +50,11 @@ non-batch expressions with fallback disabled:
 
 ## Native Representation Invariants
 
+- `Rational` now exposes a public lossless arbitrary-precision construction and
+  inspection surface: `str::parse::<Rational>()`,
+  `Rational::numerator_string()`, and `Rational::denominator_string()`.
+  The older `Rational::num()` / `Rational::den()` compatibility accessors still
+  return `i128` and intentionally panic when the exact value exceeds that range.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order.
@@ -67,10 +72,12 @@ non-batch expressions with fallback disabled:
 
 ```sh
 rtk cargo check --tests
+rtk cargo test --test number_behavior rational_from_str_exposes_lossless_arbitrary_precision_surface -- --nocapture
 rtk cargo test --test number_properties interval_constructor -- --nocapture
 rtk cargo test --lib
 rtk cargo test --test uncertainty_adversarial
 rtk cargo test --test fallback_gate cli_native_expression_succeeds_when_fallback_disabled -- --nocapture
+rtk cargo test --test fallback_gate cli_invalid_native_expression_fails_when_fallback_disabled -- --nocapture
 rtk cargo test --test oracle -- --nocapture
 rtk cargo test --test batch_manifest_validation
 rtk cargo test --test inventory_validation

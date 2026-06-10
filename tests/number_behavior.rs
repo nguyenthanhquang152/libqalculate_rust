@@ -22,6 +22,26 @@ fn rational_addition_canonicalizes_result() {
 }
 
 #[test]
+fn rational_from_str_exposes_lossless_arbitrary_precision_surface() {
+    let rational = "340282366920938463463374607431768211456 / 6"
+        .parse::<Rational>()
+        .expect("arbitrary-precision rational should parse");
+
+    assert_eq!(
+        rational.numerator_string(),
+        "170141183460469231731687303715884105728"
+    );
+    assert_eq!(rational.denominator_string(), "3");
+    assert_eq!(
+        Number::from_rational(rational).to_string(),
+        "170141183460469231731687303715884105728/3"
+    );
+
+    assert!("1/0".parse::<Rational>().is_err());
+    assert!("e1".parse::<Rational>().is_err());
+}
+
+#[test]
 fn nested_complex_numbers_are_flattened() {
     let real_part = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
     let imag_part = Number::new_complex(Number::from_i32(3), Number::from_i32(4));

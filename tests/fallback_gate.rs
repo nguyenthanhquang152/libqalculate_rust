@@ -143,6 +143,8 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "1(2)%",
         "1 + 1",
         "2 + 2",
+        "inf",
+        "nan",
         "[1,2]",
         "[1,2] + [3,4]",
         "1/[2,3]",

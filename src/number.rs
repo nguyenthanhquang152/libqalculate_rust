@@ -7,9 +7,11 @@
 //! # Known divergences from upstream
 //! - **Backend**: `rug` provides GMP/MPFR-backed numeric storage, but this
 //!   module has not yet ported the full upstream `Number` API surface.
-//! - **Construction surface**: public rational constructors and `num()`/`den()`
-//!   compatibility accessors still use `i128`; parsed exact integer and rational
-//!   literals can exceed that range internally.
+//! - **Compatibility accessors**: `Rational::num()` and `Rational::den()`
+//!   preserve the early `i128` API and panic when exact values exceed that
+//!   range. Use `Rational::numerator_string()` and
+//!   `Rational::denominator_string()` for lossless arbitrary-precision
+//!   inspection.
 //! - **Mixed equality**: `Rational` and `Float` values are not compared across
 //!   representations in this scaffold. Upstream GMP/MPFR comparisons can do
 //!   this exactly; the placeholder backend cannot.
@@ -170,11 +172,13 @@ impl Rational {
         rug::Float::with_val(53, &self.value).to_f64()
     }
 
-    fn numerator_string(&self) -> String {
+    /// Returns the canonical numerator as a base-10 string without precision loss.
+    pub fn numerator_string(&self) -> String {
         self.value.numer().to_string()
     }
 
-    fn denominator_string(&self) -> String {
+    /// Returns the canonical positive denominator as a base-10 string without precision loss.
+    pub fn denominator_string(&self) -> String {
         self.value.denom().to_string()
     }
 
@@ -443,6 +447,14 @@ impl Rational {
         let den = b_prime.checked_mul(c_prime)?;
 
         Self::try_new(num, den)
+    }
+}
+
+impl std::str::FromStr for Rational {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_rational_literal(s).map(Self::from_rug)
     }
 }
 
@@ -3198,39 +3210,62 @@ fn parse_single_value(s: &str) -> Result<NumberValue, String> {
         return Ok(interval);
     }
 
-    if let Some(slash_idx) = s.find('/') {
-        let num_str = s[..slash_idx].trim();
-        let den_str = s[slash_idx + 1..].trim();
-        if let (Ok(num), Ok(den)) = (
-            num_str.parse::<rug::Integer>(),
-            den_str.parse::<rug::Integer>(),
-        ) {
-            if !den.is_zero() {
-                return Ok(NumberValue::Rational(Rational::from_rug(
-                    rug::Rational::from((num, den)),
-                )));
-            }
-        }
-    }
-
-    if let Ok(val) = s.parse::<rug::Integer>() {
-        return Ok(NumberValue::Rational(Rational::from_rug(
-            rug::Rational::from(val),
-        )));
-    }
-    if let Some(value) = parse_decimal_or_scientific_rational(s) {
-        return Ok(NumberValue::Rational(Rational::from_rug(value)));
-    }
-    Err(format!("Failed to parse number: {s}"))
+    parse_rational_literal(s)
+        .map(|value| NumberValue::Rational(Rational::from_rug(value)))
+        .map_err(|_| format!("Failed to parse number: {s}"))
 }
 
+const SPECIAL_VALUE_NAMES: [&str; 3] = ["infinity", "inf", "nan"];
+
 fn parse_special_value(s: &str) -> Option<NumberValue> {
-    match s.to_ascii_lowercase().as_str() {
-        "inf" | "+inf" | "infinity" | "+infinity" => Some(NumberValue::PlusInfinity),
-        "-inf" | "-infinity" => Some(NumberValue::MinusInfinity),
-        "nan" | "+nan" | "-nan" => Some(NumberValue::NaN),
+    let normalized = s.to_ascii_lowercase();
+    let (negative, name) = normalized
+        .strip_prefix('-')
+        .map(|rest| (true, rest))
+        .or_else(|| normalized.strip_prefix('+').map(|rest| (false, rest)))
+        .unwrap_or((false, normalized.as_str()));
+
+    if !SPECIAL_VALUE_NAMES.contains(&name) {
+        return None;
+    }
+
+    match name {
+        "inf" | "infinity" if negative => Some(NumberValue::MinusInfinity),
+        "inf" | "infinity" => Some(NumberValue::PlusInfinity),
+        "nan" => Some(NumberValue::NaN),
         _ => None,
     }
+}
+
+fn parse_rational_literal(s: &str) -> Result<rug::Rational, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("Empty rational string".to_string());
+    }
+
+    if let Some((num_str, den_str)) = s.split_once('/') {
+        if den_str.contains('/') {
+            return Err(format!("Invalid rational literal: {s}"));
+        }
+        let num = num_str
+            .trim()
+            .parse::<rug::Integer>()
+            .map_err(|_| format!("Invalid rational numerator: {s}"))?;
+        let den = den_str
+            .trim()
+            .parse::<rug::Integer>()
+            .map_err(|_| format!("Invalid rational denominator: {s}"))?;
+        if den.is_zero() {
+            return Err("Rational denominator must not be zero".to_string());
+        }
+        return Ok(rug::Rational::from((num, den)));
+    }
+
+    if let Ok(value) = s.parse::<rug::Integer>() {
+        return Ok(rug::Rational::from(value));
+    }
+
+    parse_decimal_or_scientific_rational(s).ok_or_else(|| format!("Invalid rational literal: {s}"))
 }
 
 fn parse_interval_literal(s: &str) -> Result<Option<NumberValue>, String> {
@@ -3646,6 +3681,7 @@ impl ExprParser {
                     _ => Err("Expected matching ')'".to_string()),
                 }
             }
+            Some(Token::OpAdd) => self.parse_expr(3),
             Some(Token::OpSub) => {
                 let primary = self.parse_expr(3)?;
                 Ok(Number {
