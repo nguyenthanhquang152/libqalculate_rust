@@ -501,6 +501,42 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
 }
 
 #[test]
+fn displayed_special_values_parse_roundtrip() {
+    let inf = Number::from_f64(f64::INFINITY);
+    let parsed_inf = inf.to_string().parse::<Number>().unwrap();
+    assert!(parsed_inf.is_infinite());
+    assert_eq!(parsed_inf.value(), &NumberValue::PlusInfinity);
+
+    let neg_inf = Number::from_f64(f64::NEG_INFINITY);
+    let parsed_neg_inf = neg_inf.to_string().parse::<Number>().unwrap();
+    assert!(parsed_neg_inf.is_infinite());
+    assert_eq!(parsed_neg_inf.value(), &NumberValue::MinusInfinity);
+
+    let nan = Number::from_f64(f64::NAN);
+    let parsed_nan = nan.to_string().parse::<Number>().unwrap();
+    assert!(parsed_nan.is_nan());
+}
+
+#[test]
+fn scientific_literals_with_impractical_exponents_are_rejected() {
+    assert!("1e4097".parse::<Number>().is_ok());
+    assert!("1e-4097".parse::<Number>().is_ok());
+    assert_eq!(
+        "1e5000".parse::<Number>().unwrap().to_qalc_string(),
+        "1E5000"
+    );
+    assert!("1e-5000".parse::<Number>().is_ok());
+    assert!("1e10000".parse::<Number>().is_ok());
+    assert!("1e-10000".parse::<Number>().is_ok());
+    assert!("1e10001".parse::<Number>().is_err());
+    assert!("1e-10001".parse::<Number>().is_err());
+    assert!("1e2147483647".parse::<Number>().is_err());
+    assert!("1e-2147483648".parse::<Number>().is_err());
+
+    assert_eq!("1e303".parse::<Number>().unwrap().to_qalc_string(), "1E303");
+}
+
+#[test]
 fn simple_imaginary_literals_parse_natively() {
     assert_eq!(evaluate_expr("i").unwrap().to_string(), "i");
     assert_eq!(evaluate_expr("-i").unwrap().to_string(), "-i");

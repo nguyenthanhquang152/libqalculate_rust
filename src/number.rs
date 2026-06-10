@@ -3140,6 +3140,10 @@ fn parse_single_value(s: &str) -> Result<NumberValue, String> {
         return Err("Empty string".to_string());
     }
 
+    if let Some(special) = parse_special_value(s) {
+        return Ok(special);
+    }
+
     if let Some(interval) = parse_interval_literal(s)? {
         return Ok(interval);
     }
@@ -3168,6 +3172,15 @@ fn parse_single_value(s: &str) -> Result<NumberValue, String> {
         return Ok(NumberValue::Rational(Rational::from_rug(value)));
     }
     Err(format!("Failed to parse number: {s}"))
+}
+
+fn parse_special_value(s: &str) -> Option<NumberValue> {
+    match s.to_ascii_lowercase().as_str() {
+        "inf" | "+inf" | "infinity" | "+infinity" => Some(NumberValue::PlusInfinity),
+        "-inf" | "-infinity" => Some(NumberValue::MinusInfinity),
+        "nan" | "+nan" | "-nan" => Some(NumberValue::NaN),
+        _ => None,
+    }
 }
 
 fn parse_interval_literal(s: &str) -> Result<Option<NumberValue>, String> {
@@ -3219,6 +3232,12 @@ fn split_interval_bounds(inner: &str) -> Option<(&str, &str)> {
 }
 
 fn parse_decimal_or_scientific_rational(s: &str) -> Option<rug::Rational> {
+    // Keep exact rational parsing proportional to a bounded decimal shift while
+    // still accepting practical large qalc-style exponents such as 1e5000.
+    // Larger exponents are left unsupported in the native scaffold instead of
+    // constructing attacker-controlled powers of ten with millions of digits.
+    const MAX_EXACT_DECIMAL_SHIFT: u32 = 10_000;
+
     let compact: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
     if compact.is_empty() {
         return None;
@@ -3266,7 +3285,10 @@ fn parse_decimal_or_scientific_rational(s: &str) -> Option<rug::Rational> {
         numerator = -numerator;
     }
 
-    let decimal_shift = scale - exponent;
+    let decimal_shift = scale.checked_sub(exponent)?;
+    if decimal_shift.unsigned_abs() > MAX_EXACT_DECIMAL_SHIFT {
+        return None;
+    }
     if decimal_shift >= 0 {
         let denominator = pow10(decimal_shift as usize);
         Some(rug::Rational::from((numerator, denominator)))
