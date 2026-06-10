@@ -542,6 +542,18 @@ impl Float {
     }
 }
 
+fn ordered_interval_bounds(lower: Float, upper: Float) -> Option<(Float, Float)> {
+    if lower.is_nan() || upper.is_nan() {
+        return None;
+    }
+
+    if lower.value <= upper.value {
+        Some((lower, upper))
+    } else {
+        Some((upper, lower))
+    }
+}
+
 /// Inner enum representing the type and value of a number.
 #[derive(Debug, Clone)]
 pub enum NumberValue {
@@ -550,6 +562,9 @@ pub enum NumberValue {
     /// Float number representation.
     Float(Float),
     /// Interval representation with lower and upper bounds.
+    ///
+    /// Values created through `Number::new_interval` and
+    /// `Number::try_new_interval` are ordered and have non-NaN endpoints.
     Interval {
         /// Lower bound of the interval.
         lower: Float,
@@ -584,7 +599,9 @@ impl NumberValue {
         match self {
             NumberValue::Rational(_) => 0,
             NumberValue::Float(f) => f.prec() as i32,
-            NumberValue::Interval { lower, .. } => lower.prec() as i32,
+            NumberValue::Interval { lower, upper } => {
+                std::cmp::max(lower.prec(), upper.prec()) as i32
+            }
             NumberValue::Uncertainty {
                 value, uncertainty, ..
             } => std::cmp::max(value.precision(), uncertainty.precision()),
@@ -2309,8 +2326,34 @@ impl Number {
     }
 
     /// Creates a new interval `Number` with given lower and upper bounds.
+    ///
+    /// Reversed finite bounds are stored in lower/upper order, matching
+    /// upstream `Number::setInterval`. If either bound is NaN, the result is
+    /// `NaN`; use [`Number::try_new_interval`] to reject those inputs.
     pub fn new_interval(lower: Float, upper: Float) -> Self {
-        let prec = lower.prec() as i32;
+        let Some((lower, upper)) = ordered_interval_bounds(lower, upper) else {
+            return Self {
+                value: NumberValue::NaN,
+                imaginary: None,
+                precision: 0,
+                approximate: true,
+                is_imaginary: false,
+            };
+        };
+        Self::from_ordered_interval(lower, upper)
+    }
+
+    /// Tries to create a new interval `Number`.
+    ///
+    /// Reversed finite bounds are stored in lower/upper order. Returns `None`
+    /// if either bound is NaN.
+    pub fn try_new_interval(lower: Float, upper: Float) -> Option<Self> {
+        let (lower, upper) = ordered_interval_bounds(lower, upper)?;
+        Some(Self::from_ordered_interval(lower, upper))
+    }
+
+    fn from_ordered_interval(lower: Float, upper: Float) -> Self {
+        let prec = std::cmp::max(lower.prec(), upper.prec()) as i32;
         Self {
             value: NumberValue::Interval { lower, upper },
             imaginary: None,

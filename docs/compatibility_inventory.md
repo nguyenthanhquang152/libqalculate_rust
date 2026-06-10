@@ -354,7 +354,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | # | API Category | Est. Methods | Rust Status | Notes |
 |---|---|---|---|---|
 | 1 | NumberType enum | 1 | `scaffold` | `NumberValue` includes current Rust numeric variants, but this is not a complete upstream `Number.h` `NumberType` parity claim |
-| 2 | Construction | 8 | `scaffold` | Basic constructors exist (`new`, `from_i32`, `from_rational`, `from_float`, `from_f64`, `new_interval`, `new_uncertainty`, `new_complex`), while the full upstream construction/setter surface remains incomplete |
+| 2 | Construction | 9 | `scaffold` | Basic constructors exist (`new`, `from_i32`, `from_rational`, `from_float`, `from_f64`, `new_interval`, `try_new_interval`, `new_uncertainty`, `new_complex`); interval construction orders finite reversed bounds like upstream `setInterval`, while the full upstream construction/setter surface remains incomplete |
 | 3 | Setters | 6 | `unstarted` | `set()`, `setFloat()`, `setInterval()` |
 | 4 | Arithmetic | 15 | `scaffold` | `add`, `sub`, `mul`, `div`, `pow`, `sqrt`, `ln`, `negate`, and `abs` exist for selected variants; division-by-zero declines native success, and full upstream edge-case parity remains incomplete |
 | 5 | Comparison | 6 | `scaffold` | `PartialEq` for value equality; `<`, `>`, `<=`, `>=` not yet implemented |

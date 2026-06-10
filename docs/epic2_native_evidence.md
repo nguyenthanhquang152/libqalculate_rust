@@ -48,9 +48,26 @@ non-batch expressions with fallback disabled:
 - `12+/-0.5 / 3+/-0.2`
 - `10 +/- 0`
 
+## Native Representation Invariants
+
+- Interval construction now follows upstream `Number::setInterval` in
+  `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
+  accepted and stored in lower/upper order.
+- `Number::try_new_interval` rejects NaN bounds, and `Number::new_interval`
+  maps NaN-bound inputs to `NaN` instead of storing an invalid interval.
+- The public safe interval constructors enforce ordered non-NaN endpoints; the
+  raw `NumberValue::Interval` enum variant remains constructible for existing
+  Rust API compatibility.
+- `tests/number_properties.rs::interval_constructor_normalizes_reversed_bounds`
+  and `tests/number_properties.rs::interval_constructor_rejects_nan_bounds`
+  cover the public constructor invariant, including reversed mixed-precision
+  bounds and lower/upper NaN inputs.
+
 ## Verified Commands
 
 ```sh
+rtk cargo check --tests
+rtk cargo test --test number_properties interval_constructor -- --nocapture
 rtk cargo test --lib
 rtk cargo test --test uncertainty_adversarial
 rtk cargo test --test fallback_gate cli_native_expression_succeeds_when_fallback_disabled -- --nocapture

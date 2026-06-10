@@ -26,10 +26,13 @@ fn leaf_value_strategy() -> impl Strategy<Value = NumberValue> {
 }
 
 fn interval_value_strategy() -> impl Strategy<Value = NumberValue> {
-    (any::<f64>(), any::<f64>(), 1..=1000u32).prop_map(|(l, u, prec)| NumberValue::Interval {
-        lower: Float::from_f64(l, prec),
-        upper: Float::from_f64(u, prec),
-    })
+    (any::<f64>(), any::<f64>(), 1..=1000u32).prop_filter_map(
+        "bounds must construct a valid interval",
+        |(l, u, prec)| {
+            Number::try_new_interval(Float::from_f64(l, prec), Float::from_f64(u, prec))
+                .map(|number| number.value().clone())
+        },
+    )
 }
 
 fn number_value_strategy() -> impl Strategy<Value = NumberValue> {
@@ -106,6 +109,45 @@ fn test_partial_eq_avoids_mixed_transitivity_violation() {
     assert_ne!(x, y);
     assert_ne!(y, z);
     assert_ne!(x, z);
+}
+
+#[test]
+fn interval_constructor_normalizes_reversed_bounds() {
+    let number = Number::new_interval(Float::from_f64(5.0, 53), Float::from_f64(1.0, 53));
+    let NumberValue::Interval { lower, upper } = number.value() else {
+        panic!("expected interval number");
+    };
+
+    assert_eq!(lower.value(), 1.0);
+    assert_eq!(upper.value(), 5.0);
+
+    let number = Number::try_new_interval(Float::from_f64(8.0, 53), Float::from_f64(2.0, 53))
+        .expect("finite bounds should construct an interval number");
+    let NumberValue::Interval { lower, upper } = number.value() else {
+        panic!("expected interval number");
+    };
+
+    assert_eq!(lower.value(), 2.0);
+    assert_eq!(upper.value(), 8.0);
+
+    let mixed_precision =
+        Number::try_new_interval(Float::from_f64(8.0, 128), Float::from_f64(2.0, 24))
+            .expect("finite bounds should construct an interval number");
+    assert_eq!(mixed_precision.precision(), 128);
+    assert_eq!(mixed_precision.value().precision(), 128);
+}
+
+#[test]
+fn interval_constructor_rejects_nan_bounds() {
+    for (lower, upper) in [(f64::NAN, 1.0), (1.0, f64::NAN), (f64::NAN, f64::NAN)] {
+        assert!(
+            Number::new_interval(Float::from_f64(lower, 53), Float::from_f64(upper, 53)).is_nan()
+        );
+        assert!(
+            Number::try_new_interval(Float::from_f64(lower, 53), Float::from_f64(upper, 53))
+                .is_none()
+        );
+    }
 }
 
 #[test]
