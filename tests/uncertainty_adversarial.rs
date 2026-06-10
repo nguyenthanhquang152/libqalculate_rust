@@ -104,16 +104,18 @@ fn test_uncertainty_propagation_basic() {
         value, uncertainty, ..
     } = div_num.value()
     {
-        // complex expansion computes r = ac / (c^2 + d^2) = (a * c) / (c * c)
+        // Division optimizes division by a real divisor, avoiding general complex division
+        // which would duplicate variables and overestimate uncertainty (0.36055512).
+        // It now correctly computes direct division uncertainty: sqrt(0.085) = 0.29154759...
         // val = 3.0
-        // uncertainty = 0.3605551275463989
+        // uncertainty = 0.29154759
         if let NumberValue::Float(vf) = &**value {
             assert_eq!(vf.value(), 3.0);
         } else if let NumberValue::Rational(vr) = &**value {
             assert_eq!(vr.num(), 3);
         }
         if let NumberValue::Float(uf) = &**uncertainty {
-            assert!((uf.value() - 0.36055512).abs() < 1e-6);
+            assert!((uf.value() - 0.29154759).abs() < 1e-6);
         }
     }
 

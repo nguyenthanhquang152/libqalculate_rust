@@ -3,8 +3,12 @@ use std::env;
 fn main() {
     // Tell Cargo to rerun this script if the C++ sources or this script change
     println!("cargo:rerun-if-changed=build.rs");
-    // Monitor all C++ header files in ../libqalculate/libqalculate
-    if let Ok(entries) = std::fs::read_dir("../libqalculate/libqalculate") {
+
+    let upstream_dir =
+        env::var("LIBQALCULATE_UPSTREAM_DIR").unwrap_or_else(|_| "../libqalculate".to_string());
+
+    // Monitor all C++ header files in upstream_dir/libqalculate
+    if let Ok(entries) = std::fs::read_dir(format!("{}/libqalculate", upstream_dir)) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
@@ -29,8 +33,8 @@ fn main() {
         .cpp(true)
         .std("c++17")
         .warnings(false) // Suppress upstream compiler warnings to avoid build log noise
-        .include("../libqalculate")
-        .include("../libqalculate/libqalculate")
+        .include(&upstream_dir)
+        .include(format!("{}/libqalculate", upstream_dir))
         .define("VERSION", "\"5.11.0\"")
         .define("PACKAGE_DATA_DIR", "\"/usr/share\"")
         .define("PACKAGE_LOCALE_DIR", "\"/usr/share/locale\"");
@@ -42,51 +46,51 @@ fn main() {
 
     // Add all 41 core source files
     let source_files = [
-        "../libqalculate/libqalculate/BuiltinFunctions-algebra.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-calculus.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-combinatorics.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-datetime.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-explog.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-logical.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-matrixvector.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-number.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-special.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-statistics.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-trigonometry.cc",
-        "../libqalculate/libqalculate/BuiltinFunctions-util.cc",
-        "../libqalculate/libqalculate/Calculator-calculate.cc",
-        "../libqalculate/libqalculate/Calculator-convert.cc",
-        "../libqalculate/libqalculate/Calculator-definitions.cc",
-        "../libqalculate/libqalculate/Calculator-parse.cc",
-        "../libqalculate/libqalculate/Calculator-plot.cc",
-        "../libqalculate/libqalculate/Calculator.cc",
-        "../libqalculate/libqalculate/DataSet.cc",
-        "../libqalculate/libqalculate/ExpressionItem.cc",
-        "../libqalculate/libqalculate/Function.cc",
-        "../libqalculate/libqalculate/MathStructure-calculate.cc",
-        "../libqalculate/libqalculate/MathStructure-convert.cc",
-        "../libqalculate/libqalculate/MathStructure-decompose.cc",
-        "../libqalculate/libqalculate/MathStructure-differentiate.cc",
-        "../libqalculate/libqalculate/MathStructure-eval.cc",
-        "../libqalculate/libqalculate/MathStructure-factor.cc",
-        "../libqalculate/libqalculate/MathStructure-gcd.cc",
-        "../libqalculate/libqalculate/MathStructure-integrate.cc",
-        "../libqalculate/libqalculate/MathStructure-isolatex.cc",
-        "../libqalculate/libqalculate/MathStructure-limit.cc",
-        "../libqalculate/libqalculate/MathStructure-matrixvector.cc",
-        "../libqalculate/libqalculate/MathStructure-polynomial.cc",
-        "../libqalculate/libqalculate/MathStructure-print.cc",
-        "../libqalculate/libqalculate/MathStructure.cc",
-        "../libqalculate/libqalculate/Number.cc",
-        "../libqalculate/libqalculate/Prefix.cc",
-        "../libqalculate/libqalculate/QalculateDateTime.cc",
-        "../libqalculate/libqalculate/Unit.cc",
-        "../libqalculate/libqalculate/Variable.cc",
-        "../libqalculate/libqalculate/util.cc",
+        "BuiltinFunctions-algebra.cc",
+        "BuiltinFunctions-calculus.cc",
+        "BuiltinFunctions-combinatorics.cc",
+        "BuiltinFunctions-datetime.cc",
+        "BuiltinFunctions-explog.cc",
+        "BuiltinFunctions-logical.cc",
+        "BuiltinFunctions-matrixvector.cc",
+        "BuiltinFunctions-number.cc",
+        "BuiltinFunctions-special.cc",
+        "BuiltinFunctions-statistics.cc",
+        "BuiltinFunctions-trigonometry.cc",
+        "BuiltinFunctions-util.cc",
+        "Calculator-calculate.cc",
+        "Calculator-convert.cc",
+        "Calculator-definitions.cc",
+        "Calculator-parse.cc",
+        "Calculator-plot.cc",
+        "Calculator.cc",
+        "DataSet.cc",
+        "ExpressionItem.cc",
+        "Function.cc",
+        "MathStructure-calculate.cc",
+        "MathStructure-convert.cc",
+        "MathStructure-decompose.cc",
+        "MathStructure-differentiate.cc",
+        "MathStructure-eval.cc",
+        "MathStructure-factor.cc",
+        "MathStructure-gcd.cc",
+        "MathStructure-integrate.cc",
+        "MathStructure-isolatex.cc",
+        "MathStructure-limit.cc",
+        "MathStructure-matrixvector.cc",
+        "MathStructure-polynomial.cc",
+        "MathStructure-print.cc",
+        "MathStructure.cc",
+        "Number.cc",
+        "Prefix.cc",
+        "QalculateDateTime.cc",
+        "Unit.cc",
+        "Variable.cc",
+        "util.cc",
     ];
 
     for file in &source_files {
-        build.file(file);
+        build.file(format!("{}/libqalculate/{}", upstream_dir, file));
     }
 
     // Compile the static library
@@ -98,8 +102,8 @@ fn main() {
         .file("src/ffi_bridge.cc")
         .std("c++17")
         .warnings(false)
-        .include("../libqalculate")
-        .include("../libqalculate/libqalculate");
+        .include(&upstream_dir)
+        .include(format!("{}/libqalculate", upstream_dir));
 
     for path in &xml2.include_paths {
         bridge_build.include(path);

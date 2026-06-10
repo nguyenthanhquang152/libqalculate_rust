@@ -11,6 +11,7 @@ exclude = ["fuzz"]
 
 [dependencies]
 cxx = "1.0"
+rug = { version = "1.24", features = ["integer", "rational", "float", "complex"] }
 
 [build-dependencies]
 cc = "1.0"
