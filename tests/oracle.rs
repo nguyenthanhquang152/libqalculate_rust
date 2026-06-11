@@ -691,6 +691,66 @@ fn differential_oracle_exact_operators_batch() {
     );
 }
 
+/// Focused fallback-disabled oracle evidence for no-session `numberbase.batch`
+/// rows. The remaining numberbase rows use accumulated session settings, which
+/// the Rust oracle runner still reports as unsupported.
+#[test]
+fn focused_epic2_numberbase_no_session_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_numberbase_no_session_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let cases = [
+        ("numberbase.batch:1", "52 to bin"),
+        ("numberbase.batch:3", "52 to bin16"),
+        ("numberbase.batch:5", "52 to oct"),
+        ("numberbase.batch:7", "52 to hex"),
+        ("numberbase.batch:9", "0x34"),
+        ("numberbase.batch:11", "hex(34)"),
+        ("numberbase.batch:13", "523<<2&250 to bin"),
+        ("numberbase.batch:15", "52.345 to float"),
+        (
+            "numberbase.batch:17",
+            "float(01000010010100010110000101001000)",
+        ),
+        ("numberbase.batch:19", "floatError(52.345)"),
+        ("numberbase.batch:21", "1978 to roman"),
+        ("numberbase.batch:23", "52 to base 32"),
+        ("numberbase.batch:25", "sqrt(32) to base sqrt(2)"),
+    ];
+
+    for (case_id, expression) in cases {
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
 /// Focused fallback-disabled oracle evidence for Epic 2 numeric slices that are
 /// not represented as simple no-session upstream batch rows.
 #[test]

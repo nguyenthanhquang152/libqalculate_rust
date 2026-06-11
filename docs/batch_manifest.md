@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **38** |
-| Inventory-only test cases | **618** |
+| Native-pass test cases | **51** |
+| Inventory-only test cases | **605** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -601,19 +601,19 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `numberbase.batch:1` | `52 to bin` | `0011 0100` | — | inventory-only |
-| 2 | `numberbase.batch:3` | `52 to bin16` | `0000 0000 0011 0100` | — | inventory-only |
-| 3 | `numberbase.batch:5` | `52 to oct` | `064` | — | inventory-only |
-| 4 | `numberbase.batch:7` | `52 to hex` | `0x34` | — | inventory-only |
-| 5 | `numberbase.batch:9` | `0x34` | `52` | — | inventory-only |
-| 6 | `numberbase.batch:11` | `hex(34)` | `52` | — | inventory-only |
-| 7 | `numberbase.batch:13` | `523<<2&250 to bin` | `0010 1000` | — | inventory-only |
-| 8 | `numberbase.batch:15` | `52.345 to float` | `0100 0010 0101 0001 0110 0001 0100 1000` | — | inventory-only |
-| 9 | `numberbase.batch:17` | `float(01000010010100010110000101001000)` | `52.34500122` | — | inventory-only |
-| 10 | `numberbase.batch:19` | `floatError(52.345)` | `0.000001220703125` | — | inventory-only |
-| 11 | `numberbase.batch:21` | `1978 to roman` | `MCMLXXVIII` | — | inventory-only |
-| 12 | `numberbase.batch:23` | `52 to base 32` | `1K` | — | inventory-only |
-| 13 | `numberbase.batch:25` | `sqrt(32) to base sqrt(2)` | `100000` | — | inventory-only |
+| 1 | `numberbase.batch:1` | `52 to bin` | `0011 0100` | — | native-pass |
+| 2 | `numberbase.batch:3` | `52 to bin16` | `0000 0000 0011 0100` | — | native-pass |
+| 3 | `numberbase.batch:5` | `52 to oct` | `064` | — | native-pass |
+| 4 | `numberbase.batch:7` | `52 to hex` | `0x34` | — | native-pass |
+| 5 | `numberbase.batch:9` | `0x34` | `52` | — | native-pass |
+| 6 | `numberbase.batch:11` | `hex(34)` | `52` | — | native-pass |
+| 7 | `numberbase.batch:13` | `523<<2&250 to bin` | `0010 1000` | — | native-pass |
+| 8 | `numberbase.batch:15` | `52.345 to float` | `0100 0010 0101 0001 0110 0001 0100 1000` | — | native-pass |
+| 9 | `numberbase.batch:17` | `float(01000010010100010110000101001000)` | `52.34500122` | — | native-pass |
+| 10 | `numberbase.batch:19` | `floatError(52.345)` | `0.000001220703125` | — | native-pass |
+| 11 | `numberbase.batch:21` | `1978 to roman` | `MCMLXXVIII` | — | native-pass |
+| 12 | `numberbase.batch:23` | `52 to base 32` | `1K` | — | native-pass |
+| 13 | `numberbase.batch:25` | `sqrt(32) to base sqrt(2)` | `100000` | — | native-pass |
 | 14 | `numberbase.batch:28` | `5p10+AEp-2*p23` | `364909568` | set input base 16 | inventory-only |
 | 15 | `numberbase.batch:32` | `52.34 to sexa` | `52°20′24″` | set input base 16; set input base 10; /set unicode 1 | inventory-only |
 
