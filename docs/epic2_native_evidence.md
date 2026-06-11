@@ -71,6 +71,7 @@ focused expressions with fallback disabled:
 - `(1 + i) != (1 + i)`
 - `ln(0)`
 - `ln(2)`
+- `ln(5+/-0.3)`
 - `sqrt(2)`
 - `sqrt(4)`
 - `infinity`
@@ -147,10 +148,10 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   rather than a lifted 53-bit result.
 - The fallback-disabled native expression scaffold now exposes only the focused
   `ln(...)` and `sqrt(...)` function cases promoted by oracle evidence. Current
-  evidence covers `ln(0) -> −∞`, `ln(2) -> 0.6931471806`, `sqrt(2) ->
-  1.414213562`, and exact-square `sqrt(4) -> 2`; broader special functions,
-  negative-domain behavior, and symbolic simplifications remain outside the
-  native gate.
+  evidence covers `ln(0) -> −∞`, `ln(2) -> 0.6931471806`,
+  `ln(5+/-0.3) -> 1.609±0.060`, `sqrt(2) -> 1.414213562`, and exact-square
+  `sqrt(4) -> 2`; broader special functions, negative-domain behavior, and
+  symbolic simplifications remain outside the native gate.
 - Fallback-disabled native Refs #12 special-value evidence covers alphabetic
   infinity literals and selected arithmetic: `infinity -> +∞`,
   `-infinity -> −∞`, `infinity + 1 -> +∞`, `-infinity - 1 -> −∞`,
@@ -209,15 +210,19 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   and prints `9.18958684±44.11001683` against upstream qalc. The qalc-profile
   formatter keeps the existing significant-uncertainty output for ordinary
   uncertainty arithmetic, while preserving MPFR fractional digits only for this
-  promoted float-valued uncertainty power case.
+  promoted float-valued uncertainty power case. Refs #15 function propagation
+  evidence now also covers the focused real-valued natural-log row
+  `ln(5+/-0.3) -> 1.609±0.060`; this is an allowlisted native evidence case,
+  not broad special-function support.
 - Fallback-disabled native Refs #15 uncertainty input-form evidence now covers
   Unicode absolute uncertainty input `2±0.002 -> 2.0000±0.0020` and
   `2±0.002 + 3 -> 5.0000±0.0020`. Concise uncertainty notation is supported
   only for vetted setting-gated cases under `/set concise uncertainty 1`:
   `1.23(4) -> 1.230±0.040`, `123(4) -> 123.0±4.0`, and
-  `1.23(4) + 2.0(3) -> 3.23±0.30`. This does not add function propagation,
-  `/set ic 2`, interval display changes, complex uncertainty, Lambert W, Ei,
-  or broad `explog.batch` promotions.
+  `1.23(4) + 2.0(3) -> 3.23±0.30`. This does not add `/set ic 2`, interval
+  display changes, complex uncertainty, Lambert W, Ei, or broad `explog.batch`
+  promotions; `Ei(3+/-0.3)` is covered only by a fallback-disabled rejection
+  guard.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -288,6 +293,7 @@ rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_float_pow
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_arithmetic -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_float_log_and_sqrt_functions -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_infinity_arithmetic -- --exact --nocapture
+rtk cargo test --test e2e_cli cli_rejects_unsupported_uncertainty_special_function_when_fallback_disabled -- --nocapture
 rtk cargo test --test oracle focused_epic2_float_precision_oracle_cases -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
 rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
@@ -309,12 +315,15 @@ rtk cargo test --lib fixed_decimal_precision_helpers_distinguish_significant_fra
 rtk cargo test --lib fallback_disabled_runs_native_scaffold_cases -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_uncertainty_power -- --nocapture
 rtk cargo test --test oracle focused_epic2_native_numeric_oracle_cases -- --nocapture
+rtk cargo test --test fallback_gate cli_invalid_native_expression_fails_when_fallback_disabled -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_unicode_uncertainty_input -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_concise_uncertainty_setting_for_native_input -- --nocapture
 rtk cargo test --test e2e_cli cli_rejects_concise_uncertainty_without_setting -- --nocapture
 rtk cargo test --test oracle focused_issue15_uncertainty_input_oracle_cases -- --nocapture
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002 + 3'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'ln(5+/-0.3)'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'Ei(3+/-0.3)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '1.23(4)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '123(4)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '1.23(4) + 2.0(3)'

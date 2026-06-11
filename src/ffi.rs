@@ -524,6 +524,7 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ),
     ("ln(0)", NativeNumericEvidence::DefaultOnly),
     ("ln(2)", NativeNumericEvidence::DefaultOnly),
+    ("ln(5+/-0.3)", NativeNumericEvidence::DefaultOnly),
     ("sqrt(2)", NativeNumericEvidence::DefaultOnly),
     ("sqrt(4)", NativeNumericEvidence::DefaultOnly),
     ("infinity", NativeNumericEvidence::DefaultOnly),
