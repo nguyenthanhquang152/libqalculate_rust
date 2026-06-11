@@ -1132,7 +1132,7 @@ fn focused_epic2_float_precision_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 28] = [
+    let cases: [NativeOracleCase<'_>; 38] = [
         (
             "rational-output-precision-context",
             "1/3",
@@ -1190,6 +1190,31 @@ fn focused_epic2_float_precision_oracle_cases() {
             &["/set precision 128"],
         ),
         (
+            "float-addition-precision-64",
+            "(2 ^ 0.5) + (3 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-subtraction-precision-64",
+            "(3 ^ 0.5) - (2 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-multiplication-precision-64",
+            "(2 ^ 0.5) * (3 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-division-precision-64",
+            "(3 ^ 0.5) / (2 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "mixed-rational-float-addition-precision-64",
+            "(2 ^ 0.5) + 1/3",
+            &["/set precision 64"],
+        ),
+        (
             "float-addition-precision-context",
             "(2 ^ 0.5) + (3 ^ 0.5)",
             &["/set precision 128"],
@@ -1243,6 +1268,31 @@ fn focused_epic2_float_precision_oracle_cases() {
             "scientific-division-precision-128",
             "2.5e3 / 4",
             &["/set precision 128"],
+        ),
+        (
+            "float-less-than-precision-64",
+            "(2 ^ 0.5) < (3 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-equality-true-precision-64",
+            "(2 ^ 0.5) = (2 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-equality-false-precision-64",
+            "(2 ^ 0.5) = (3 ^ 0.5)",
+            &["/set precision 64"],
+        ),
+        (
+            "mixed-rational-float-greater-than-precision-64",
+            "(2 ^ 0.5) + 1/3 > 1",
+            &["/set precision 64"],
+        ),
+        (
+            "mixed-rational-float-less-than-false-precision-64",
+            "(2 ^ 0.5) < 1/3",
+            &["/set precision 64"],
         ),
         (
             "float-less-than-precision-context",
