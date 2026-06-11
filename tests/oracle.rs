@@ -889,6 +889,24 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("complex-inequality-true", "(1 + i) != (1 - i)"),
         ("complex-inequality-unicode-true", "(1 + i) ≠ (1 - i)"),
         ("complex-inequality-false", "(1 + i) != (1 + i)"),
+        ("complex-order-less-equal-operands", "(1 + i) < (1 + i)"),
+        (
+            "complex-order-less-equal-equal-operands",
+            "(1 + i) <= (1 + i)",
+        ),
+        ("complex-order-greater-equal-operands", "(1 + i) > (1 + i)"),
+        (
+            "complex-order-greater-equal-equal-operands",
+            "(1 + i) >= (1 + i)",
+        ),
+        (
+            "complex-order-unicode-less-equal-equal-operands",
+            "(1 + i) ≤ (1 + i)",
+        ),
+        (
+            "complex-order-unicode-greater-equal-equal-operands",
+            "(1 + i) ≥ (1 + i)",
+        ),
         ("float-ln-zero-special-value", "ln(0)"),
         ("float-ln-two", "ln(2)"),
         ("uncertainty-ln-propagation", "ln(5+/-0.3)"),

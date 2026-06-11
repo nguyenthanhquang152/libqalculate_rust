@@ -1767,6 +1767,83 @@ fn test_complex_arithmetic() {
 }
 
 #[test]
+fn complex_exact_approx_components_survive_native_operations() {
+    fn assert_component_kinds(number: &Number, real_approx: bool, imag_approx: bool) {
+        let (real, imag) = number.to_canonical_real_imag();
+        assert_eq!(
+            real.approximate(),
+            real_approx,
+            "real component kind for {}",
+            number.to_qalc_string()
+        );
+        assert_eq!(
+            imag.approximate(),
+            imag_approx,
+            "imaginary component kind for {}",
+            number.to_qalc_string()
+        );
+    }
+
+    let exact_real_approx_imag = Number::new_complex(Number::from_i32(1), Number::from_f64(2.0));
+    let exact = Number::new_complex(Number::from_i32(3), Number::from_i32(-1));
+    assert_component_kinds(&exact_real_approx_imag.add(&exact), false, true);
+    assert_component_kinds(&exact_real_approx_imag.sub(&exact), false, true);
+    assert_component_kinds(&exact_real_approx_imag.conjugate(), false, true);
+    assert!(exact_real_approx_imag.norm().approximate());
+
+    let approx_real_exact_imag = Number::new_complex(Number::from_f64(1.0), Number::from_i32(2));
+    assert_component_kinds(&approx_real_exact_imag.add(&exact), true, false);
+    assert_component_kinds(&approx_real_exact_imag.sub(&exact), true, false);
+    assert_component_kinds(&approx_real_exact_imag.conjugate(), true, false);
+    assert!(approx_real_exact_imag.norm().approximate());
+
+    assert_component_kinds(&exact_real_approx_imag.mul(&exact), true, true);
+    assert_component_kinds(&approx_real_exact_imag.div(&exact), true, true);
+
+    let approximate_exact_i = Number::from_real_imag_values(
+        NumberValue::Rational(Rational::from_i32(0)),
+        NumberValue::Rational(Rational::from_i32(1)),
+        53,
+        true,
+    );
+    let approximate_i_squared = approximate_exact_i.pow(&Number::from_i32(2));
+    assert_eq!(approximate_i_squared.to_qalc_string(), "-1");
+    assert!(approximate_i_squared.approximate());
+}
+
+#[test]
+fn complex_ordering_constraints_match_upstream_symbolic_boundary() {
+    assert_eq!(
+        evaluate_relation_expr("(1 + i) < (1 + i)").unwrap(),
+        Some(false)
+    );
+    assert_eq!(
+        evaluate_relation_expr("(1 + i) <= (1 + i)").unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        evaluate_relation_expr("(1 + i) > (1 + i)").unwrap(),
+        Some(false)
+    );
+    assert_eq!(
+        evaluate_relation_expr("(1 + i) >= (1 + i)").unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        evaluate_relation_expr("(1 + i) ≤ (1 + i)").unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        evaluate_relation_expr("(1 + i) ≥ (1 + i)").unwrap(),
+        Some(true)
+    );
+
+    assert_eq!(evaluate_relation_expr("(1 + i) < (1 + 2i)").unwrap(), None);
+    assert_eq!(evaluate_relation_expr("(1 + i) <= (1 + 2i)").unwrap(), None);
+    assert_eq!(evaluate_relation_expr("(1 + i) ≥ (1 + 2i)").unwrap(), None);
+}
+
+#[test]
 fn test_new_rational_arithmetic_and_comparisons() {
     // 1. checked_add, checked_sub, checked_mul, checked_div
     let half = Rational::try_new(1, 2).unwrap();

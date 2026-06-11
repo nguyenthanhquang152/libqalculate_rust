@@ -1,6 +1,6 @@
 # Epic 2 Native Numeric Evidence
 
-Date: 2026-06-11
+Date: 2026-06-12
 
 This note records fallback-disabled Rust-vs-upstream evidence for the current
 Epic 2 numeric slice and narrow boolean comparison probes. It is evidence for
@@ -69,6 +69,12 @@ focused expressions with fallback disabled:
 - `(1 + i) != (1 - i)`
 - `(1 + i) ≠ (1 - i)`
 - `(1 + i) != (1 + i)`
+- `(1 + i) < (1 + i)`
+- `(1 + i) <= (1 + i)`
+- `(1 + i) > (1 + i)`
+- `(1 + i) >= (1 + i)`
+- `(1 + i) ≤ (1 + i)`
+- `(1 + i) ≥ (1 + i)`
 - `ln(0)`
 - `ln(2)`
 - `ln(5+/-0.3)`
@@ -197,14 +203,26 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   pure-imaginary preservation, `conj(...)`, `norm(...)`, exact `i^2`, and the
   no-session `explog.batch:7` complex-power row `(2i - 3)^(3.2i + 3)`. This
   slice now also includes focused complex equality/inequality constraints for
-  `=`, `==`, `!=`, and `≠`, while non-equal complex ordering remains outside
-  the native evidence gate. These cases are compared against upstream qalc with
+  `=`, `==`, `!=`, and `≠`, plus the upstream-resolved equal-operand ordering
+  constraints `<`, `<=`, `>`, `>=`, `≤`, and `≥`. Non-equal complex ordering
+  remains outside the native evidence gate because upstream qalc keeps those
+  expressions symbolic. These cases are compared against upstream qalc with
   exact UTF-8 output, including Unicode minus signs in qalc-profile CLI output.
   Focused unit regressions keep exact integer powers of `i` out of the
-  approximate complex-power branch,
-  including upstream `i^1000000 -> 1`, and assert that `Number::new_complex`
-  drops internal imaginary metadata when the canonical imaginary component is
-  zero while preserving exact/approx state.
+  approximate complex-power branch, including upstream `i^1000000 -> 1`, assert
+  that `Number::new_complex` drops internal imaginary metadata when the
+  canonical imaginary component is zero while preserving exact/approx state,
+  and cover mixed exact/approx real and imaginary components across native
+  add/sub/mul/div, `conj`, `norm`, and promoted powers.
+- Focused upstream qalc probes on 2026-06-12 confirmed the non-equal complex
+  ordering boundary remains symbolic and therefore outside native success
+  evidence: `(1 + i) < (1 + 2i) -> 1 + i < 1 + 2i`,
+  `(1 + i) <= (1 + 2i) -> 1 + i ≤ 1 + 2i`,
+  `(1 + i) > (1 + 2i) -> 1 + i > 1 + 2i`,
+  `(1 + i) >= (1 + 2i) -> 1 + i ≥ 1 + 2i`,
+  `(1 + i) ≤ (1 + 2i) -> 1 + i ≤ 1 + 2i`, and
+  `(1 + i) ≥ (1 + 2i) -> 1 + i ≥ 1 + 2i`. The fallback-disabled Rust gate
+  rejects those same expressions instead of claiming a boolean result.
 - Fallback-disabled native uncertainty evidence covers the first no-session
   `explog.batch` uncertainty power row: `(2+/-3)^3.2` now evaluates natively
   and prints `9.18958684±44.11001683` against upstream qalc. The qalc-profile
@@ -307,6 +325,9 @@ rtk cargo test --test fallback_gate cli_native_expression_succeeds_when_fallback
 rtk cargo test --lib complex_powers_match_focused_qalc_output -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_powers -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_equality_constraints -- --nocapture
+rtk cargo test --lib complex_exact_approx_components_survive_native_operations -- --nocapture
+rtk cargo test --lib complex_ordering_constraints_match_upstream_symbolic_boundary -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_complex_ordering_constraints -- --exact --nocapture
 rtk cargo test --test fallback_gate cli_invalid_native_expression_fails_when_fallback_disabled -- --nocapture
 rtk cargo test --lib uncertainty_power_matches_focused_qalc_display -- --nocapture
 rtk cargo test --lib ordinary_uncertainty_power_keeps_significant_uncertainty_display -- --nocapture
@@ -405,11 +426,11 @@ Mutation evidence for this slice:
   remain incomplete beyond the promoted native precision-output and
   precision-context non-integer power/arithmetic, `ln`, `sqrt`, and focused
   infinity literal/arithmetic evidence.
-- Broader complex powers and broad `explog.batch` complex cases remain
-  incomplete beyond the promoted exact arithmetic, `conj`, `norm`, `i^2`,
-  focused equality/inequality constraints, and `explog.batch:7` evidence.
-  Complex ordering constraints (`<`, `>`, `<=`, `>=`, `≤`, `≥`) are not claimed
-  by the native gate.
+- Broad complex special-function behavior remains incomplete beyond the
+  promoted exact arithmetic, `conj`, `norm`, `i^2`, focused equality/inequality
+  constraints, equal-operand ordering constraints, and `explog.batch:7`
+  evidence. Non-equal complex ordering is intentionally not claimed by the
+  native gate because upstream qalc leaves those expressions symbolic.
 - Interval input syntax, interval options beyond `/set ic 2`, intersections,
   open/closed bound variants, broad infinity arithmetic including interval
   division by an infinity-bounded interval, uncertainty intervals, complex
