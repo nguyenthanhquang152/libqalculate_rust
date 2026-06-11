@@ -8,6 +8,9 @@ pub const UPSTREAM_LIBQALCULATE_VERSION: &str = "5.11.0";
 /// Utilities for reading upstream libqalculate batch fixtures.
 pub mod batch;
 
+/// Expression tree model for the Rust `MathStructure` port.
+pub mod ast;
+
 /// FFI bindings to C++ Calculator.
 ///
 /// This is the **only** module that uses `#![allow(unsafe_code)]` to override
