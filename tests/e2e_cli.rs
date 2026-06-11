@@ -334,6 +334,29 @@ fn cli_runs_native_complex_powers() {
 }
 
 #[test]
+fn cli_runs_native_float_log_and_sqrt_functions() {
+    for (expression, expected) in [
+        ("ln(0)", "−∞\n"),
+        ("ln(2)", "0.6931471806\n"),
+        ("sqrt(2)", "1.414213562\n"),
+        ("sqrt(4)", "2\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.arg(expression)
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
     let mut cmd = qalc_rs();
     cmd.arg("--definitely-unknown")

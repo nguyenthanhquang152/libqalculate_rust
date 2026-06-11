@@ -3403,11 +3403,21 @@ fn format_qalc_value_with_uncertainty_format(
             format_qalc_float_bound(&upper.value)
         ),
         NumberValue::Float(float) => format_qalc_float(&float.value, precision_digits),
+        NumberValue::PlusInfinity => "+∞".to_string(),
+        NumberValue::MinusInfinity => "-∞".to_string(),
         _ => value.to_string(),
     }
 }
 
 fn format_qalc_float(value: &rug::Float, precision_digits: usize) -> String {
+    if value.is_infinite() {
+        return if value.is_sign_negative() {
+            "-∞".to_string()
+        } else {
+            "+∞".to_string()
+        };
+    }
+
     let output = value.to_string_radix(10, Some(precision_digits));
     fixed_decimal_from_scientific(&output).unwrap_or(output)
 }
@@ -4175,7 +4185,9 @@ fn strip_function_name<'a>(s: &'a str, name: &str) -> Option<&'a str> {
 
 const UNARY_FUNCTIONS: &[(&str, UnaryFunction)] = &[
     ("conj", UnaryFunction::Conjugate),
+    ("ln", UnaryFunction::NaturalLog),
     ("norm", UnaryFunction::Norm),
+    ("sqrt", UnaryFunction::SquareRoot),
 ];
 
 fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
@@ -4187,22 +4199,52 @@ fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
 #[derive(Debug, Clone, Copy)]
 enum UnaryFunction {
     Conjugate,
+    NaturalLog,
     Norm,
+    SquareRoot,
 }
 
 impl UnaryFunction {
     const fn name(self) -> &'static str {
         match self {
             Self::Conjugate => "conj",
+            Self::NaturalLog => "ln",
             Self::Norm => "norm",
+            Self::SquareRoot => "sqrt",
         }
     }
 
     fn apply(self, arg: Number) -> Number {
         match self {
             Self::Conjugate => arg.conjugate(),
+            Self::NaturalLog => apply_real_unary_value(arg, NumberValue::ln),
             Self::Norm => arg.norm(),
+            Self::SquareRoot => apply_real_unary_value(arg, NumberValue::sqrt),
         }
+    }
+}
+
+fn apply_real_unary_value(
+    arg: Number,
+    operation: impl FnOnce(&NumberValue) -> NumberValue,
+) -> Number {
+    if arg.is_complex() {
+        return Number {
+            value: NumberValue::NaN,
+            imaginary: None,
+            precision: arg.precision,
+            approximate: true,
+            is_imaginary: false,
+        };
+    }
+
+    let value = operation(&arg.value);
+    Number {
+        precision: std::cmp::max(arg.precision, value.precision()),
+        approximate: arg.approximate || value.approximate(),
+        value,
+        imaginary: None,
+        is_imaginary: false,
     }
 }
 
