@@ -334,6 +334,14 @@ fn cli_applies_interval_display_setting_for_native_infinity_interval_function() 
             "interval(\u{2212}\u{221e}, 5.000000000)\n",
         ),
         ("interval(4;infinity)", "interval(4.000000000, +\u{221e})\n"),
+        (
+            "interval(-infinity;-4)",
+            "\u{2212}interval(4.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(-3;-1)",
+            "\u{2212}interval(1.000000000, 3.000000000)\n",
+        ),
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
         let mut cmd = qalc_rs();
@@ -358,6 +366,14 @@ fn cli_allows_ic2_for_native_infinity_interval_display_function() {
             "interval(\u{2212}\u{221e}, 5.000000000)\n",
         ),
         ("interval(4;infinity)", "interval(4.000000000, +\u{221e})\n"),
+        (
+            "interval(-infinity;-4)",
+            "\u{2212}interval(4.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(-3;-1)",
+            "\u{2212}interval(1.000000000, 3.000000000)\n",
+        ),
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
         let mut cmd = qalc_rs();
@@ -379,6 +395,63 @@ fn cli_allows_ic2_for_native_infinity_interval_display_function() {
             "[qalc-rs-metadata] fallback=native",
         ));
     }
+}
+
+#[test]
+fn cli_runs_native_interval_endpoint_functions() {
+    for (expression, expected) in [
+        ("lowerEndpoint(interval(1;3))", "1.000000000\n"),
+        ("upperEndpoint(interval(1;3))", "3.000000000\n"),
+        ("midpoint(interval(1;3))", "2\n"),
+        (
+            "lowerEndpoint(interval(-infinity;-4))",
+            "\u{2212}\u{221e}\n",
+        ),
+        ("upperEndpoint(interval(4;infinity))", "+\u{221e}\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args([
+            "-set",
+            "interval display 2",
+            "-set",
+            "ic 2",
+            "--",
+            expression,
+        ])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout(expected)
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+    }
+}
+
+#[test]
+fn cli_runs_native_interval_non_overlap_intersection() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args([
+        "-set",
+        "interval display 2",
+        "-set",
+        "ic 2",
+        "--",
+        "intersect(interval(1;2), interval(3;4))",
+    ])
+    .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+    .env("QALCULATE_DISABLE_FALLBACK", "1")
+    .env("QALCULATE_REPORT_FALLBACK", "1")
+    .assert()
+    .success()
+    .stdout("[]\n")
+    .stderr(predicate::str::contains(
+        "[qalc-rs-metadata] fallback=native",
+    ));
 }
 
 #[test]
@@ -426,6 +499,26 @@ fn cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode() {
         ),
         (
             "interval(4;infinity) / 2",
+            "interval(2.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(4;6) / interval(-3;-2)",
+            "\u{2212}interval(1.333333333, 3.000000000)\n",
+        ),
+        (
+            "interval(-6;-4) / interval(2;3)",
+            "\u{2212}interval(1.333333333, 3.000000000)\n",
+        ),
+        (
+            "interval(-6;-4) / interval(-3;-2)",
+            "interval(1.333333333, 3.000000000)\n",
+        ),
+        (
+            "interval(-infinity;-4) / 2",
+            "\u{2212}interval(2.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(-infinity;-4) / -2",
             "interval(2.000000000, +\u{221e})\n",
         ),
     ] {
@@ -495,6 +588,39 @@ fn cli_rejects_interval_arithmetic_without_ic2_endpoint_mode() {
     .stderr(predicate::str::contains(
         "expression 'interval(-2;3) * interval(-4;5)' has no native Rust implementation",
     ));
+}
+
+#[test]
+fn cli_rejects_symbolic_interval_division_and_intersection_rows() {
+    for expression in [
+        "interval(4;6) / interval(-1;1)",
+        "interval(4;6) / interval(0;2)",
+        "interval(4;infinity) / interval(2;4)",
+        "2 / interval(4;infinity)",
+        "intersect(interval(1;4), interval(3;6))",
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args([
+            "-set",
+            "interval display 2",
+            "-set",
+            "ic 2",
+            "--",
+            expression,
+        ])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ))
+        .stderr(predicate::str::contains(format!(
+            "expression '{expression}' has no native Rust implementation"
+        )));
+    }
 }
 
 #[test]
