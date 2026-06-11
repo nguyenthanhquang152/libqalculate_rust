@@ -558,6 +558,32 @@ fn cli_runs_native_float_log_and_sqrt_functions() {
 }
 
 #[test]
+fn cli_runs_native_infinity_arithmetic() {
+    for (expression, expected) in [
+        ("infinity", "+∞\n"),
+        ("-infinity", "−∞\n"),
+        ("infinity + 1", "+∞\n"),
+        ("-infinity - 1", "−∞\n"),
+        ("infinity * 2", "+∞\n"),
+        ("infinity * -2", "−∞\n"),
+        ("1 / infinity", "0\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.arg(expression)
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
     let mut cmd = qalc_rs();
     cmd.arg("--definitely-unknown")

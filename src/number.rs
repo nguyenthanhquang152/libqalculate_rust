@@ -3739,6 +3739,7 @@ fn parse_single_value(s: &str) -> Result<NumberValue, String> {
 }
 
 const SPECIAL_VALUE_NAMES: [&str; 3] = ["infinity", "inf", "nan"];
+const EXPRESSION_SPECIAL_VALUE_NAMES: [&str; 1] = ["infinity"];
 
 fn parse_special_value(s: &str) -> Option<NumberValue> {
     let normalized = s.to_ascii_lowercase();
@@ -3966,6 +3967,10 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
         return Some((lit, remaining));
     }
 
+    if let Some((lit, remaining)) = next_special_value_literal(s) {
+        return Some((lit, remaining));
+    }
+
     let mut len = 0;
     let chars: Vec<char> = s.chars().collect();
     if chars.is_empty() {
@@ -4071,6 +4076,27 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
     } else {
         None
     }
+}
+
+fn next_special_value_literal(s: &str) -> Option<(&str, &str)> {
+    for name in EXPRESSION_SPECIAL_VALUE_NAMES {
+        let Some(literal) = s.get(..name.len()) else {
+            continue;
+        };
+        if !literal.eq_ignore_ascii_case(name) {
+            continue;
+        }
+        let remaining = &s[name.len()..];
+        if remaining
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphanumeric() || ch == '_')
+        {
+            continue;
+        }
+        return Some((literal, remaining));
+    }
+    None
 }
 
 fn next_interval_function_literal(s: &str) -> Option<(&str, &str)> {

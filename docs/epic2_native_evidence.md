@@ -67,6 +67,13 @@ focused expressions with fallback disabled:
 - `ln(2)`
 - `sqrt(2)`
 - `sqrt(4)`
+- `infinity`
+- `-infinity`
+- `infinity + 1`
+- `-infinity - 1`
+- `infinity * 2`
+- `infinity * -2`
+- `1 / infinity`
 - `1/3`
 - `1e10`
 - `1 + 1`
@@ -138,6 +145,16 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   1.414213562`, and exact-square `sqrt(4) -> 2`; broader special functions,
   negative-domain behavior, and symbolic simplifications remain outside the
   native gate.
+- Fallback-disabled native Refs #12 special-value evidence covers alphabetic
+  infinity literals and selected arithmetic: `infinity -> +∞`,
+  `-infinity -> −∞`, `infinity + 1 -> +∞`, `-infinity - 1 -> −∞`,
+  `infinity * 2 -> +∞`, `infinity * -2 -> −∞`, and
+  `1 / infinity -> 0`. The native expression tokenizer accepts only the
+  qalc-compatible `infinity` name as a whole literal before passing it to the
+  existing `Number` parser; internal `inf`/`nan` `Number::from_str` roundtrips
+  remain outside the expression evidence gate. Upstream probes showed exact
+  division by zero such as `1 / 0` remains symbolic, so division-by-zero parity
+  remains outside this native slice.
 - Exact rational remainder and modulo now match upstream qalc for the promoted
   operator rows. `%` and `rem` use quotient truncation toward zero, while `%%`
   and `mod` use floor-division semantics, including negative operands and
@@ -241,10 +258,12 @@ rtk cargo test --lib precision_context_applies_to_noninteger_rational_power -- -
 rtk cargo test --lib precision_context_applies_to_real_float_arithmetic -- --nocapture
 rtk cargo test --lib native_log_and_sqrt_functions_match_qalc_profile -- --nocapture
 rtk cargo test --lib qalc_profile_formats_infinities_with_upstream_signs -- --nocapture
+rtk cargo test --lib special_value_literals_parse_in_expressions_with_name_boundaries -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_rational_output -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_float_power -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_arithmetic -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_float_log_and_sqrt_functions -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_infinity_arithmetic -- --exact --nocapture
 rtk cargo test --test oracle focused_epic2_float_precision_oracle_cases -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
 rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
@@ -274,6 +293,14 @@ rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=U
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '123(4)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '1.23(4) + 2.0(3)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '1.23(4)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'infinity'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '-infinity'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'infinity + 1'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '-infinity - 1'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'infinity * 2'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'infinity * -2'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '1 / infinity'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '1 / 0'
 cargo mutants --timeout 180 --jobs 2 --file src/number.rs --file src/ffi.rs -F 'to_qalc_string_preserving_float_uncertainty_precision|format_qalc_value_with_uncertainty_format|format_qalc_uncertainty|fixed_decimal_has_fractional_precision|trim_fixed_decimal_trailing_zeros|mantissa_and_exponent|native_numeric_evidence' -- --lib
 rtk cargo test --test oracle differential_oracle_numberbase_batch -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_no_session_oracle_cases -- --nocapture
@@ -326,7 +353,8 @@ Mutation evidence for this slice:
 
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
   remain incomplete beyond the promoted native precision-output and
-  precision-context non-integer power/arithmetic, `ln`, and `sqrt` evidence.
+  precision-context non-integer power/arithmetic, `ln`, `sqrt`, and focused
+  infinity literal/arithmetic evidence.
 - Broader complex powers and broad `explog.batch` complex cases remain
   incomplete beyond the promoted exact arithmetic, `conj`, `norm`, `i^2`, and
   `explog.batch:7` evidence.
@@ -340,6 +368,7 @@ Mutation evidence for this slice:
   calculation mode, ASCII/Unicode print-option toggles, and
   session-setting-dependent behavior remain incomplete.
 - Division-by-zero-style output such as `1 / 0` and `0 ^ -1 -> 1 / 0` remains
-  outside the fallback-disabled native subset.
+  outside the fallback-disabled native subset because upstream keeps these as
+  symbolic expressions rather than promoting them to infinity.
 - `Calculator` expression evaluation remains fallback-first outside the vetted
   fallback-disabled native numeric subset.
