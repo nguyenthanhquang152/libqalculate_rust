@@ -2141,6 +2141,10 @@ fn to_float_val(val: &NumberValue) -> Float {
     to_float_val_rnd(val, 53, rug::float::Round::Nearest)
 }
 
+fn is_fractional_rational(value: &NumberValue) -> bool {
+    matches!(value, NumberValue::Rational(rational) if rational.value.denom() != &1)
+}
+
 fn approximate_complex_power_number(
     base_real: &NumberValue,
     base_imag: &NumberValue,
@@ -2713,6 +2717,12 @@ impl Number {
         }
         match real {
             NumberValue::Interval { lower, .. } => Self::from_float(lower),
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } => {
+                let endpoint = value.sub(&uncertainty);
+                Self::from_uncertainty_boundary_value(endpoint)
+            }
             value => Self::from_real_value(value),
         }
     }
@@ -2724,6 +2734,12 @@ impl Number {
         }
         match real {
             NumberValue::Interval { upper, .. } => Self::from_float(upper),
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } => {
+                let endpoint = value.add(&uncertainty);
+                Self::from_uncertainty_boundary_value(endpoint)
+            }
             value => Self::from_real_value(value),
         }
     }
@@ -2745,7 +2761,47 @@ impl Number {
                 }
                 Self::from_float(Float { value })
             }
+            NumberValue::Uncertainty { value, .. } => Self::from_real_value(*value),
             value => Self::from_real_value(value),
+        }
+    }
+
+    fn value_part(&self) -> Self {
+        self.midpoint()
+    }
+
+    fn error_part(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if !imag.is_real_zero() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        match real {
+            NumberValue::Uncertainty { uncertainty, .. } => {
+                Self::from_uncertainty_error_value(*uncertainty)
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = std::cmp::max(lower.prec(), upper.prec());
+                let mut width = rug::Float::with_val(prec, &upper.value - &lower.value);
+                width /= 2;
+                Self::from_float(Float { value: width })
+            }
+            _ => Self::from_i32(0),
+        }
+    }
+
+    fn from_uncertainty_boundary_value(value: NumberValue) -> Self {
+        if is_fractional_rational(&value) {
+            Self::from_float(to_float_val(&value))
+        } else {
+            Self::from_real_value(value)
+        }
+    }
+
+    fn from_uncertainty_error_value(value: NumberValue) -> Self {
+        if is_fractional_rational(&value) {
+            Self::from_float(to_float_val(&value))
+        } else {
+            Self::from_real_value(value)
         }
     }
 
@@ -3909,6 +3965,56 @@ fn parse_interval_function_expression(s: &str) -> Result<Option<Number>, String>
         .map(Some)
 }
 
+fn parse_uncertainty_function_expression(s: &str) -> Result<Option<Number>, String> {
+    let trimmed = s.trim();
+    let Some(rest) = strip_function_name(trimmed, "uncertainty") else {
+        return Ok(None);
+    };
+    let rest = rest.trim_start();
+    let Some(inner) = rest
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return Err(format!(
+            "Expected uncertainty(value; error; relative): {trimmed}"
+        ));
+    };
+
+    let args = split_semicolon_arguments(inner);
+    if !(2..=3).contains(&args.len()) {
+        return Err(format!("Failed to parse uncertainty arguments: {trimmed}"));
+    }
+
+    let value = parse_single_value(args[0])?;
+    let uncertainty = parse_single_value(args[1])?;
+    let is_relative = if let Some(relative) = args.get(2) {
+        parse_boolean_argument(relative)
+            .ok_or_else(|| format!("Invalid uncertainty relative flag: {relative}"))?
+    } else {
+        true
+    };
+
+    let uncertainty = if is_relative {
+        value.abs().mul(&uncertainty.abs())
+    } else {
+        uncertainty.abs()
+    };
+
+    Ok(Some(Number::new_uncertainty(value, uncertainty, false)))
+}
+
+fn split_semicolon_arguments(inner: &str) -> Vec<&str> {
+    inner.split(';').map(str::trim).collect()
+}
+
+fn parse_boolean_argument(s: &str) -> Option<bool> {
+    match s.trim() {
+        "0" => Some(false),
+        "1" => Some(true),
+        _ => None,
+    }
+}
+
 fn split_interval_function_bounds(inner: &str) -> Option<(&str, &str)> {
     let (lower, upper) = inner.split_once(';')?;
     if upper.contains(';') {
@@ -4028,6 +4134,10 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
     }
 
     if let Some((lit, remaining)) = next_interval_function_literal(s) {
+        return Some((lit, remaining));
+    }
+
+    if let Some((lit, remaining)) = next_uncertainty_function_literal(s) {
         return Some((lit, remaining));
     }
 
@@ -4165,6 +4275,18 @@ fn next_special_value_literal(s: &str) -> Option<(&str, &str)> {
 
 fn next_interval_function_literal(s: &str) -> Option<(&str, &str)> {
     let after_name = strip_function_name(s, "interval")?;
+    next_function_literal_after_name(s, after_name)
+}
+
+fn next_uncertainty_function_literal(s: &str) -> Option<(&str, &str)> {
+    let after_name = strip_function_name(s, "uncertainty")?;
+    next_function_literal_after_name(s, after_name)
+}
+
+fn next_function_literal_after_name<'a>(
+    s: &'a str,
+    after_name: &str,
+) -> Option<(&'a str, &'a str)> {
     let name_len = s.len() - after_name.len();
     let trimmed_after_name = after_name.trim_start();
     let whitespace_len = after_name.len() - trimmed_after_name.len();
@@ -4237,6 +4359,10 @@ impl std::str::FromStr for Number {
 
         if let Some(interval) = parse_interval_function_expression(s)? {
             return Ok(interval);
+        }
+
+        if let Some(uncertainty) = parse_uncertainty_function_expression(s)? {
+            return Ok(uncertainty);
         }
 
         if let Some(open_idx) = s.find('(') {
@@ -4329,12 +4455,14 @@ fn strip_function_name<'a>(s: &'a str, name: &str) -> Option<&'a str> {
 
 const UNARY_FUNCTIONS: &[(&str, UnaryFunction)] = &[
     ("conj", UnaryFunction::Conjugate),
+    ("errorPart", UnaryFunction::ErrorPart),
     ("lowerEndpoint", UnaryFunction::LowerEndpoint),
     ("ln", UnaryFunction::NaturalLog),
     ("midpoint", UnaryFunction::Midpoint),
     ("norm", UnaryFunction::Norm),
     ("sqrt", UnaryFunction::SquareRoot),
     ("upperEndpoint", UnaryFunction::UpperEndpoint),
+    ("valuePart", UnaryFunction::ValuePart),
 ];
 
 fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
@@ -4346,36 +4474,42 @@ fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
 #[derive(Debug, Clone, Copy)]
 enum UnaryFunction {
     Conjugate,
+    ErrorPart,
     LowerEndpoint,
     NaturalLog,
     Midpoint,
     Norm,
     SquareRoot,
     UpperEndpoint,
+    ValuePart,
 }
 
 impl UnaryFunction {
     const fn name(self) -> &'static str {
         match self {
             Self::Conjugate => "conj",
+            Self::ErrorPart => "errorPart",
             Self::LowerEndpoint => "lowerEndpoint",
             Self::NaturalLog => "ln",
             Self::Midpoint => "midpoint",
             Self::Norm => "norm",
             Self::SquareRoot => "sqrt",
             Self::UpperEndpoint => "upperEndpoint",
+            Self::ValuePart => "valuePart",
         }
     }
 
     fn apply(self, arg: Number) -> Number {
         match self {
             Self::Conjugate => arg.conjugate(),
+            Self::ErrorPart => arg.error_part(),
             Self::LowerEndpoint => arg.lower_endpoint(),
             Self::NaturalLog => apply_real_unary_value(arg, NumberValue::ln),
             Self::Midpoint => arg.midpoint(),
             Self::Norm => arg.norm(),
             Self::SquareRoot => apply_real_unary_value(arg, NumberValue::sqrt),
             Self::UpperEndpoint => arg.upper_endpoint(),
+            Self::ValuePart => arg.value_part(),
         }
     }
 }

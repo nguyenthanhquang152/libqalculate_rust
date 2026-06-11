@@ -114,10 +114,24 @@ focused expressions with fallback disabled:
 - `10 +/- 0`
 
 `tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
-focused Refs #15 input-form slice without changing batch-manifest counts:
+focused Refs #15 input/API slice without changing batch-manifest counts:
 
+- `2 +/- 0.002`
+- `2 +/- 0.002 + 3`
 - `2±0.002`
 - `2±0.002 + 3`
+- `uncertainty(2;0.002;0)`
+- `uncertainty(100;0.05;1)`
+- `uncertainty(10;0;0)`
+- `errorPart(2+/-0.002)`
+- `errorPart(100+/-5%)`
+- `valuePart(2+/-0.002)`
+- `valuePart(100+/-5%)`
+- `midpoint(2+/-0.002)`
+- `lowerEndpoint(2+/-0.002)`
+- `upperEndpoint(2+/-0.002)`
+- `20+/-3 - 10+/-4`
+- `3+/-0.2 / 4+/-0.1`
 - `1.23(4)` under `/set concise uncertainty 1`
 - `123(4)` under `/set concise uncertainty 1`
 - `1.23(4) + 2.0(3)` under `/set concise uncertainty 1`
@@ -267,14 +281,27 @@ Refs #12 precision-context rows:
   `ln(5+/-0.3) -> 1.609±0.060`; this is an allowlisted native evidence case,
   not broad special-function support.
 - Fallback-disabled native Refs #15 uncertainty input-form evidence now covers
-  Unicode absolute uncertainty input `2±0.002 -> 2.0000±0.0020` and
-  `2±0.002 + 3 -> 5.0000±0.0020`. Concise uncertainty notation is supported
-  only for vetted setting-gated cases under `/set concise uncertainty 1`:
-  `1.23(4) -> 1.230±0.040`, `123(4) -> 123.0±4.0`, and
-  `1.23(4) + 2.0(3) -> 3.23±0.30`. This does not add `/set ic 2`, interval
-  display changes, complex uncertainty, Lambert W, Ei, or broad `explog.batch`
-  promotions; `Ei(3+/-0.3)` is covered only by a fallback-disabled rejection
-  guard.
+  spaced ASCII absolute uncertainty input `2 +/- 0.002 -> 2.0000±0.0020`,
+  `2 +/- 0.002 + 3 -> 5.0000±0.0020`, Unicode absolute uncertainty input
+  `2±0.002 -> 2.0000±0.0020`, and `2±0.002 + 3 -> 5.0000±0.0020`.
+  Concise uncertainty notation is supported only for vetted setting-gated cases
+  under `/set concise uncertainty 1`: `1.23(4) -> 1.230±0.040`,
+  `123(4) -> 123.0±4.0`, and `1.23(4) + 2.0(3) -> 3.23±0.30`.
+- Fallback-disabled native Refs #15 uncertainty API evidence now covers the
+  scalar constructor/extraction slice: `uncertainty(2;0.002;0) ->
+  2.0000±0.0020`, `uncertainty(100;0.05;1) -> 100.0±5.0`,
+  `uncertainty(10;0;0) -> 10`, `errorPart(2+/-0.002) -> 0.002000000000`,
+  `errorPart(100+/-5%) -> 5`, `valuePart(2+/-0.002) -> 2`,
+  `valuePart(100+/-5%) -> 100`, `midpoint(2+/-0.002) -> 2`,
+  `lowerEndpoint(2+/-0.002) -> 1.998000000`, and
+  `upperEndpoint(2+/-0.002) -> 2.002000000`. Propagation evidence also now
+  includes `20+/-3 - 10+/-4 -> 10.0±5.0` and
+  `3+/-0.2 / 4+/-0.1 -> 0.750±0.053`. Relative extraction via
+  `errorPart(value;1)`, complex uncertainty, Lambert W, Ei, interval
+  calculation mode, ASCII/Unicode print-option toggles, and broad
+  `explog.batch` promotions remain incomplete; `Ei(3+/-0.3)` and
+  `errorPart(100+/-5%;1)` are covered only by fallback-disabled rejection
+  guards.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -408,10 +435,14 @@ rtk cargo test --test e2e_cli cli_runs_native_uncertainty_power -- --nocapture
 rtk cargo test --test oracle focused_epic2_native_numeric_oracle_cases -- --nocapture
 rtk cargo test --test fallback_gate cli_invalid_native_expression_fails_when_fallback_disabled -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_unicode_uncertainty_input -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_uncertainty_api_functions -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_applies_concise_uncertainty_setting_for_native_input -- --nocapture
 rtk cargo test --test e2e_cli cli_rejects_concise_uncertainty_without_setting -- --nocapture
 rtk cargo test --test oracle focused_issue15_uncertainty_input_oracle_cases -- --nocapture
+rtk cargo test --lib uncertainty_constructor -- --nocapture
+rtk cargo test --test uncertainty_adversarial -- --nocapture
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'errorPart(2+/-0.002)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002 + 3'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'ln(5+/-0.3)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'Ei(3+/-0.3)'

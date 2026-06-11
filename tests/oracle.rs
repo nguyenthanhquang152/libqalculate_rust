@@ -1024,9 +1024,63 @@ fn focused_issue15_uncertainty_input_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 5] = [
+    let cases: [NativeOracleCase<'_>; 19] = [
+        ("spaced-ascii-absolute-uncertainty", "2 +/- 0.002", &[]),
+        (
+            "spaced-ascii-absolute-uncertainty-addition",
+            "2 +/- 0.002 + 3",
+            &[],
+        ),
         ("unicode-absolute-uncertainty", "2±0.002", &[]),
         ("unicode-absolute-uncertainty-addition", "2±0.002 + 3", &[]),
+        (
+            "absolute-uncertainty-constructor",
+            "uncertainty(2;0.002;0)",
+            &[],
+        ),
+        (
+            "relative-uncertainty-constructor",
+            "uncertainty(100;0.05;1)",
+            &[],
+        ),
+        (
+            "zero-uncertainty-constructor-collapse",
+            "uncertainty(10;0;0)",
+            &[],
+        ),
+        ("uncertainty-error-part", "errorPart(2+/-0.002)", &[]),
+        (
+            "relative-uncertainty-absolute-error-part",
+            "errorPart(100+/-5%)",
+            &[],
+        ),
+        ("uncertainty-value-part", "valuePart(2+/-0.002)", &[]),
+        (
+            "relative-uncertainty-value-part",
+            "valuePart(100+/-5%)",
+            &[],
+        ),
+        ("uncertainty-midpoint", "midpoint(2+/-0.002)", &[]),
+        (
+            "uncertainty-lower-endpoint",
+            "lowerEndpoint(2+/-0.002)",
+            &[],
+        ),
+        (
+            "uncertainty-upper-endpoint",
+            "upperEndpoint(2+/-0.002)",
+            &[],
+        ),
+        (
+            "uncertainty-subtraction-propagation",
+            "20+/-3 - 10+/-4",
+            &[],
+        ),
+        (
+            "uncertainty-division-propagation-alt-row",
+            "3+/-0.2 / 4+/-0.1",
+            &[],
+        ),
         (
             "concise-uncertainty-decimal",
             "1.23(4)",

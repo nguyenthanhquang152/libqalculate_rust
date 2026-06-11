@@ -1616,6 +1616,64 @@ fn test_zero_uncertainty_formats_as_underlying_value() {
 }
 
 #[test]
+fn uncertainty_constructor_and_extraction_functions_match_qalc_slice() {
+    assert_eq!(
+        evaluate_expr("uncertainty(2;0.002;0)")
+            .unwrap()
+            .to_qalc_string(),
+        "2.0000±0.0020"
+    );
+    assert_eq!(
+        evaluate_expr("uncertainty(100;0.05;1)")
+            .unwrap()
+            .to_qalc_string(),
+        "100.0±5.0"
+    );
+    assert_eq!(
+        evaluate_expr("uncertainty(10;0;0)")
+            .unwrap()
+            .to_qalc_string(),
+        "10"
+    );
+    assert_eq!(
+        evaluate_expr("errorPart(2+/-0.002)")
+            .unwrap()
+            .to_qalc_string(),
+        "0.002000000000"
+    );
+    assert_eq!(
+        evaluate_expr("errorPart(100+/-5%)")
+            .unwrap()
+            .to_qalc_string(),
+        "5"
+    );
+    assert_eq!(
+        evaluate_expr("valuePart(2+/-0.002)")
+            .unwrap()
+            .to_qalc_string(),
+        "2"
+    );
+    assert_eq!(
+        evaluate_expr("midpoint(2+/-0.002)")
+            .unwrap()
+            .to_qalc_string(),
+        "2"
+    );
+    assert_eq!(
+        evaluate_expr("lowerEndpoint(2+/-0.002)")
+            .unwrap()
+            .to_qalc_string(),
+        "1.998000000"
+    );
+    assert_eq!(
+        evaluate_expr("upperEndpoint(2+/-0.002)")
+            .unwrap()
+            .to_qalc_string(),
+        "2.002000000"
+    );
+}
+
+#[test]
 fn test_exhaustive_comparison_results() {
     // 1. ComparisonResult variants existence/construction check
     let _ = ComparisonResult::Equal;
