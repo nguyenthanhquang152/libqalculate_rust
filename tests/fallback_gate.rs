@@ -204,6 +204,7 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "[1,2]",
         "[1,2] + [3,4]",
         "1/[2,3]",
+        "(1 + i) < (1 + 2i)",
         "170141183460469231731687303715884105728 + 1",
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));

@@ -325,6 +325,12 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return Some("native-scaffold-test-success".to_string());
     }
 
+    if settings.is_empty() {
+        if let Some(output) = native_boolean_evidence(expr) {
+            return Some(output);
+        }
+    }
+
     let evidence = native_numeric_evidence(expr)?;
     if settings.has_precision() && !evidence.supports_precision() {
         return None;
@@ -379,6 +385,27 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         }
         _ => None,
     }
+}
+
+const NATIVE_BOOLEAN_EVIDENCE: &[&str] = &[
+    "(1 + i) = (1 + i)",
+    "(1 + i) == (1 + i)",
+    "(1 + i) = (1 - i)",
+    "(1 + i) != (1 - i)",
+    "(1 + i) ≠ (1 - i)",
+    "(1 + i) != (1 + i)",
+];
+
+fn native_boolean_evidence(expr: &str) -> Option<String> {
+    let trimmed = expr.trim();
+    if !NATIVE_BOOLEAN_EVIDENCE.contains(&trimmed) {
+        return None;
+    }
+
+    crate::number::evaluate_equality_expr(trimmed)
+        .ok()
+        .flatten()
+        .map(|value| value.to_string())
 }
 
 #[derive(Clone, Copy)]
