@@ -703,8 +703,41 @@ fn cli_runs_native_uncertainty_power() {
 #[test]
 fn cli_runs_native_unicode_uncertainty_input() {
     for (expression, expected) in [
+        ("2 +/- 0.002", "2.0000±0.0020\n"),
+        ("2 +/- 0.002 + 3", "5.0000±0.0020\n"),
         ("2±0.002", "2.0000±0.0020\n"),
         ("2±0.002 + 3", "5.0000±0.0020\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.arg(expression)
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_runs_native_uncertainty_api_functions() {
+    for (expression, expected) in [
+        ("uncertainty(2;0.002;0)", "2.0000±0.0020\n"),
+        ("uncertainty(100;0.05;1)", "100.0±5.0\n"),
+        ("uncertainty(10;0;0)", "10\n"),
+        ("errorPart(2+/-0.002)", "0.002000000000\n"),
+        ("errorPart(100+/-5%)", "5\n"),
+        ("valuePart(2+/-0.002)", "2\n"),
+        ("valuePart(100+/-5%)", "100\n"),
+        ("midpoint(2+/-0.002)", "2\n"),
+        ("lowerEndpoint(2+/-0.002)", "1.998000000\n"),
+        ("upperEndpoint(2+/-0.002)", "2.002000000\n"),
+        ("20+/-3 - 10+/-4", "10.0±5.0\n"),
+        ("3+/-0.2 / 4+/-0.1", "0.750±0.053\n"),
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
         let mut cmd = qalc_rs();
@@ -953,6 +986,21 @@ fn cli_rejects_unsupported_uncertainty_special_function_when_fallback_disabled()
         ))
         .stderr(predicate::str::contains(
             "expression 'Ei(3+/-0.3)' has no native Rust implementation",
+        ));
+
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.arg("errorPart(100+/-5%;1)")
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ))
+        .stderr(predicate::str::contains(
+            "expression 'errorPart(100+/-5%;1)' has no native Rust implementation",
         ));
 }
 
