@@ -79,6 +79,52 @@ fn interval_function_is_numeric_primary_in_native_expression() {
 }
 
 #[test]
+fn interval_function_accepts_infinity_endpoints() {
+    let lower_unbounded =
+        evaluate_expr("interval(-infinity;5)").expect("lower infinity endpoint should parse");
+    assert_eq!(
+        lower_unbounded.value().to_interval_bounds(),
+        Some((f64::NEG_INFINITY, 5.0))
+    );
+
+    let upper_unbounded =
+        evaluate_expr("interval(4;infinity)").expect("upper infinity endpoint should parse");
+    assert_eq!(
+        upper_unbounded.value().to_interval_bounds(),
+        Some((4.0, f64::INFINITY))
+    );
+}
+
+#[test]
+fn interval_arithmetic_propagates_infinity_endpoints() {
+    for (expression, expected_bounds) in [
+        (
+            "interval(-infinity;5) + interval(2;3)",
+            (f64::NEG_INFINITY, 8.0),
+        ),
+        (
+            "interval(-infinity;5) - interval(2;3)",
+            (f64::NEG_INFINITY, 3.0),
+        ),
+        (
+            "interval(-infinity;5) * interval(2;3)",
+            (f64::NEG_INFINITY, 15.0),
+        ),
+        ("interval(4;infinity) + interval(2;3)", (6.0, f64::INFINITY)),
+        ("interval(4;infinity) - interval(2;3)", (1.0, f64::INFINITY)),
+        ("interval(4;infinity) * interval(2;3)", (8.0, f64::INFINITY)),
+        ("interval(4;infinity) / 2", (2.0, f64::INFINITY)),
+    ] {
+        let result = evaluate_expr(expression).expect("interval expression should evaluate");
+        assert_eq!(
+            result.value().to_interval_bounds(),
+            Some(expected_bounds),
+            "expression: {expression}"
+        );
+    }
+}
+
+#[test]
 fn nested_complex_numbers_are_flattened() {
     let real_part = Number::new_complex(Number::from_i32(1), Number::from_i32(2));
     let imag_part = Number::new_complex(Number::from_i32(3), Number::from_i32(4));

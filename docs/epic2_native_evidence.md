@@ -223,7 +223,11 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   accepted and stored in lower/upper order, and equal finite endpoints collapse
   to a scalar value. Focused upstream probes confirm `interval(5;2)` and
   `interval(2;5)` both print `interval(2.000000000, 5.000000000)` with
-  interval-display mode, while `interval(2;2)` prints `2`.
+  interval-display mode, while `interval(2;2)` prints `2`. Refs #14 infinity
+  endpoint construction evidence now also covers `interval(-infinity;5) ->
+  interval(−∞, 5.000000000)` and `interval(4;infinity) ->
+  interval(4.000000000, +∞)` under `/set interval display 2`, and the same
+  constructor/display rows remain native when `/set ic 2` is also active.
 - Finite closed interval arithmetic now has a fallback-disabled native evidence
   path only when both `/set interval display 2` and `/set ic 2` are active. The
   promoted endpoint-mode cases are `interval(1;2) + interval(3;4)`,
@@ -234,6 +238,17 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   negative guard compares upstream display-only variance-mode output against
   endpoint-mode output for multiplication and keeps Rust fallback-disabled
   without `/set ic 2`.
+- Refs #14 infinity endpoint arithmetic evidence extends the endpoint-mode gate
+  to these exact expressions only: `interval(-infinity;5) + interval(2;3) ->
+  interval(−∞, 8.000000000)`, `interval(-infinity;5) - interval(2;3) ->
+  interval(−∞, 3.000000000)`, `interval(-infinity;5) * interval(2;3) ->
+  interval(−∞, 15.00000000)`, `interval(4;infinity) + interval(2;3) ->
+  interval(6.000000000, +∞)`, `interval(4;infinity) - interval(2;3) ->
+  interval(1.000000000, +∞)`, `interval(4;infinity) * interval(2;3) ->
+  interval(8.000000000, +∞)`, and `interval(4;infinity) / 2 ->
+  interval(2.000000000, +∞)`. Upstream probes showed `inf` input is ambiguous
+  and `interval(4;infinity) / interval(2;4)` remains unevaluated upstream, so
+  neither form is accepted as native interval parity in this slice.
 - Native interval literal parsing is an internal `Number` parser surface, not
   qalc bracket syntax parity. It now uses the same public constructor invariant
   for finite reversed endpoints, so `"[5, 1]".parse::<Number>()` stores lower
@@ -320,12 +335,17 @@ rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_behavior interval_function_is_numeric_primary_in_native_expression -- --nocapture
+rtk cargo test --test number_behavior interval_ -- --nocapture
 rtk cargo test --test number_properties interval_constructor_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_properties interval_constructor -- --nocapture
 rtk cargo test --lib parses_supported_settings -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_interval_display_setting_for_native_infinity_interval_function -- --nocapture
+rtk cargo test --test e2e_cli cli_allows_ic2_for_native_infinity_interval_display_function -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode -- --nocapture
+rtk cargo test --test e2e_cli cli_rejects_infinity_interval_arithmetic_without_ic2_endpoint_mode -- --nocapture
 rtk cargo test --test e2e_cli cli_rejects_interval_arithmetic_without_ic2_endpoint_mode -- --nocapture
 rtk cargo test --test e2e_cli interval_arithmetic -- --nocapture
+rtk cargo test --test oracle focused_epic2_interval_display_oracle_cases -- --nocapture
 rtk cargo test --test oracle focused_epic2_interval_arithmetic_oracle_cases -- --nocapture
 rtk cargo test --test oracle focused_epic2_interval_arithmetic_requires_ic2_guard -- --nocapture
 rtk cargo test --test oracle focused_epic2_interval_arithmetic -- --nocapture
@@ -337,6 +357,16 @@ rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc 
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(5;2)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;5)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;2)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(-infinity;5)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(4;infinity)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(-infinity;5) + interval(2;3)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(-infinity;5) - interval(2;3)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(-infinity;5) * interval(2;3)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(4;infinity) + interval(2;3)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(4;infinity) - interval(2;3)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(4;infinity) * interval(2;3)'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(4;infinity) / 2'
+rtk env LC_ALL=C.UTF-8 TZ=UTC QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'interval display 2' -set 'ic 2' 'interval(4;infinity) / interval(2;4)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(1;2) + interval(3;4)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(3;4) - interval(1;2)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(-2;3) * interval(-4;5)'
@@ -372,7 +402,8 @@ Mutation evidence for this slice:
   Complex ordering constraints (`<`, `>`, `<=`, `>=`, `≤`, `≥`) are not claimed
   by the native gate.
 - Interval input syntax, interval options beyond `/set ic 2`, intersections,
-  open/closed bound variants, infinities, uncertainty intervals, complex
+  open/closed bound variants, broad infinity arithmetic including interval
+  division by an infinity-bounded interval, uncertainty intervals, complex
   intervals, precision conversion, endpoint functions, and broad interval oracle
   rows remain incomplete. Qalc bracket expressions are not used as interval
   evidence because upstream default qalc treats them with vector-like semantics

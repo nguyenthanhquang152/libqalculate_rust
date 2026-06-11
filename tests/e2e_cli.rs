@@ -279,6 +279,61 @@ fn cli_applies_interval_display_setting_for_native_interval_function() {
 }
 
 #[test]
+fn cli_applies_interval_display_setting_for_native_infinity_interval_function() {
+    for (expression, expected) in [
+        (
+            "interval(-infinity;5)",
+            "interval(\u{2212}\u{221e}, 5.000000000)\n",
+        ),
+        ("interval(4;infinity)", "interval(4.000000000, +\u{221e})\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", "interval display 2", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_allows_ic2_for_native_infinity_interval_display_function() {
+    for (expression, expected) in [
+        (
+            "interval(-infinity;5)",
+            "interval(\u{2212}\u{221e}, 5.000000000)\n",
+        ),
+        ("interval(4;infinity)", "interval(4.000000000, +\u{221e})\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args([
+            "-set",
+            "interval display 2",
+            "-set",
+            "ic 2",
+            "--",
+            expression,
+        ])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout(expected)
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+    }
+}
+
+#[test]
 fn cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode() {
     for (expression, expected) in [
         (
@@ -296,6 +351,34 @@ fn cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode() {
         (
             "interval(4;6) / interval(2;3)",
             "interval(1.333333333, 3.000000000)\n",
+        ),
+        (
+            "interval(-infinity;5) + interval(2;3)",
+            "interval(\u{2212}\u{221e}, 8.000000000)\n",
+        ),
+        (
+            "interval(-infinity;5) - interval(2;3)",
+            "interval(\u{2212}\u{221e}, 3.000000000)\n",
+        ),
+        (
+            "interval(-infinity;5) * interval(2;3)",
+            "interval(\u{2212}\u{221e}, 15.00000000)\n",
+        ),
+        (
+            "interval(4;infinity) + interval(2;3)",
+            "interval(6.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(4;infinity) - interval(2;3)",
+            "interval(1.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(4;infinity) * interval(2;3)",
+            "interval(8.000000000, +\u{221e})\n",
+        ),
+        (
+            "interval(4;infinity) / 2",
+            "interval(2.000000000, +\u{221e})\n",
         ),
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
@@ -318,6 +401,29 @@ fn cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode() {
             "[qalc-rs-metadata] fallback=native",
         ));
     }
+}
+
+#[test]
+fn cli_rejects_infinity_interval_arithmetic_without_ic2_endpoint_mode() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args([
+        "-set",
+        "interval display 2",
+        "--",
+        "interval(4;infinity) + interval(2;3)",
+    ])
+    .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+    .env("QALCULATE_DISABLE_FALLBACK", "1")
+    .env("QALCULATE_REPORT_FALLBACK", "1")
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "[qalc-rs-metadata] fallback=disabled",
+    ))
+    .stderr(predicate::str::contains(
+        "expression 'interval(4;infinity) + interval(2;3)' has no native Rust implementation",
+    ));
 }
 
 #[test]
