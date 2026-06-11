@@ -180,6 +180,21 @@ fn cli_applies_precision_setting_for_native_rational_output() {
 }
 
 #[test]
+fn cli_rejects_precision_setting_for_unvetted_float_power() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "precision 128", "--", "2 ^ 0.5"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ));
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
     let mut cmd = qalc_rs();
     cmd.arg("--definitely-unknown")

@@ -49,6 +49,7 @@ focused expressions with fallback disabled:
 - `1 + 1`
 - `5 ^ 2`
 - `2 ^ -3`
+- `2 ^ 0.5`
 - `(-2) ^ -3`
 - `(1/2) ^ -3`
 - `5 ** 3`
@@ -88,7 +89,12 @@ focused expressions with fallback disabled:
   negative exponents. Qalc `**` exponent syntax is parsed as right-associative
   power syntax. Upstream `operators.batch` rows `5 ^ 2`, `5 ** 3`, and
   `4 ** 3 ** 2` are promoted to fallback-disabled native evidence; focused
-  oracle probes also cover `2 ^ -3`, `(-2) ^ -3`, and `(1/2) ^ -3`.
+  oracle probes also cover `2 ^ -3`, `(-2) ^ -3`, `(1/2) ^ -3`, and the
+  default-precision non-integer float result for `2 ^ 0.5`.
+- Native float `ln` and non-integer float `pow` arithmetic now stay in MPFR
+  instead of converting through `f64` for semantic arithmetic. Focused unit
+  tests assert 200-bit `ln(2)` and `2^0.5` retain MPFR-scale precision rather
+  than a lifted 53-bit result.
 - Exact rational remainder and modulo now match upstream qalc for the promoted
   operator rows. `%` and `rem` use quotient truncation toward zero, while `%%`
   and `mod` use floor-division semantics, including negative operands and
@@ -110,7 +116,9 @@ focused expressions with fallback disabled:
   to emit the requested decimal digits. The native evidence gate accepts
   precision values from 1 through 4096 digits to avoid unbounded CLI-requested
   allocation. Focused upstream oracle evidence covers `1/3` under
-  `/set precision 128`.
+  `/set precision 128`. Native `2 ^ 0.5` remains deliberately rejected under
+  `/set precision 128` until evaluator precision context is ported for
+  non-integer power evaluation.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse

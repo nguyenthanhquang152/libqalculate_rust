@@ -1574,30 +1574,46 @@ impl NumberValue {
                         }
                     }
                 }
-                let val = r1.to_f64().powf(r2.to_f64());
-                NumberValue::Float(Float::from_f64(val, 53))
+                let prec = 53;
+                let base = rug::Float::with_val(prec, &r1.value);
+                let exponent = rug::Float::with_val(prec, &r2.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             (NumberValue::Float(f1), NumberValue::Float(f2)) => {
-                NumberValue::Float(Float::from_f64(
-                    f1.value().powf(f2.value()),
-                    std::cmp::max(f1.prec(), f2.prec()),
-                ))
+                let prec = std::cmp::max(f1.prec(), f2.prec());
+                let base = rug::Float::with_val(prec, &f1.value);
+                let exponent = rug::Float::with_val(prec, &f2.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                let val = r.to_f64().powf(f.value());
-                NumberValue::Float(Float::from_f64(val, f.prec()))
+                let prec = f.prec();
+                let base = rug::Float::with_val(prec, &r.value);
+                let exponent = rug::Float::with_val(prec, &f.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                let val = f.value().powf(r.to_f64());
-                NumberValue::Float(Float::from_f64(val, f.prec()))
+                let prec = f.prec();
+                let base = rug::Float::with_val(prec, &f.value);
+                let exponent = rug::Float::with_val(prec, &r.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             _ => {
                 let f1 = to_float_val(self);
                 let f2 = to_float_val(other);
-                NumberValue::Float(Float::from_f64(
-                    f1.value().powf(f2.value()),
-                    std::cmp::max(f1.prec(), f2.prec()),
-                ))
+                let prec = std::cmp::max(f1.prec(), f2.prec());
+                let base = rug::Float::with_val(prec, &f1.value);
+                let exponent = rug::Float::with_val(prec, &f2.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
         }
     }
@@ -1606,13 +1622,19 @@ impl NumberValue {
     pub fn ln(&self) -> Self {
         match self {
             NumberValue::Rational(r) => {
-                let val = r.to_f64().ln();
-                NumberValue::Float(Float::from_f64(val, 53))
+                let value = rug::Float::with_val(53, &r.value).ln();
+                NumberValue::Float(Float { value })
             }
-            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(f.value().ln(), f.prec())),
+            NumberValue::Float(f) => NumberValue::Float(Float {
+                value: f.value.clone().ln(),
+            }),
             NumberValue::Interval { lower, upper } => NumberValue::Interval {
-                lower: Float::from_f64(lower.value().ln(), lower.prec()),
-                upper: Float::from_f64(upper.value().ln(), upper.prec()),
+                lower: Float {
+                    value: lower.value.clone().ln(),
+                },
+                upper: Float {
+                    value: upper.value.clone().ln(),
+                },
             },
             NumberValue::Uncertainty {
                 value,
@@ -1633,7 +1655,9 @@ impl NumberValue {
             }
             _ => {
                 let f = to_float_val(self);
-                NumberValue::Float(Float::from_f64(f.value().ln(), f.prec()))
+                NumberValue::Float(Float {
+                    value: f.value.clone().ln(),
+                })
             }
         }
     }
@@ -3096,8 +3120,14 @@ fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize
             format_qalc_float_bound(&lower.value),
             format_qalc_float_bound(&upper.value)
         ),
+        NumberValue::Float(float) => format_qalc_float(&float.value, precision_digits),
         _ => value.to_string(),
     }
+}
+
+fn format_qalc_float(value: &rug::Float, precision_digits: usize) -> String {
+    let output = value.to_string_radix(10, Some(precision_digits));
+    fixed_decimal_from_scientific(&output).unwrap_or(output)
 }
 
 fn qalc_decimal_precision_bits(precision_digits: usize) -> u32 {

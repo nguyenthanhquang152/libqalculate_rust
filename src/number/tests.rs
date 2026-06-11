@@ -625,6 +625,10 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
         evaluate_expr("1e10").unwrap().to_qalc_string(),
         "10000000000"
     );
+    assert_eq!(
+        evaluate_expr("2 ^ 0.5").unwrap().to_qalc_string(),
+        "1.414213562"
+    );
     assert_eq!(evaluate_expr("1e303").unwrap().to_qalc_string(), "1E303");
     assert_eq!(evaluate_expr("2e303").unwrap().to_qalc_string(), "2E303");
     assert_eq!(evaluate_expr("12e303").unwrap().to_qalc_string(), "1.2E304");
@@ -635,6 +639,109 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
     assert_eq!(
         evaluate_expr("129999999999999").unwrap().to_qalc_string(),
         "1.300000000E14"
+    );
+}
+
+#[test]
+fn float_ln_preserves_operand_precision_without_f64_roundtrip() {
+    let input = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 2),
+    });
+
+    let actual = input.ln();
+    let NumberValue::Float(actual) = actual else {
+        panic!("expected high-precision ln result to remain a float");
+    };
+
+    assert_eq!(actual.prec(), 200);
+    let expected = rug::Float::with_val(200, rug::Float::with_val(200, 2).ln());
+    let diff = rug::Float::with_val(200, &actual.value - expected).abs();
+    let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+    assert!(
+        diff < limit,
+        "ln result lost MPFR precision: diff={diff}, limit={limit}"
+    );
+}
+
+#[test]
+fn float_pow_preserves_operand_precision_without_f64_roundtrip() {
+    let base = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 2),
+    });
+    let exponent = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 0.5),
+    });
+
+    let actual = base.pow(&exponent);
+    let NumberValue::Float(actual) = actual else {
+        panic!("expected high-precision pow result to remain a float");
+    };
+
+    assert_eq!(actual.prec(), 200);
+    let expected = rug::Float::with_val(200, 2).sqrt();
+    let diff = rug::Float::with_val(200, &actual.value - expected).abs();
+    let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+    assert!(
+        diff < limit,
+        "pow result lost MPFR precision: diff={diff}, limit={limit}"
+    );
+}
+
+#[test]
+fn mixed_float_pow_preserves_operand_precision_without_f64_roundtrip() {
+    let high_precision_half = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 0.5),
+    });
+    let rational_two = NumberValue::Rational(Rational::from_i32(2));
+
+    for actual in [
+        rational_two.pow(&high_precision_half),
+        NumberValue::Float(Float {
+            value: rug::Float::with_val(200, 2),
+        })
+        .pow(&NumberValue::Rational(Rational::new(1, 2))),
+    ] {
+        let NumberValue::Float(actual) = actual else {
+            panic!("expected mixed high-precision pow result to remain a float");
+        };
+
+        assert_eq!(actual.prec(), 200);
+        let expected = rug::Float::with_val(200, 2).sqrt();
+        let diff = rug::Float::with_val(200, &actual.value - expected).abs();
+        let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+        assert!(
+            diff < limit,
+            "mixed pow result lost MPFR precision: diff={diff}, limit={limit}"
+        );
+    }
+}
+
+#[test]
+fn interval_ln_preserves_endpoint_precision_without_f64_roundtrip() {
+    let input = NumberValue::Interval {
+        lower: Float {
+            value: rug::Float::with_val(200, 2),
+        },
+        upper: Float {
+            value: rug::Float::with_val(200, 3),
+        },
+    };
+
+    let actual = input.ln();
+    let NumberValue::Interval { lower, upper } = actual else {
+        panic!("expected interval ln to remain an interval");
+    };
+
+    assert_eq!(lower.prec(), 200);
+    assert_eq!(upper.prec(), 200);
+    let lower_expected = rug::Float::with_val(200, rug::Float::with_val(200, 2).ln());
+    let upper_expected = rug::Float::with_val(200, rug::Float::with_val(200, 3).ln());
+    let lower_diff = rug::Float::with_val(200, &lower.value - lower_expected).abs();
+    let upper_diff = rug::Float::with_val(200, &upper.value - upper_expected).abs();
+    let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+    assert!(
+        lower_diff < limit && upper_diff < limit,
+        "interval ln lost MPFR precision: lower_diff={lower_diff}, upper_diff={upper_diff}, limit={limit}"
     );
 }
 

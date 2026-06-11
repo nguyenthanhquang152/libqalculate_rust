@@ -312,7 +312,9 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return Some(output);
     }
 
-    if !settings.is_numeric_scaffold_compatible() {
+    if !settings.is_numeric_scaffold_compatible()
+        || (settings.has_precision() && !is_precision_vetted_native_numeric_expr(expr))
+    {
         return None;
     }
 
@@ -375,6 +377,7 @@ fn is_vetted_native_numeric_expr(expr: &str) -> bool {
             | "5 div 2"
             | "5 ^ 2"
             | "2 ^ -3"
+            | "2 ^ 0.5"
             | "(-2) ^ -3"
             | "(1/2) ^ -3"
             | "5 ** 3"
@@ -403,6 +406,11 @@ fn is_vetted_native_numeric_expr(expr: &str) -> bool {
             | "12+/-0.5 / 3+/-0.2"
             | "10 +/- 0"
     )
+}
+
+fn is_precision_vetted_native_numeric_expr(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    matches!(trimmed, "1/3")
 }
 
 /// Custom error type for `Calculator` evaluations.
