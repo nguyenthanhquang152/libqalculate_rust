@@ -891,6 +891,7 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("complex-inequality-false", "(1 + i) != (1 + i)"),
         ("float-ln-zero-special-value", "ln(0)"),
         ("float-ln-two", "ln(2)"),
+        ("uncertainty-ln-propagation", "ln(5+/-0.3)"),
         ("float-sqrt-two", "sqrt(2)"),
         ("float-sqrt-exact-square", "sqrt(4)"),
         ("float-positive-infinity-literal", "infinity"),
