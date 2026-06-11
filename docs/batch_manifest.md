@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **54** |
-| Inventory-only test cases | **602** |
+| Native-pass test cases | **55** |
+| Inventory-only test cases | **601** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -175,7 +175,7 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 |---|---------|------------|----------|----------|--------|
 | 1 | `explog.batch:1` | `lambertw(5i + 2+/-0.002, -1)` | `0.389008±0.000043 - 3.62889±0.00035i` | — | inventory-only |
 | 2 | `explog.batch:4` | `(2+/-3)^3.2` | `9.18958684±44.11001683` | — | native-pass |
-| 3 | `explog.batch:7` | `(2i - 3)^(3.2i + 3)` | `0.009212545193 - 0.009517560625i` | — | inventory-only |
+| 3 | `explog.batch:7` | `(2i - 3)^(3.2i + 3)` | `0.009212545193 - 0.009517560625i` | — | native-pass |
 | 4 | `explog.batch:10` | `ln((5+/-0.003)i - 0+/-0.2)` | `1.60944±0.00060 + 1.571±0.040i` | — | inventory-only |
 | 5 | `explog.batch:13` | `Ei(3+/-0.3)` | `9.9±2.0` | — | inventory-only |
 | 6 | `explog.batch:18` | `(2+/-3)^3.2` | `86±87 - 0.29±0.30i` | /set ic 2 | inventory-only |

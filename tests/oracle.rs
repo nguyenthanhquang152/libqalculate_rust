@@ -871,6 +871,8 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("complex-division", "(1 + 2i) / (3 + 4i)"),
         ("complex-conjugate", "conj(3 + 4i)"),
         ("complex-norm", "norm(3 + 4i)"),
+        ("complex-power-unit", "i^2"),
+        ("complex-power-explog", "(2i - 3)^(3.2i + 3)"),
         ("nonterminating-rational-qalc-format", "1/3"),
         ("fixed-power-of-ten-qalc-format", "1e10"),
         ("original-scaffold-addition", "1 + 1"),

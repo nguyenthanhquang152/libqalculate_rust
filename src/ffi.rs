@@ -443,6 +443,8 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("(1 + 2i) / (3 + 4i)", NativeNumericEvidence::DefaultOnly),
     ("conj(3 + 4i)", NativeNumericEvidence::DefaultOnly),
     ("norm(3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("i^2", NativeNumericEvidence::DefaultOnly),
+    ("(2i - 3)^(3.2i + 3)", NativeNumericEvidence::DefaultOnly),
     ("2+/-0.002", NativeNumericEvidence::DefaultOnly),
     ("100+/-5%", NativeNumericEvidence::DefaultOnly),
     ("100+/-5 + 200+/-10%", NativeNumericEvidence::DefaultOnly),
