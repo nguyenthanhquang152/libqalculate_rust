@@ -2210,23 +2210,26 @@ fn exact_unit_imaginary_integer_power(base: &Number, exponent_mod_4: u32) -> Opt
         return None;
     };
 
-    match (unit_power_mod_4 * exponent_mod_4) % 4 {
-        0 => Some(Number::from_i32(1)),
-        1 => Some(Number::from_real_imag_values(
+    let mut result = match (unit_power_mod_4 * exponent_mod_4) % 4 {
+        0 => Number::from_i32(1),
+        1 => Number::from_real_imag_values(
             NumberValue::Rational(Rational::from_i32(0)),
             NumberValue::Rational(Rational::from_i32(1)),
             0,
             false,
-        )),
-        2 => Some(Number::from_i32(-1)),
-        3 => Some(Number::from_real_imag_values(
+        ),
+        2 => Number::from_i32(-1),
+        3 => Number::from_real_imag_values(
             NumberValue::Rational(Rational::from_i32(0)),
             NumberValue::Rational(Rational::from_i32(-1)),
             0,
             false,
-        )),
+        ),
         _ => unreachable!("modulo-four cycle returns only 0..=3"),
-    }
+    };
+    result.precision = result.precision.max(base.precision);
+    result.approximate |= base.approximate;
+    Some(result)
 }
 
 fn exact_complex_integer_pow_is_bounded(base: &Number, exponent_magnitude: u32) -> bool {
@@ -2258,6 +2261,8 @@ fn exact_complex_integer_power(base: &Number, exponent: i32) -> Option<Number> {
     }
 
     let mut result = Number::from_i32(1);
+    result.precision = result.precision.max(base.precision);
+    result.approximate |= base.approximate;
     let mut factor = base.clone();
     let mut remaining = magnitude;
     while remaining != 0 {
@@ -2265,7 +2270,9 @@ fn exact_complex_integer_power(base: &Number, exponent: i32) -> Option<Number> {
             result = result.mul(&factor);
         }
         remaining >>= 1;
-        factor = factor.mul(&factor);
+        if remaining != 0 {
+            factor = factor.mul(&factor);
+        }
     }
 
     if exponent.is_negative() {
@@ -3214,7 +3221,8 @@ impl Number {
         } else {
             if d.is_real_zero() {
                 let precision = self.precision.max(a.precision()).max(b.precision());
-                let approximate = self.approximate || a.approximate() || b.approximate();
+                let approximate =
+                    self.approximate || other.approximate || a.approximate() || b.approximate();
                 let base =
                     Number::from_real_imag_values(a.clone(), b.clone(), precision, approximate);
                 if let Some(exponent_mod_4) = exact_integer_exponent_mod_4(&c) {

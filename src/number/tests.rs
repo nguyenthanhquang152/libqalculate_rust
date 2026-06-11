@@ -1059,6 +1059,17 @@ fn complex_power_helpers_keep_exact_integer_boundaries() {
     );
     assert!(exact_unit_imaginary_integer_power(&approximate_i, 1).is_none());
 
+    let approximate_exact_i = Number::from_real_imag_values(zero.clone(), one.clone(), 53, true);
+    let approximate_i_squared = approximate_exact_i.pow(&Number::from_i32(2));
+    assert_eq!(approximate_i_squared.to_qalc_string(), "-1");
+    assert!(approximate_i_squared.approximate());
+    assert!(exact_unit_imaginary_integer_power(&approximate_exact_i, 2)
+        .unwrap()
+        .approximate());
+    assert!(exact_complex_integer_power(&approximate_exact_i, 0)
+        .unwrap()
+        .approximate());
+
     assert_eq!(
         exact_complex_integer_power(&Number::from_i32(0), 0)
             .unwrap()
