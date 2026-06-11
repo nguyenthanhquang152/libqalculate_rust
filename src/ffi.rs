@@ -344,6 +344,12 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     if settings.has_interval_display() && !evidence.requires_interval_display() {
         return None;
     }
+    if evidence.requires_concise_uncertainty() && !settings.has_concise_uncertainty() {
+        return None;
+    }
+    if settings.has_concise_uncertainty() && !evidence.requires_concise_uncertainty() {
+        return None;
+    }
 
     let evaluated = if settings.has_precision() {
         crate::number::evaluate_expr_with_precision_digits(expr, settings.precision_digits())
@@ -383,6 +389,7 @@ enum NativeNumericEvidence {
     IntervalDisplay,
     IntervalArithmetic,
     PreciseFloatUncertainty,
+    ConciseUncertainty,
 }
 
 impl NativeNumericEvidence {
@@ -404,6 +411,10 @@ impl NativeNumericEvidence {
 
     const fn preserves_float_uncertainty_precision(self) -> bool {
         matches!(self, Self::PreciseFloatUncertainty)
+    }
+
+    const fn requires_concise_uncertainty(self) -> bool {
+        matches!(self, Self::ConciseUncertainty)
     }
 }
 
@@ -512,6 +523,8 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("i^2", NativeNumericEvidence::DefaultOnly),
     ("(2i - 3)^(3.2i + 3)", NativeNumericEvidence::DefaultOnly),
     ("2+/-0.002", NativeNumericEvidence::DefaultOnly),
+    ("2±0.002", NativeNumericEvidence::DefaultOnly),
+    ("2±0.002 + 3", NativeNumericEvidence::DefaultOnly),
     ("100+/-5%", NativeNumericEvidence::DefaultOnly),
     ("100+/-5 + 200+/-10%", NativeNumericEvidence::DefaultOnly),
     ("100+/-5% + 200+/-10%", NativeNumericEvidence::DefaultOnly),
@@ -524,6 +537,12 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
         NativeNumericEvidence::PreciseFloatUncertainty,
     ),
     ("10 +/- 0", NativeNumericEvidence::DefaultOnly),
+    ("1.23(4)", NativeNumericEvidence::ConciseUncertainty),
+    ("123(4)", NativeNumericEvidence::ConciseUncertainty),
+    (
+        "1.23(4) + 2.0(3)",
+        NativeNumericEvidence::ConciseUncertainty,
+    ),
 ];
 
 fn native_numeric_evidence(expr: &str) -> Option<NativeNumericEvidence> {

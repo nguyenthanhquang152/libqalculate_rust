@@ -12,6 +12,7 @@ pub(crate) struct NativeSessionSettings {
     precision_digits: Option<usize>,
     interval_display: Option<u8>,
     interval_calculation: Option<u8>,
+    concise_uncertainty: bool,
 }
 
 impl NativeSessionSettings {
@@ -24,6 +25,7 @@ impl NativeSessionSettings {
                 "unicode 1" => state.unicode = true,
                 "interval display 2" => state.interval_display = Some(2),
                 "ic 2" => state.interval_calculation = Some(2),
+                "concise uncertainty 1" => state.concise_uncertainty = true,
                 normalized => {
                     let precision = normalized.strip_prefix("precision ")?;
                     state.precision_digits = Some(parse_precision_digits(precision)?);
@@ -54,6 +56,7 @@ impl NativeSessionSettings {
             && self.precision_digits.is_none()
             && self.interval_display.is_none()
             && self.interval_calculation.is_none()
+            && !self.concise_uncertainty
     }
 
     /// Returns true when settings can be applied to the vetted numeric
@@ -72,6 +75,10 @@ impl NativeSessionSettings {
 
     pub(crate) const fn has_interval_calculation(self) -> bool {
         self.interval_calculation.is_some()
+    }
+
+    pub(crate) const fn has_concise_uncertainty(self) -> bool {
+        self.concise_uncertainty
     }
 }
 
@@ -104,7 +111,8 @@ mod tests {
                 "/set unicode 1",
                 "/set precision 128",
                 "/set interval display 2",
-                "/set ic 2"
+                "/set ic 2",
+                "/set concise uncertainty 1"
             ]),
             Some(NativeSessionSettings {
                 input_base: Some(10),
@@ -112,6 +120,7 @@ mod tests {
                 precision_digits: Some(128),
                 interval_display: Some(2),
                 interval_calculation: Some(2),
+                concise_uncertainty: true,
             })
         );
     }
@@ -125,6 +134,10 @@ mod tests {
             None
         );
         assert_eq!(NativeSessionSettings::from_raw(&["ic 1"]), None);
+        assert_eq!(
+            NativeSessionSettings::from_raw(&["concise uncertainty 0"]),
+            None
+        );
         assert_eq!(
             NativeSessionSettings::from_raw(&["angle unit radians"]),
             None

@@ -298,7 +298,7 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 | 5 | `--parse-batch` | — | Parses batch file structure | `tooling-pass` | Native batch parser tooling; no expression evaluation |
 | 6 | Expression evaluation | Evaluates via Calculator | Evaluates via FFI bridge or fallback-disabled native scaffold for an oracle-proven numeric subset | `fallback-only` | Default path delegates to C++ `Calculator::calculateAndPrint()` through `calculate_and_print_qalc()` for qalc-style output; `QALCULATE_DISABLE_FALLBACK=1` attempts `number::evaluate_expr()` only for expressions explicitly covered by native oracle evidence and reports `fallback=native` only for successful non-NaN native results |
 | 7 | `-defaults` | Reset to default settings | — | `unstarted` | |
-| 8 | `-set <option> <value>` | Set calculator option | Limited fallback-disabled native-evidence settings for promoted `numberbase.batch` rows | `scaffold` | Generic qalc setting support remains unstarted; fallback-enabled settings are rejected rather than silently ignored |
+| 8 | `-set <option> <value>` | Set calculator option | Limited fallback-disabled native-evidence settings for promoted rows and focused probes | `scaffold` | Current native settings are whitelisted for input base/Unicode numberbase evidence, precision evidence, interval-display evidence, and Refs #15 concise uncertainty probes; generic qalc setting support remains unstarted, and fallback-enabled settings are rejected rather than silently ignored |
 | 9 | `--test-file <path>` | Run batch test file | — | `unstarted` | `qalc-rs` has `--parse-batch` but no evaluation |
 | 10 | Interactive REPL | Line-editing REPL | — | `unstarted` | |
 
