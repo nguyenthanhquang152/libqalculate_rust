@@ -275,6 +275,22 @@ fn cli_rejects_interval_display_setting_for_numberbase_evidence() {
 }
 
 #[test]
+fn cli_runs_native_uncertainty_power() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.arg("(2+/-3)^3.2")
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("9.18958684±44.11001683\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
 fn cli_runs_native_complex_subtraction_conjugate_and_norm() {
     for (expression, expected) in [
         ("(1 + 2i) - (3 + 4i)", "−2 − 2i\n"),

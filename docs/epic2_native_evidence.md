@@ -17,7 +17,7 @@ claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 53 rows as `native-pass`.
+`docs/batch_manifest.md` now marks 54 rows as `native-pass`.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.
@@ -25,14 +25,18 @@ claim full `Number.cc` parity.
   48, 51, 53, 55, 58, 60, 62.
 - `numberbase.batch`: lines 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23,
   25, 28, 32.
+- `explog.batch`: line 4.
 
-The oracle runner disables C++ fallback for these rows and verifies
-`fallback=native`.
+The focused and differential oracle commands listed below disable C++ fallback
+for the covered promoted rows and verify `fallback=native`. The promoted
+`explog.batch:4` row is covered by focused native oracle/e2e/lib evidence, not
+by a full `explog.batch` differential run; the other `explog.batch` rows remain
+inventory-only.
 
 `1 + 1` is also kept as focused native scaffold evidence because
 `ORIGINAL_REQUEST.md` explicitly names it as a fallback-disabled scaffold
 expression. It is not an upstream batch-manifest promotion and is not counted in
-the 53 `native-pass` batch rows above.
+the 54 `native-pass` batch rows above.
 
 ## Focused Native Oracle Cases
 
@@ -62,6 +66,7 @@ focused expressions with fallback disabled:
 - `20+/-3 + 10+/-4`
 - `3+/-0.2 * 4+/-0.1`
 - `12+/-0.5 / 3+/-0.2`
+- `(2+/-3)^3.2`
 - `10 +/- 0`
 
 ## Native Representation Invariants
@@ -124,6 +129,12 @@ focused expressions with fallback disabled:
   multiplication, division, `conj(3 + 4i)`, and `norm(3 + 4i)`. These cases are
   compared against upstream qalc with exact UTF-8 output, including Unicode
   minus signs in qalc-profile CLI output.
+- Fallback-disabled native uncertainty evidence covers the first no-session
+  `explog.batch` uncertainty power row: `(2+/-3)^3.2` now evaluates natively
+  and prints `9.18958684±44.11001683` against upstream qalc. The qalc-profile
+  formatter keeps the existing significant-uncertainty output for ordinary
+  uncertainty arithmetic, while preserving MPFR fractional digits only for this
+  promoted float-valued uncertainty power case.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -167,7 +178,14 @@ rtk cargo test --lib rational_modulo_and_remainder_match_qalc_operators -- --noc
 rtk cargo test --lib rational_integer_division_matches_qalc_operators -- --nocapture
 rtk cargo test --lib complex_conjugate_and_norm_parse_natively -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_subtraction_conjugate_and_norm -- --nocapture
+rtk cargo test --lib uncertainty_power_matches_focused_qalc_display -- --nocapture
+rtk cargo test --lib ordinary_uncertainty_power_keeps_significant_uncertainty_display -- --nocapture
+rtk cargo test --lib qalc_profile_precise_uncertainty_is_explicit_evidence_mode -- --nocapture
+rtk cargo test --lib fixed_decimal_precision_helpers_distinguish_significant_fraction_digits -- --nocapture
+rtk cargo test --lib fallback_disabled_runs_native_scaffold_cases -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_uncertainty_power -- --nocapture
 rtk cargo test --test oracle focused_epic2_native_numeric_oracle_cases -- --nocapture
+cargo mutants --timeout 180 --jobs 2 --file src/number.rs --file src/ffi.rs -F 'to_qalc_string_preserving_float_uncertainty_precision|format_qalc_value_with_uncertainty_format|format_qalc_uncertainty|fixed_decimal_has_fractional_precision|trim_fixed_decimal_trailing_zeros|mantissa_and_exponent|native_numeric_evidence' -- --lib
 rtk cargo test --test oracle differential_oracle_numberbase_batch -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_no_session_oracle_cases -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_session_oracle_cases -- --nocapture
@@ -197,6 +215,11 @@ rtk timeout 240 just test-oracle
 rtk timeout 600 just coverage
 ```
 
+Mutation evidence for this slice:
+
+- Scoped formatter/native-gate run after Codex and internal review fixes:
+  23 mutants tested, 22 caught, 1 unviable.
+
 ## Remaining Gaps
 
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
@@ -208,8 +231,9 @@ rtk timeout 600 just coverage
   interval oracle rows remain incomplete. Qalc bracket expressions are not used
   as interval evidence because upstream default qalc treats them with vector-like
   semantics in several operations.
-- Uncertainty function examples from `explog.batch`, ASCII/Unicode print-option
-  toggles, and session-setting-dependent behavior remain incomplete.
+- Remaining uncertainty function examples from `explog.batch`, complex interval
+  calculation mode, ASCII/Unicode print-option toggles, and
+  session-setting-dependent behavior remain incomplete.
 - Division-by-zero-style power output such as `0 ^ -1 -> 1 / 0` remains outside
   the fallback-disabled native subset.
 - `Calculator` expression evaluation remains fallback-first outside the vetted

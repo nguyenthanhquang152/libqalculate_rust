@@ -91,6 +91,92 @@ fn interval_function_parser_normalizes_reversed_bounds_for_qalc_display() {
 }
 
 #[test]
+fn uncertainty_power_matches_focused_qalc_display() {
+    let value = evaluate_expr("(2+/-3)^3.2").expect("uncertainty power should parse");
+    assert_eq!(
+        value.to_qalc_string_preserving_float_uncertainty_precision(10),
+        "9.18958684±44.11001683"
+    );
+}
+
+#[test]
+fn ordinary_uncertainty_power_keeps_significant_uncertainty_display() {
+    let value = evaluate_expr("(4+/-1)^3.2").expect("uncertainty power should parse");
+    assert_eq!(value.to_qalc_string(), "84±68");
+}
+
+#[test]
+fn qalc_profile_precise_uncertainty_is_explicit_evidence_mode() {
+    let fractional_value = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Float(Float::from_f64(9.18958684, 128))),
+        uncertainty: Box::new(NumberValue::Float(Float::from_f64(44.0, 128))),
+        is_relative: false,
+    };
+    let fractional_uncertainty = NumberValue::Uncertainty {
+        value: Box::new(NumberValue::Float(Float::from_f64(9.0, 128))),
+        uncertainty: Box::new(NumberValue::Float(Float::from_f64(44.11001683, 128))),
+        is_relative: false,
+    };
+
+    assert_eq!(
+        format_qalc_value_with_uncertainty_format(
+            &fractional_value,
+            10,
+            QalcUncertaintyFormat::PreserveFloatPrecision
+        ),
+        "9.18958684±44"
+    );
+    assert_eq!(
+        format_qalc_value_with_uncertainty_format(
+            &fractional_uncertainty,
+            10,
+            QalcUncertaintyFormat::PreserveFloatPrecision
+        ),
+        "9±44.11001683"
+    );
+    assert_eq!(
+        format_qalc_value_with_uncertainty_format(
+            &fractional_value,
+            10,
+            QalcUncertaintyFormat::Significant
+        ),
+        "9±44"
+    );
+    assert_eq!(
+        format_qalc_value_with_uncertainty_format(
+            &fractional_uncertainty,
+            10,
+            QalcUncertaintyFormat::Significant
+        ),
+        "9±44"
+    );
+}
+
+#[test]
+fn fixed_decimal_precision_helpers_distinguish_significant_fraction_digits() {
+    assert!(fixed_decimal_has_fractional_precision("1.23456789"));
+    assert!(!fixed_decimal_has_fractional_precision("2.000000000"));
+    assert!(!fixed_decimal_has_fractional_precision("1E303"));
+    assert!(fixed_decimal_has_fractional_precision("1.200000000e20"));
+    assert_eq!(
+        trim_fixed_decimal_trailing_zeros("9.189586840".to_string()),
+        "9.18958684"
+    );
+    assert_eq!(
+        trim_fixed_decimal_trailing_zeros("44.000000000".to_string()),
+        "44"
+    );
+    assert_eq!(
+        trim_fixed_decimal_trailing_zeros("1E303".to_string()),
+        "1E303"
+    );
+    assert_eq!(
+        trim_fixed_decimal_trailing_zeros("1.200000000e20".to_string()),
+        "1.2e20"
+    );
+}
+
+#[test]
 fn test_complex() {
     let real = Number::from_i32(3);
     let imag = Number::from_i32(4);

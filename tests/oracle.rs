@@ -892,6 +892,7 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("uncertainty-addition", "20+/-3 + 10+/-4"),
         ("uncertainty-multiplication", "3+/-0.2 * 4+/-0.1"),
         ("uncertainty-division", "12+/-0.5 / 3+/-0.2"),
+        ("uncertainty-power-explog", "(2+/-3)^3.2"),
         ("zero-uncertainty-as-exact", "10 +/- 0"),
     ];
 
