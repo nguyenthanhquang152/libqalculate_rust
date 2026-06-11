@@ -356,18 +356,24 @@ fn cli_rejects_native_real_float_arithmetic_without_precision_setting() {
 
 #[test]
 fn cli_applies_interval_display_setting_for_native_interval_function() {
-    let invalid_defs = tempdir().expect("temp dir should be created");
-    let mut cmd = qalc_rs();
-    cmd.args(["-set", "interval display 2", "--", "interval(5;2)"])
-        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
-        .env("QALCULATE_DISABLE_FALLBACK", "1")
-        .env("QALCULATE_REPORT_FALLBACK", "1")
-        .assert()
-        .success()
-        .stdout("interval(2.000000000, 5.000000000)\n")
-        .stderr(predicate::str::contains(
-            "[qalc-rs-metadata] fallback=native",
-        ));
+    for (expression, expected) in [
+        ("interval(5;2)", "interval(2.000000000, 5.000000000)\n"),
+        ("interval(1;3;0)", "interval(1.000000000, 3.000000000)\n"),
+        ("interval(1;3;1)", "interval(1.000000000, 3.000000000)\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", "interval display 2", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
 }
 
 #[test]
@@ -447,6 +453,9 @@ fn cli_runs_native_interval_endpoint_functions() {
         ("lowerEndpoint(interval(1;3))", "1.000000000\n"),
         ("upperEndpoint(interval(1;3))", "3.000000000\n"),
         ("midpoint(interval(1;3))", "2\n"),
+        ("lowerEndpoint(interval(1;3;1))", "1.000000000\n"),
+        ("upperEndpoint(interval(1;3;1))", "3.000000000\n"),
+        ("midpoint(interval(1;3;1))", "2\n"),
         (
             "lowerEndpoint(interval(-infinity;-4))",
             "\u{2212}\u{221e}\n",

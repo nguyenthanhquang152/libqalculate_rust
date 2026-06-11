@@ -554,6 +554,8 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ),
     ("2.5e3 / 4", NativeNumericEvidence::PrecisionRequired),
     ("interval(5;2)", NativeNumericEvidence::IntervalDisplay),
+    ("interval(1;3;0)", NativeNumericEvidence::IntervalDisplay),
+    ("interval(1;3;1)", NativeNumericEvidence::IntervalDisplay),
     (
         "interval(-infinity;5)",
         NativeNumericEvidence::IntervalDisplay,
@@ -577,6 +579,18 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ),
     (
         "midpoint(interval(1;3))",
+        NativeNumericEvidence::IntervalScalar,
+    ),
+    (
+        "lowerEndpoint(interval(1;3;1))",
+        NativeNumericEvidence::IntervalScalar,
+    ),
+    (
+        "upperEndpoint(interval(1;3;1))",
+        NativeNumericEvidence::IntervalScalar,
+    ),
+    (
+        "midpoint(interval(1;3;1))",
         NativeNumericEvidence::IntervalScalar,
     ),
     (

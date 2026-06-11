@@ -318,7 +318,12 @@ Refs #12 precision-context rows:
   −interval(1.000000000, 3.000000000)` under `/set interval display 2`, and
   the same constructor/display rows remain native when `/set ic 2` is also
   active. The negative-only interval display mirrors upstream's sign-outside
-  formatting policy for interval-display mode.
+  formatting policy for interval-display mode. Refs #14 optional-bound evidence
+  now covers the finite integer rows `interval(1;3;0)` and `interval(1;3;1)`,
+  which both match upstream `interval(1.000000000, 3.000000000)` under interval
+  display mode. Decimal optional-bound rows such as `interval(1.1;3.3;1)`
+  remain rejected natively because upstream moves those endpoints according to
+  precision/outward-rounding rules that this slice does not model.
 - Finite closed interval arithmetic now has a fallback-disabled native evidence
   path only when both `/set interval display 2` and `/set ic 2` are active. The
   promoted endpoint-mode cases are `interval(1;2) + interval(3;4)`,
@@ -356,6 +361,9 @@ Refs #12 precision-context rows:
   `lowerEndpoint(interval(1;3)) -> 1.000000000`,
   `upperEndpoint(interval(1;3)) -> 3.000000000`,
   `midpoint(interval(1;3)) -> 2`,
+  `lowerEndpoint(interval(1;3;1)) -> 1.000000000`,
+  `upperEndpoint(interval(1;3;1)) -> 3.000000000`,
+  `midpoint(interval(1;3;1)) -> 2`,
   `lowerEndpoint(interval(-infinity;-4)) -> −∞`, and
   `upperEndpoint(interval(4;infinity)) -> +∞` under the same interval-display
   evidence gate.
@@ -472,10 +480,14 @@ rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_behavior interval_function_is_numeric_primary_in_native_expression -- --nocapture
+rtk cargo test --test number_behavior interval_function_accepts_optional_excluded_endpoint_flag_for_integer_bounds -- --exact --nocapture
+rtk cargo test --test number_behavior interval_function_rejects_optional_excluded_endpoint_flag_for_decimal_bounds -- --exact --nocapture
+rtk cargo test --test number_behavior interval_function_rejects_unprobed_optional_excluded_endpoint_integer_bounds -- --exact --nocapture
 rtk cargo test --test number_behavior interval_ -- --nocapture
 rtk cargo test --test number_properties interval_constructor_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_properties interval_constructor -- --nocapture
 rtk cargo test --lib parses_supported_settings -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_interval_display_setting_for_native_interval_function -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_applies_interval_display_setting_for_native_infinity_interval_function -- --nocapture
 rtk cargo test --test e2e_cli cli_allows_ic2_for_native_infinity_interval_display_function -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode -- --nocapture
@@ -485,7 +497,7 @@ rtk cargo test --test e2e_cli cli_rejects_infinity_interval_arithmetic_without_i
 rtk cargo test --test e2e_cli cli_rejects_interval_arithmetic_without_ic2_endpoint_mode -- --nocapture
 rtk cargo test --test e2e_cli cli_rejects_symbolic_interval_division_and_intersection_rows -- --exact --nocapture
 rtk cargo test --test e2e_cli interval_arithmetic -- --nocapture
-rtk cargo test --test oracle focused_epic2_interval_display_oracle_cases -- --nocapture
+rtk cargo test --test oracle focused_epic2_interval_display_oracle_cases -- --exact --nocapture
 rtk cargo test --test oracle focused_epic2_interval_endpoint_oracle_cases -- --exact --nocapture
 rtk cargo test --test oracle focused_epic2_interval_intersection_oracle_cases -- --exact --nocapture
 rtk cargo test --test oracle focused_epic2_interval_arithmetic_oracle_cases -- --nocapture

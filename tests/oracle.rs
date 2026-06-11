@@ -1265,10 +1265,20 @@ fn focused_epic2_interval_display_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 9] = [
+    let cases: [NativeOracleCase<'_>; 11] = [
         (
             "interval-function-normalizes-reversed-bounds",
             "interval(5;2)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-closed-endpoint-flag",
+            "interval(1;3;0)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-excluded-endpoint-flag-integer-bounds",
+            "interval(1;3;1)",
             &["/set interval display 2"],
         ),
         (
@@ -1327,7 +1337,7 @@ fn focused_epic2_interval_endpoint_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 5] = [
+    let cases: [NativeOracleCase<'_>; 8] = [
         (
             "interval-lower-endpoint-finite",
             "lowerEndpoint(interval(1;3))",
@@ -1341,6 +1351,21 @@ fn focused_epic2_interval_endpoint_oracle_cases() {
         (
             "interval-midpoint-finite",
             "midpoint(interval(1;3))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-lower-endpoint-finite-excluded-flag",
+            "lowerEndpoint(interval(1;3;1))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-upper-endpoint-finite-excluded-flag",
+            "upperEndpoint(interval(1;3;1))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-midpoint-finite-excluded-flag",
+            "midpoint(interval(1;3;1))",
             &["/set interval display 2", "/set ic 2"],
         ),
         (
