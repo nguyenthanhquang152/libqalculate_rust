@@ -929,11 +929,18 @@ fn focused_epic2_float_precision_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [(&str, &str, &[&str]); 1] = [(
-        "rational-output-precision-context",
-        "1/3",
-        &["/set precision 128"],
-    )];
+    let cases: [(&str, &str, &[&str]); 2] = [
+        (
+            "rational-output-precision-context",
+            "1/3",
+            &["/set precision 128"],
+        ),
+        (
+            "float-power-precision-context",
+            "2 ^ 0.5",
+            &["/set precision 128"],
+        ),
+    ];
 
     for (case_id, expression, raw_settings) in cases {
         let settings = raw_settings
@@ -965,46 +972,6 @@ fn focused_epic2_float_precision_oracle_cases() {
             "{case_id} did not run natively"
         );
     }
-}
-
-#[test]
-fn focused_epic2_float_precision_rejects_unvetted_cases() {
-    let Some(qalc) = oracle_binary() else {
-        eprintln!(
-            "skipping focused_epic2_float_precision_rejects_unvetted_cases; \
-             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
-        );
-        return;
-    };
-
-    let defs = defs_dir();
-    let settings = [SessionCommand {
-        raw: "/set precision 128".to_string(),
-    }];
-    let cpp_out = run_oracle_expression(&qalc, &defs, "2 ^ 0.5", &settings);
-    let rust_out = run_rust_expression("2 ^ 0.5", &settings, &defs, true, true);
-    let fallback_state = oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
-
-    assert!(
-        cpp_out
-            .stdout
-            .starts_with("1.414213562373095048801688724209698078"),
-        "upstream precision probe unexpectedly changed: {:?}",
-        cpp_out.stdout
-    );
-    assert_eq!(
-        rust_out.stdout, "",
-        "unvetted precision float power should not emit stale native stdout"
-    );
-    assert_ne!(
-        rust_out.exit_code, 0,
-        "unvetted precision float power should be rejected"
-    );
-    assert_eq!(
-        fallback_state,
-        FallbackState::Disabled.label(),
-        "unvetted precision float power should not claim native evidence"
-    );
 }
 
 /// Differential oracle test for ALL 17 upstream batch files.

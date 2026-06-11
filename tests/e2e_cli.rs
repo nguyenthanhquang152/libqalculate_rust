@@ -180,7 +180,7 @@ fn cli_applies_precision_setting_for_native_rational_output() {
 }
 
 #[test]
-fn cli_rejects_precision_setting_for_unvetted_float_power() {
+fn cli_applies_precision_setting_for_native_float_power() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
     cmd.args(["-set", "precision 128", "--", "2 ^ 0.5"])
@@ -188,9 +188,12 @@ fn cli_rejects_precision_setting_for_unvetted_float_power() {
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .env("QALCULATE_REPORT_FALLBACK", "1")
         .assert()
-        .failure()
+        .success()
+        .stdout(
+            "1.4142135623730950488016887242096980785696718753769480731766797379907324784621070388503875343276415727350138462309122970249248361\n",
+        )
         .stderr(predicate::str::contains(
-            "[qalc-rs-metadata] fallback=disabled",
+            "[qalc-rs-metadata] fallback=native",
         ));
 }
 

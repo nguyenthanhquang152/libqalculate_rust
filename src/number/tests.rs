@@ -643,6 +643,21 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
 }
 
 #[test]
+fn precision_context_applies_to_noninteger_rational_power() {
+    let value = evaluate_expr_with_precision_digits("2 ^ 0.5", 128)
+        .expect("precision-context power should evaluate natively");
+
+    assert_eq!(
+        value.to_qalc_string_with_precision(128),
+        "1.4142135623730950488016887242096980785696718753769480731766797379907324784621070388503875343276415727350138462309122970249248361"
+    );
+    assert!(
+        value.precision() >= 128,
+        "precision-context evaluation should not stay at default 53-bit precision"
+    );
+}
+
+#[test]
 fn float_ln_preserves_operand_precision_without_f64_roundtrip() {
     let input = NumberValue::Float(Float {
         value: rug::Float::with_val(200, 2),
