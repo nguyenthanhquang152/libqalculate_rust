@@ -18,7 +18,10 @@ fn cli_prints_help() {
     cmd.arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("--parse-batch <path>"));
+        .stdout(predicate::str::contains("--parse-batch <path>"))
+        .stdout(predicate::str::contains(
+            "Limited native-evidence qalc setting support",
+        ));
 }
 
 #[test]
@@ -130,15 +133,64 @@ fn cli_reports_definition_load_failure_for_expressions() {
 fn cli_native_scaffold_does_not_require_definitions_when_fallback_disabled() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
-    cmd.arg("1 + 1")
+    cmd.arg("1 + 2")
         .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .env("QALCULATE_REPORT_FALLBACK", "1")
         .assert()
         .success()
-        .stdout("2\n")
+        .stdout("3\n")
         .stderr(predicate::str::contains(
             "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_applies_limited_set_for_native_numberbase_evidence() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "input base 16", "--", "5p10+AEp-2*p23"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("364909568\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_applies_precision_setting_for_native_rational_output() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "precision 128", "--", "1/3"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout(
+            "0.33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333\n",
+        )
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_rejects_precision_setting_for_unvetted_float_power() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "precision 128", "--", "2 ^ 0.5"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
         ));
 }
 

@@ -67,10 +67,11 @@ exists, `scripts/oracle.sh` uses it. Otherwise set:
 QALCULATE_ORACLE=/path/to/qalc just test-oracle
 ```
 
-Current oracle tests include a strict `parser.batch` comparison through the `qalc-rs`
-C++ fallback bridge. This proves the harness and CLI fallback path, not native Rust parity.
-Do not report native Rust parity unless the test executed Rust and C++ for the same case
-with C++ fallback disabled.
+Current oracle tests include strict `parser.batch` and exact-operator comparisons through
+`qalc-rs`. Rows marked `native-pass` in `docs/batch_manifest.md` run the Rust side with
+`QALCULATE_DISABLE_FALLBACK=1` and must report `fallback=native`; inventory-only rows still
+prove only the harness and CLI fallback path. Do not report native Rust parity unless the
+test executed Rust and C++ for the same case with C++ fallback disabled.
 
 Final parity CI must fail when upstream `qalc` is unavailable. Local inventory jobs may skip
 with an explicit message, but skipped oracle execution means the feature remains unproven.

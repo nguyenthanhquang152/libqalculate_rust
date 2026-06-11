@@ -1,176 +1,54 @@
-use libqalculate_rust::number::{Rational, U256};
+use libqalculate_rust::number::Rational;
 use proptest::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct I256 {
-    neg: bool,
-    abs: U256,
+fn oracle_add(r1: &Rational, r2: &Rational) -> Rational {
+    let lhs = rug_rational(r1);
+    let rhs = rug_rational(r2);
+    rational_from_rug(rug::Rational::from(&lhs + &rhs))
 }
 
-impl I256 {
-    fn add(self, other: Self) -> Self {
-        if self.neg == other.neg {
-            Self {
-                neg: self.neg,
-                abs: self.abs.add(other.abs),
-            }
-        } else if self.abs >= other.abs {
-            Self {
-                neg: self.neg,
-                abs: self.abs.sub(other.abs),
-            }
-        } else {
-            Self {
-                neg: other.neg,
-                abs: other.abs.sub(self.abs),
-            }
-        }
-    }
-
-    fn sub(self, other: Self) -> Self {
-        let neg_other = Self {
-            neg: !other.neg,
-            abs: other.abs,
-        };
-        self.add(neg_other)
-    }
+fn oracle_sub(r1: &Rational, r2: &Rational) -> Rational {
+    let lhs = rug_rational(r1);
+    let rhs = rug_rational(r2);
+    rational_from_rug(rug::Rational::from(&lhs - &rhs))
 }
 
-fn gcd_u256(mut a: U256, mut b: U256) -> U256 {
-    while !b.is_zero() {
-        let r = a.div_rem(b).1;
-        a = b;
-        b = r;
-    }
-    a
+fn oracle_mul(r1: &Rational, r2: &Rational) -> Rational {
+    let lhs = rug_rational(r1);
+    let rhs = rug_rational(r2);
+    rational_from_rug(rug::Rational::from(&lhs * &rhs))
 }
 
-fn u128_gcd(mut a: u128, mut b: u128) -> u128 {
-    while b != 0 {
-        let temp = b;
-        b = a % b;
-        a = temp;
-    }
-    a
-}
-
-fn oracle_add(r1: &Rational, r2: &Rational) -> Option<Rational> {
-    let a = r1.num();
-    let b = r1.den() as u128;
-    let c = r2.num();
-    let d = r2.den() as u128;
-
-    let g = u128_gcd(b, d);
-    let b_prime = b / g;
-    let d_prime = d / g;
-
-    let term1 = I256 {
-        neg: a < 0,
-        abs: U256::mul_u128(a.unsigned_abs(), d_prime),
-    };
-    let term2 = I256 {
-        neg: c < 0,
-        abs: U256::mul_u128(c.unsigned_abs(), b_prime),
-    };
-
-    let num_256 = term1.add(term2);
-    let den_256 = U256::mul_u128(b, d_prime);
-
-    if den_256.is_zero() {
-        return None;
-    }
-
-    let g2 = gcd_u256(num_256.abs, den_256);
-    let reduced_num = num_256.abs.div_rem(g2).0;
-    let reduced_den = den_256.div_rem(g2).0;
-
-    let num_limit = if num_256.neg {
-        i128::MIN.unsigned_abs()
+fn oracle_div(r1: &Rational, r2: &Rational) -> Option<Rational> {
+    if r2.is_zero() {
+        None
     } else {
-        i128::MAX as u128
-    };
-
-    if !reduced_num.fits_in_u128() || reduced_num.as_u128() > num_limit {
-        return None;
+        let lhs = rug_rational(r1);
+        let rhs = rug_rational(r2);
+        Some(rational_from_rug(rug::Rational::from(&lhs / &rhs)))
     }
-    if !reduced_den.fits_in_u128() || reduced_den.as_u128() > i128::MAX as u128 {
-        return None;
-    }
-
-    let n = if num_256.neg {
-        let val = reduced_num.as_u128();
-        if val == i128::MIN.unsigned_abs() {
-            i128::MIN
-        } else {
-            -(val as i128)
-        }
-    } else {
-        reduced_num.as_u128() as i128
-    };
-    let d_val = reduced_den.as_u128() as i128;
-
-    Rational::try_new(n, d_val)
 }
 
-fn oracle_sub(r1: &Rational, r2: &Rational) -> Option<Rational> {
-    let a = r1.num();
-    let b = r1.den() as u128;
-    let c = r2.num();
-    let d = r2.den() as u128;
-
-    let g = u128_gcd(b, d);
-    let b_prime = b / g;
-    let d_prime = d / g;
-
-    let term1 = I256 {
-        neg: a < 0,
-        abs: U256::mul_u128(a.unsigned_abs(), d_prime),
-    };
-    let term2 = I256 {
-        neg: c < 0,
-        abs: U256::mul_u128(c.unsigned_abs(), b_prime),
-    };
-
-    let num_256 = term1.sub(term2);
-    let den_256 = U256::mul_u128(b, d_prime);
-
-    if den_256.is_zero() {
-        return None;
-    }
-
-    let g2 = gcd_u256(num_256.abs, den_256);
-    let reduced_num = num_256.abs.div_rem(g2).0;
-    let reduced_den = den_256.div_rem(g2).0;
-
-    let num_limit = if num_256.neg {
-        i128::MIN.unsigned_abs()
-    } else {
-        i128::MAX as u128
-    };
-
-    if !reduced_num.fits_in_u128() || reduced_num.as_u128() > num_limit {
-        return None;
-    }
-    if !reduced_den.fits_in_u128() || reduced_den.as_u128() > i128::MAX as u128 {
-        return None;
-    }
-
-    let n = if num_256.neg {
-        let val = reduced_num.as_u128();
-        if val == i128::MIN.unsigned_abs() {
-            i128::MIN
-        } else {
-            -(val as i128)
-        }
-    } else {
-        reduced_num.as_u128() as i128
-    };
-    let d_val = reduced_den.as_u128() as i128;
-
-    Rational::try_new(n, d_val)
+fn rug_rational(rational: &Rational) -> rug::Rational {
+    let numerator = rational
+        .numerator_string()
+        .parse::<rug::Integer>()
+        .expect("Rational numerator should be a valid integer");
+    let denominator = rational
+        .denominator_string()
+        .parse::<rug::Integer>()
+        .expect("Rational denominator should be a valid integer");
+    rug::Rational::from((numerator, denominator))
 }
 
-fn rational_strategy() -> impl Strategy<Value = Rational> {
+fn rational_from_rug(value: rug::Rational) -> Rational {
+    value
+        .to_string()
+        .parse()
+        .expect("rug rational should parse through the public Rational API")
+}
+
+fn rational_strategy() -> BoxedStrategy<Rational> {
     prop_oneof![
         // Small numbers
         (
@@ -203,6 +81,25 @@ fn rational_strategy() -> impl Strategy<Value = Rational> {
             Just(Rational::try_new(0, 1).unwrap()),
         ]
     ]
+    .boxed()
+}
+
+fn parsed_beyond_i128_rational_strategy() -> BoxedStrategy<Rational> {
+    (0_u16..2048, 2_u8..19, any::<bool>())
+        .prop_map(|(offset, denominator, negative)| {
+            let mut numerator = rug::Integer::from(i128::MAX) + rug::Integer::from(offset) + 1_i32;
+            if negative {
+                numerator = -numerator;
+            }
+            format!("{numerator}/{denominator}")
+                .parse()
+                .expect("generated beyond-i128 rational should parse")
+        })
+        .boxed()
+}
+
+fn arbitrary_precision_rational_strategy() -> BoxedStrategy<Rational> {
+    prop_oneof![rational_strategy(), parsed_beyond_i128_rational_strategy()].boxed()
 }
 
 proptest! {
@@ -211,14 +108,34 @@ proptest! {
     #[test]
     fn prop_test_checked_add_oracle(r1 in rational_strategy(), r2 in rational_strategy()) {
         let got = r1.checked_add(&r2);
-        let expected = oracle_add(&r1, &r2);
+        let expected = Some(oracle_add(&r1, &r2));
         prop_assert_eq!(got, expected);
     }
 
     #[test]
     fn prop_test_checked_sub_oracle(r1 in rational_strategy(), r2 in rational_strategy()) {
         let got = r1.checked_sub(&r2);
-        let expected = oracle_sub(&r1, &r2);
+        let expected = Some(oracle_sub(&r1, &r2));
+        prop_assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn prop_test_checked_mul_oracle(
+        r1 in arbitrary_precision_rational_strategy(),
+        r2 in arbitrary_precision_rational_strategy(),
+    ) {
+        let got = r1.checked_mul(&r2);
+        let expected = Some(oracle_mul(&r1, &r2));
+        prop_assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn prop_test_checked_div_oracle(
+        r1 in arbitrary_precision_rational_strategy(),
+        r2 in arbitrary_precision_rational_strategy().prop_filter("divisor not zero", |r| !r.is_zero()),
+    ) {
+        let got = r1.checked_div(&r2);
+        let expected = oracle_div(&r1, &r2);
         prop_assert_eq!(got, expected);
     }
 

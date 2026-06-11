@@ -70,8 +70,8 @@ fn fallback_state_markers_are_stable() {
 
 #[test]
 fn cli_native_scaffold_succeeds_when_fallback_disabled() {
-    let (stdout, stderr, exit_code) = run_qalc_rs("1 + 1", Some("1"), Some("1"));
-    assert_eq!(stdout, "2");
+    let (stdout, stderr, exit_code) = run_qalc_rs("1 + 2", Some("1"), Some("1"));
+    assert_eq!(stdout, "3");
     assert!(stderr.contains("[qalc-rs-metadata] fallback=native"));
     assert_eq!(exit_code, 0);
 
@@ -82,12 +82,119 @@ fn cli_native_scaffold_succeeds_when_fallback_disabled() {
 }
 
 #[test]
-fn cli_unported_expression_fails_when_fallback_disabled() {
-    let (stdout, stderr, exit_code) = run_qalc_rs("2 + 2", Some("1"), Some("1"));
+fn cli_native_expression_succeeds_when_fallback_disabled() {
+    let (stdout, stderr, exit_code) = run_qalc_rs("1 + 2", Some("1"), Some("1"));
+    assert_eq!(stdout, "3");
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=native"));
+    assert_eq!(exit_code, 0);
+
+    let native_cases = [
+        ("0.01", "0.01"),
+        ("1/2", "0.5"),
+        ("1/3", "0.3333333333"),
+        ("1e10", "10000000000"),
+        ("1e303", "1E303"),
+        ("1 + 1", "2"),
+        ("52 to bin", "0011 0100"),
+        ("52 to bin16", "0000 0000 0011 0100"),
+        ("52 to oct", "064"),
+        ("52 to hex", "0x34"),
+        ("0x34", "52"),
+        ("hex(34)", "52"),
+        ("523<<2&250 to bin", "0010 1000"),
+        ("52.345 to float", "0100 0010 0101 0001 0110 0001 0100 1000"),
+        ("float(01000010010100010110000101001000)", "52.34500122"),
+        ("floatError(52.345)", "0.000001220703125"),
+        ("1978 to roman", "MCMLXXVIII"),
+        ("52 to base 32", "1K"),
+        ("sqrt(32) to base sqrt(2)", "100000"),
+        ("6%2", "0"),
+        ("7 rem 2", "1"),
+        ("-8%3", "−2"),
+        ("3 %% 2", "1"),
+        ("3 %% -2", "−1"),
+        ("3 mod -2", "−1"),
+        ("5//2", "2"),
+        ("5\\2", "2"),
+        ("5 div 2", "2"),
+        ("5 ^ 2", "25"),
+        ("2 ^ -3", "0.125"),
+        ("(-2) ^ -3", "−0.125"),
+        ("(1/2) ^ -3", "8"),
+        ("5 ** 3", "125"),
+        ("4 ** 3 ** 2", "262144"),
+        ("-123", "−123"),
+        ("(1 + 2i) + (3 + 4i)", "4 + 6i"),
+        ("(1 + 2i) / (3 + 4i)", "0.44 + 0.08i"),
+        ("100+/-5 + 200+/-10%", "300±21"),
+        ("100+/-5% + 200+/-10%", "300±6.9%"),
+        ("100+/-5% * 2", "200±5.0%"),
+    ];
+    for (expression, expected) in native_cases {
+        let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
+        assert_eq!(stdout, expected, "{expression} produced unexpected output");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression} did not report native fallback state: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression} returned unexpected exit code");
+    }
+
+    let (stdout, stderr, exit_code) = run_qalc_rs("10 +/- 0", Some("1"), Some("1"));
+    assert_eq!(stdout, "10");
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=native"));
+    assert_eq!(exit_code, 0);
+}
+
+#[test]
+fn cli_invalid_native_expression_fails_when_fallback_disabled() {
+    let (stdout, stderr, exit_code) = run_qalc_rs("1 / 0", Some("1"), Some("1"));
     assert!(stdout.is_empty());
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
-    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled, and expression '2 + 2' has no native Rust implementation"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs("-2^2", Some("1"), Some("1"));
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs("1 2", Some("1"), Some("1"));
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    for expression in [
+        "1(2)3",
+        "1.23(4)5",
+        "1(2)%",
+        "2 + 2",
+        "0 ^ -1",
+        "53 to bin",
+        "65536 to bin16",
+        "hex(35)",
+        "52 to base 36",
+        "inf",
+        "nan",
+        "[1,2]",
+        "[1,2] + [3,4]",
+        "1/[2,3]",
+        "170141183460469231731687303715884105728 + 1",
+    ] {
+        let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
+        assert!(stdout.is_empty(), "{expression} unexpectedly wrote stdout");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=disabled"),
+            "{expression} did not report disabled fallback: {stderr}"
+        );
+        assert!(
+            stderr.contains("error: calculation failed: C++ FFI fallback is disabled"),
+            "{expression} did not report disabled fallback error: {stderr}"
+        );
+        assert_eq!(exit_code, 2, "{expression} returned unexpected exit code");
+    }
 }
 
 #[test]

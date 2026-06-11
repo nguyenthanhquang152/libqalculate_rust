@@ -1,23 +1,25 @@
-//! Core `Number` representation — placeholder for GMP/MPFR.
+//! Core `Number` representation backed by `rug` arbitrary precision values.
 //!
 //! # Upstream oracle
 //! - `../libqalculate/libqalculate/Number.h`
 //! - `../libqalculate/libqalculate/Number.cc`
 //!
 //! # Known divergences from upstream
-//! - **Precision**: `Rational` uses `i128` instead of GMP `mpq_t`. Values
-//!   exceeding `i128::MAX` (e.g., `i128::MIN / -1`) will panic during
-//!   canonicalization. Upstream uses arbitrary-precision rationals.
-//! - **Float backend**: `Float` uses `f64` instead of MPFR `mpfr_t`. Precision
-//!   is limited to ~53 bits (IEEE 754 double) instead of arbitrary.
+//! - **Backend**: `rug` provides GMP/MPFR-backed numeric storage, but this
+//!   module has not yet ported the full upstream `Number` API surface.
+//! - **Compatibility accessors**: `Rational::num()` and `Rational::den()`
+//!   preserve the early `i128` API and panic when exact values exceed that
+//!   range. Use `Rational::numerator_string()` and
+//!   `Rational::denominator_string()` for lossless arbitrary-precision
+//!   inspection.
 //! - **Mixed equality**: `Rational` and `Float` values are not compared across
 //!   representations in this scaffold. Upstream GMP/MPFR comparisons can do
 //!   this exactly; the placeholder backend cannot.
 //!
-//! These divergences will be resolved when the GMP/MPFR backend replaces this
-//! placeholder implementation.
+//! These divergences will be resolved as the rest of the upstream `Number`
+//! behavior is ported.
 
-use rug::ops::AssignRound;
+use rug::ops::{AssignRound, DivRounding, Pow};
 
 /// The result of a comparison between two numbers or intervals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +117,10 @@ impl std::hash::Hash for Rational {
 }
 
 impl Rational {
+    fn from_rug(value: rug::Rational) -> Self {
+        Self { value }
+    }
+
     /// Create a new rational number, reducing it to lowest terms.
     pub fn new(num: i128, den: i128) -> Self {
         assert!(den != 0, "Rational denominator must not be zero");
@@ -146,6 +152,97 @@ impl Rational {
     /// Returns true if the rational is exactly one.
     pub fn is_one(&self) -> bool {
         self.value.numer() == &1 && self.value.denom() == &1
+    }
+
+    fn is_negative(&self) -> bool {
+        self.value.numer().is_negative()
+    }
+
+    fn sign_ordering(&self) -> std::cmp::Ordering {
+        if self.value.numer().is_zero() {
+            std::cmp::Ordering::Equal
+        } else if self.is_negative() {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        }
+    }
+
+    fn to_f64(&self) -> f64 {
+        rug::Float::with_val(53, &self.value).to_f64()
+    }
+
+    /// Returns the canonical numerator as a base-10 string without precision loss.
+    pub fn numerator_string(&self) -> String {
+        self.value.numer().to_string()
+    }
+
+    /// Returns the canonical positive denominator as a base-10 string without precision loss.
+    pub fn denominator_string(&self) -> String {
+        self.value.denom().to_string()
+    }
+
+    fn terminating_decimal_string(&self) -> Option<String> {
+        let numer = self.value.numer();
+        let denom = self.value.denom();
+        if denom == &1 {
+            return Some(numer.to_string());
+        }
+
+        let mut reduced = denom.clone();
+        let mut twos = 0usize;
+        while reduced.is_divisible_u(2) {
+            reduced /= 2_u32;
+            twos += 1;
+        }
+
+        let mut fives = 0usize;
+        while reduced.is_divisible_u(5) {
+            reduced /= 5_u32;
+            fives += 1;
+        }
+
+        if reduced != 1 {
+            return None;
+        }
+
+        let scale = twos.max(fives);
+        let mut scaled = numer.clone().abs();
+        for _ in 0..(scale - twos) {
+            scaled *= 2_u32;
+        }
+        for _ in 0..(scale - fives) {
+            scaled *= 5_u32;
+        }
+
+        let mut digits = scaled.to_string();
+        if scale == 0 {
+            return Some(if numer.is_negative() && !scaled.is_zero() {
+                format!("-{digits}")
+            } else {
+                digits
+            });
+        }
+
+        if digits.len() <= scale {
+            let padding = "0".repeat(scale + 1 - digits.len());
+            digits = format!("{padding}{digits}");
+        }
+        let split = digits.len() - scale;
+        digits.insert(split, '.');
+        while digits.ends_with('0') {
+            digits.pop();
+        }
+        if digits.ends_with('.') {
+            digits.pop();
+        }
+        if digits == "0" {
+            Some(digits)
+        } else if numer.is_negative() {
+            Some(format!("-{digits}"))
+        } else {
+            Some(digits)
+        }
     }
 
     /// Checked addition.
@@ -186,219 +283,61 @@ impl Rational {
 
     /// GCD-optimized checked addition.
     pub fn checked_add(&self, other: &Self) -> Option<Self> {
-        let a = self.num();
-        let b = self.den();
-        let c = other.num();
-        let d = other.den();
-
-        let g = gcd(b, d);
-        let b_prime = (b as u128) / g;
-        let d_prime = (d as u128) / g;
-
-        let neg1 = a < 0;
-        let abs1 = U256::mul_u128(a.unsigned_abs(), d_prime);
-
-        let neg2 = c < 0;
-        let abs2 = U256::mul_u128(c.unsigned_abs(), b_prime);
-
-        let (neg_t, abs_t) = if neg1 == neg2 {
-            (neg1, abs1.add(abs2))
-        } else if abs1 >= abs2 {
-            (neg1, abs1.sub(abs2))
-        } else {
-            (neg2, abs2.sub(abs1))
-        };
-
-        let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
-        let g2 = gcd_u128(g, abs_rem);
-
-        let num_u256 = abs_t.div_rem(U256::from_u128(g2)).0;
-
-        let limit = if neg_t {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        if !num_u256.fits_in_u128() || num_u256.as_u128() > limit {
-            return None;
-        }
-
-        let num = if neg_t {
-            let val = num_u256.as_u128();
-            if val == i128::MIN.unsigned_abs() {
-                i128::MIN
-            } else {
-                -(val as i128)
-            }
-        } else {
-            num_u256.as_u128() as i128
-        };
-
-        let g_i128 = g as i128;
-        let g2_i128 = g2 as i128;
-        let b_prime_i128 = b_prime as i128;
-        let d_prime_i128 = d_prime as i128;
-
-        let den = g_i128
-            .checked_div(g2_i128)?
-            .checked_mul(b_prime_i128)?
-            .checked_mul(d_prime_i128)?;
-
-        Self::try_new(num, den)
+        add_rationals(self, other)
     }
 
     /// GCD-optimized checked subtraction.
     pub fn checked_sub(&self, other: &Self) -> Option<Self> {
-        let a = self.num();
-        let b = self.den();
-        let c = other.num();
-        let d = other.den();
-
-        let g = gcd(b, d);
-        let b_prime = (b as u128) / g;
-        let d_prime = (d as u128) / g;
-
-        let neg1 = a < 0;
-        let abs1 = U256::mul_u128(a.unsigned_abs(), d_prime);
-
-        let neg2 = c >= 0;
-        let abs2 = U256::mul_u128(c.unsigned_abs(), b_prime);
-
-        let (neg_t, abs_t) = if neg1 == neg2 {
-            (neg1, abs1.add(abs2))
-        } else if abs1 >= abs2 {
-            (neg1, abs1.sub(abs2))
-        } else {
-            (neg2, abs2.sub(abs1))
-        };
-
-        let abs_rem = abs_t.div_rem(U256::from_u128(g)).1.as_u128();
-        let g2 = gcd_u128(g, abs_rem);
-
-        let num_u256 = abs_t.div_rem(U256::from_u128(g2)).0;
-
-        let limit = if neg_t {
-            i128::MIN.unsigned_abs()
-        } else {
-            i128::MAX as u128
-        };
-        if !num_u256.fits_in_u128() || num_u256.as_u128() > limit {
-            return None;
-        }
-
-        let num = if neg_t {
-            let val = num_u256.as_u128();
-            if val == i128::MIN.unsigned_abs() {
-                i128::MIN
-            } else {
-                -(val as i128)
-            }
-        } else {
-            num_u256.as_u128() as i128
-        };
-
-        let g_i128 = g as i128;
-        let g2_i128 = g2 as i128;
-        let b_prime_i128 = b_prime as i128;
-        let d_prime_i128 = d_prime as i128;
-
-        let den = g_i128
-            .checked_div(g2_i128)?
-            .checked_mul(b_prime_i128)?
-            .checked_mul(d_prime_i128)?;
-
-        Self::try_new(num, den)
+        sub_rationals(self, other)
     }
 
     /// GCD-optimized checked multiplication.
     pub fn checked_mul(&self, other: &Self) -> Option<Self> {
-        let a = self.num();
-        let b = self.den();
-        let c = other.num();
-        let d = other.den();
-
-        let g1 = gcd(a, d) as i128;
-        let g2 = gcd(c, b) as i128;
-
-        let a_prime = a / g1;
-        let d_prime = d / g1;
-        let c_prime = c / g2;
-        let b_prime = b / g2;
-
-        let num = a_prime.checked_mul(c_prime)?;
-        let den = b_prime.checked_mul(d_prime)?;
-
-        Self::try_new(num, den)
+        mul_rationals(self, other)
     }
 
     /// GCD-optimized checked division.
     pub fn checked_div(&self, other: &Self) -> Option<Self> {
-        let a = self.num();
-        let b = self.den();
-        let c = other.num();
-        let d = other.den();
+        div_rationals(self, other)
+    }
+}
 
-        if c == 0 {
-            return None;
-        }
+impl std::str::FromStr for Rational {
+    type Err = String;
 
-        let g1 = gcd(a, c) as i128;
-        let g2 = gcd(d, b) as i128;
-
-        let a_prime = a / g1;
-        let c_prime = c / g1;
-        let d_prime = d / g2;
-        let b_prime = b / g2;
-
-        let num = a_prime.checked_mul(d_prime)?;
-        let den = b_prime.checked_mul(c_prime)?;
-
-        Self::try_new(num, den)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_rational_literal(s).map(Self::from_rug)
     }
 }
 
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.num() == 0 && other.num() == 0 {
-            return std::cmp::Ordering::Equal;
-        }
-        if self.num() == 0 {
-            return if other.num() > 0 {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
-        }
-        if other.num() == 0 {
-            return if self.num() > 0 {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Less
-            };
-        }
-
-        let self_pos = self.num() > 0;
-        let other_pos = other.num() > 0;
-
-        match (self_pos, other_pos) {
-            (true, false) => std::cmp::Ordering::Greater,
-            (false, true) => std::cmp::Ordering::Less,
-            (true, true) => cmp_u128_rational(
-                self.num() as u128,
-                self.den() as u128,
-                other.num() as u128,
-                other.den() as u128,
-                false,
-            ),
-            (false, false) => cmp_u128_rational(
-                self.num().unsigned_abs(),
-                self.den() as u128,
-                other.num().unsigned_abs(),
-                other.den() as u128,
-                true,
-            ),
-        }
+        self.value.cmp(&other.value)
     }
+}
+
+fn integer_decimal_digits_upper_bound(value: &rug::Integer) -> u64 {
+    let bits = u64::from(value.significant_bits());
+    if bits == 0 {
+        1
+    } else {
+        // log10(2) is just below 0.30103, so this is a cheap conservative
+        // upper bound without allocating a decimal string.
+        bits.saturating_mul(30_103).saturating_add(99_999) / 100_000
+    }
+}
+
+fn exact_rational_integer_pow_is_bounded(base: &Rational, exponent_magnitude: u32) -> bool {
+    if exponent_magnitude == 0 {
+        return true;
+    }
+
+    const MAX_EXACT_RATIONAL_POW_DECIMAL_DIGITS: u64 = 1_000_000;
+    let base_digits = integer_decimal_digits_upper_bound(base.value.numer())
+        .max(integer_decimal_digits_upper_bound(base.value.denom()));
+    base_digits < MAX_EXACT_RATIONAL_POW_DECIMAL_DIGITS
+        && base_digits.saturating_mul(u64::from(exponent_magnitude))
+            < MAX_EXACT_RATIONAL_POW_DECIMAL_DIGITS
 }
 
 impl PartialOrd for Rational {
@@ -491,6 +430,18 @@ impl Float {
     }
 }
 
+fn ordered_interval_bounds(lower: Float, upper: Float) -> Option<(Float, Float)> {
+    if lower.is_nan() || upper.is_nan() {
+        return None;
+    }
+
+    if lower.value <= upper.value {
+        Some((lower, upper))
+    } else {
+        Some((upper, lower))
+    }
+}
+
 /// Inner enum representing the type and value of a number.
 #[derive(Debug, Clone)]
 pub enum NumberValue {
@@ -499,6 +450,9 @@ pub enum NumberValue {
     /// Float number representation.
     Float(Float),
     /// Interval representation with lower and upper bounds.
+    ///
+    /// Values created through `Number::new_interval` and
+    /// `Number::try_new_interval` are ordered and have non-NaN endpoints.
     Interval {
         /// Lower bound of the interval.
         lower: Float,
@@ -533,7 +487,9 @@ impl NumberValue {
         match self {
             NumberValue::Rational(_) => 0,
             NumberValue::Float(f) => f.prec() as i32,
-            NumberValue::Interval { lower, .. } => lower.prec() as i32,
+            NumberValue::Interval { lower, upper } => {
+                std::cmp::max(lower.prec(), upper.prec()) as i32
+            }
             NumberValue::Uncertainty {
                 value, uncertainty, ..
             } => std::cmp::max(value.precision(), uncertainty.precision()),
@@ -679,11 +635,13 @@ impl NumberValue {
                         value: v1,
                         uncertainty: u1,
                         is_relative: ir1,
+                        ..
                     },
                     NumberValue::Uncertainty {
                         value: v2,
                         uncertainty: u2,
                         is_relative: ir2,
+                        ..
                     },
                 ) => {
                     let u1_sq = if u1.is_real_zero() {
@@ -697,10 +655,11 @@ impl NumberValue {
                         u2.mul(u2)
                     };
                     let unc = u1_sq.add(&u2_sq).sqrt();
+                    let is_relative = *ir1 && *ir2;
                     NumberValue::Uncertainty {
                         value: Box::new(v1.add(v2)),
                         uncertainty: Box::new(unc),
-                        is_relative: *ir1 || *ir2,
+                        is_relative,
                     }
                 }
                 (
@@ -830,11 +789,13 @@ impl NumberValue {
                         value: v1,
                         uncertainty: u1,
                         is_relative: ir1,
+                        ..
                     },
                     NumberValue::Uncertainty {
                         value: v2,
                         uncertainty: u2,
                         is_relative: ir2,
+                        ..
                     },
                 ) => {
                     let u1_sq = if u1.is_real_zero() {
@@ -848,10 +809,11 @@ impl NumberValue {
                         u2.mul(u2)
                     };
                     let unc = u1_sq.add(&u2_sq).sqrt();
+                    let is_relative = *ir1 && *ir2;
                     NumberValue::Uncertainty {
                         value: Box::new(v1.sub(v2)),
                         uncertainty: Box::new(unc),
-                        is_relative: *ir1 || *ir2,
+                        is_relative,
                     }
                 }
                 (
@@ -1011,11 +973,13 @@ impl NumberValue {
                     value: v1,
                     uncertainty: u1,
                     is_relative: ir1,
+                    ..
                 },
                 NumberValue::Uncertainty {
                     value: v2,
                     uncertainty: u2,
                     is_relative: ir2,
+                    ..
                 },
             ) => {
                 let val = v1.mul(v2);
@@ -1030,10 +994,11 @@ impl NumberValue {
                     v1.mul(u2)
                 };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
+                let is_relative = *ir1 && *ir2;
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
-                    is_relative: *ir1 || *ir2,
+                    is_relative,
                 }
             }
             (
@@ -1236,11 +1201,13 @@ impl NumberValue {
                         value: v1,
                         uncertainty: u1,
                         is_relative: ir1,
+                        ..
                     },
                     NumberValue::Uncertainty {
                         value: v2,
                         uncertainty: u2,
                         is_relative: ir2,
+                        ..
                     },
                 ) => {
                     if v2.is_real_zero() {
@@ -1258,10 +1225,11 @@ impl NumberValue {
                         val.mul(u2).div(v2)
                     };
                     let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
+                    let is_relative = *ir1 && *ir2;
                     NumberValue::Uncertainty {
                         value: Box::new(val),
                         uncertainty: Box::new(unc),
-                        is_relative: *ir1 || *ir2,
+                        is_relative,
                     }
                 }
                 (
@@ -1462,6 +1430,52 @@ impl NumberValue {
         }
     }
 
+    /// Remainder with quotient truncated toward zero, matching qalc `%` / `rem`.
+    pub fn rem(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() || self.is_infinite() || other.is_infinite() {
+            return NumberValue::NaN;
+        }
+
+        match (self, other) {
+            (NumberValue::Rational(lhs), NumberValue::Rational(rhs)) => {
+                rem_rationals(lhs, rhs, RemainderMode::Truncate)
+                    .map(NumberValue::Rational)
+                    .unwrap_or(NumberValue::NaN)
+            }
+            _ => NumberValue::NaN,
+        }
+    }
+
+    /// Modulo with quotient rounded down, matching qalc `%%` / `mod`.
+    pub fn modulo(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() || self.is_infinite() || other.is_infinite() {
+            return NumberValue::NaN;
+        }
+
+        match (self, other) {
+            (NumberValue::Rational(lhs), NumberValue::Rational(rhs)) => {
+                rem_rationals(lhs, rhs, RemainderMode::Floor)
+                    .map(NumberValue::Rational)
+                    .unwrap_or(NumberValue::NaN)
+            }
+            _ => NumberValue::NaN,
+        }
+    }
+
+    /// Integer division with quotient truncated toward zero, matching qalc `//` / `\` / `div`.
+    pub fn int_div(&self, other: &Self) -> Self {
+        if self.is_nan() || other.is_nan() || self.is_infinite() || other.is_infinite() {
+            return NumberValue::NaN;
+        }
+
+        match (self, other) {
+            (NumberValue::Rational(lhs), NumberValue::Rational(rhs)) => int_div_rationals(lhs, rhs)
+                .map(NumberValue::Rational)
+                .unwrap_or(NumberValue::NaN),
+            _ => NumberValue::NaN,
+        }
+    }
+
     /// Exponentiate to a power mathematically.
     pub fn pow(&self, other: &Self) -> Self {
         if self.is_nan() || other.is_nan() {
@@ -1473,11 +1487,13 @@ impl NumberValue {
                     value: v1,
                     uncertainty: u1,
                     is_relative: ir1,
+                    ..
                 },
                 NumberValue::Uncertainty {
                     value: v2,
                     uncertainty: u2,
                     is_relative: ir2,
+                    ..
                 },
             ) => {
                 let val = v1.pow(v2);
@@ -1494,10 +1510,11 @@ impl NumberValue {
                     val.mul(&v1.ln()).mul(u2)
                 };
                 let unc = term1.mul(&term1).add(&term2.mul(&term2)).sqrt();
+                let is_relative = *ir1 && *ir2;
                 NumberValue::Uncertainty {
                     value: Box::new(val),
                     uncertainty: Box::new(unc),
-                    is_relative: *ir1 || *ir2,
+                    is_relative,
                 }
             }
             (
@@ -1543,50 +1560,60 @@ impl NumberValue {
                 }
             }
             (NumberValue::Rational(r1), NumberValue::Rational(r2)) => {
-                if r2.den() == 1 && r2.num() >= 0 && r2.num() <= 10 {
-                    let mut num = 1i128;
-                    let mut den = 1i128;
-                    let mut ok = true;
-                    for _ in 0..r2.num() {
-                        if let Some(n) = num.checked_mul(r1.num()) {
-                            if let Some(d) = den.checked_mul(r1.den()) {
-                                num = n;
-                                den = d;
-                                continue;
-                            }
+                if r2.value.denom() == &1 {
+                    const MAX_EXACT_RATIONAL_POW_EXP: u32 = 10_000;
+                    if let Some(exp) = r2.value.numer().to_i32() {
+                        let magnitude = exp.unsigned_abs();
+                        if magnitude <= MAX_EXACT_RATIONAL_POW_EXP
+                            && !(exp < 0 && r1.is_zero())
+                            && exact_rational_integer_pow_is_bounded(r1, magnitude)
+                        {
+                            return NumberValue::Rational(Rational::from_rug(
+                                r1.value.clone().pow(exp),
+                            ));
                         }
-                        ok = false;
-                        break;
-                    }
-                    if ok {
-                        return NumberValue::Rational(Rational::new(num, den));
                     }
                 }
-                let val =
-                    (r1.num() as f64 / r1.den() as f64).powf(r2.num() as f64 / r2.den() as f64);
-                NumberValue::Float(Float::from_f64(val, 53))
+                let prec = 53;
+                let base = rug::Float::with_val(prec, &r1.value);
+                let exponent = rug::Float::with_val(prec, &r2.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             (NumberValue::Float(f1), NumberValue::Float(f2)) => {
-                NumberValue::Float(Float::from_f64(
-                    f1.value().powf(f2.value()),
-                    std::cmp::max(f1.prec(), f2.prec()),
-                ))
+                let prec = std::cmp::max(f1.prec(), f2.prec());
+                let base = rug::Float::with_val(prec, &f1.value);
+                let exponent = rug::Float::with_val(prec, &f2.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             (NumberValue::Rational(r), NumberValue::Float(f)) => {
-                let val = (r.num() as f64 / r.den() as f64).powf(f.value());
-                NumberValue::Float(Float::from_f64(val, f.prec()))
+                let prec = f.prec();
+                let base = rug::Float::with_val(prec, &r.value);
+                let exponent = rug::Float::with_val(prec, &f.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             (NumberValue::Float(f), NumberValue::Rational(r)) => {
-                let val = f.value().powf(r.num() as f64 / r.den() as f64);
-                NumberValue::Float(Float::from_f64(val, f.prec()))
+                let prec = f.prec();
+                let base = rug::Float::with_val(prec, &f.value);
+                let exponent = rug::Float::with_val(prec, &r.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
             _ => {
                 let f1 = to_float_val(self);
                 let f2 = to_float_val(other);
-                NumberValue::Float(Float::from_f64(
-                    f1.value().powf(f2.value()),
-                    std::cmp::max(f1.prec(), f2.prec()),
-                ))
+                let prec = std::cmp::max(f1.prec(), f2.prec());
+                let base = rug::Float::with_val(prec, &f1.value);
+                let exponent = rug::Float::with_val(prec, &f2.value);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, base.pow(exponent)),
+                })
             }
         }
     }
@@ -1595,13 +1622,19 @@ impl NumberValue {
     pub fn ln(&self) -> Self {
         match self {
             NumberValue::Rational(r) => {
-                let val = (r.num() as f64 / r.den() as f64).ln();
-                NumberValue::Float(Float::from_f64(val, 53))
+                let value = rug::Float::with_val(53, &r.value).ln();
+                NumberValue::Float(Float { value })
             }
-            NumberValue::Float(f) => NumberValue::Float(Float::from_f64(f.value().ln(), f.prec())),
+            NumberValue::Float(f) => NumberValue::Float(Float {
+                value: f.value.clone().ln(),
+            }),
             NumberValue::Interval { lower, upper } => NumberValue::Interval {
-                lower: Float::from_f64(lower.value().ln(), lower.prec()),
-                upper: Float::from_f64(upper.value().ln(), upper.prec()),
+                lower: Float {
+                    value: lower.value.clone().ln(),
+                },
+                upper: Float {
+                    value: upper.value.clone().ln(),
+                },
             },
             NumberValue::Uncertainty {
                 value,
@@ -1622,7 +1655,9 @@ impl NumberValue {
             }
             _ => {
                 let f = to_float_val(self);
-                NumberValue::Float(Float::from_f64(f.value().ln(), f.prec()))
+                NumberValue::Float(Float {
+                    value: f.value.clone().ln(),
+                })
             }
         }
     }
@@ -1678,7 +1713,7 @@ impl NumberValue {
     pub fn sqrt(&self) -> Self {
         match self {
             NumberValue::Rational(r) => {
-                if r.num() < 0 {
+                if r.is_negative() {
                     NumberValue::NaN
                 } else {
                     let (n_sqrt, n_rem) = r.value.numer().clone().sqrt_rem(rug::Integer::new());
@@ -1758,7 +1793,7 @@ impl NumberValue {
     pub fn to_interval_bounds(&self) -> Option<(f64, f64)> {
         match self {
             NumberValue::Rational(r) => {
-                let val = r.num() as f64 / r.den() as f64;
+                let val = r.to_f64();
                 Some((val, val))
             }
             NumberValue::Float(f) => {
@@ -1794,6 +1829,16 @@ impl NumberValue {
         if self.is_nan() || other.is_nan() {
             return ComparisonResult::Unknown;
         }
+        if let (Some(lhs), Some(rhs)) = (
+            self.exact_rational_for_compare(),
+            other.exact_rational_for_compare(),
+        ) {
+            return match lhs.cmp(rhs) {
+                std::cmp::Ordering::Less => ComparisonResult::Greater,
+                std::cmp::Ordering::Equal => ComparisonResult::Equal,
+                std::cmp::Ordering::Greater => ComparisonResult::Less,
+            };
+        }
         let self_bounds = self.to_interval_bounds();
         let other_bounds = other.to_interval_bounds();
         match (self_bounds, other_bounds) {
@@ -1821,6 +1866,16 @@ impl NumberValue {
                 }
             }
             _ => ComparisonResult::Unknown,
+        }
+    }
+
+    fn exact_rational_for_compare(&self) -> Option<&Rational> {
+        match self {
+            NumberValue::Rational(rational) => Some(rational),
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } if uncertainty.is_real_zero() => value.exact_rational_for_compare(),
+            _ => None,
         }
     }
 
@@ -1858,15 +1913,11 @@ fn get_sign_multiplier(val: &NumberValue) -> Option<f64> {
         get_infinity_sign(val).map(|s| if s { 1.0 } else { -1.0 })
     } else {
         match val {
-            NumberValue::Rational(r) => {
-                if r.num() == 0 {
-                    Some(0.0)
-                } else if r.num() > 0 {
-                    Some(1.0)
-                } else {
-                    Some(-1.0)
-                }
-            }
+            NumberValue::Rational(r) => Some(match r.sign_ordering() {
+                std::cmp::Ordering::Less => -1.0,
+                std::cmp::Ordering::Equal => 0.0,
+                std::cmp::Ordering::Greater => 1.0,
+            }),
             NumberValue::Float(f) => {
                 if f.value == 0.0 {
                     Some(0.0)
@@ -2001,6 +2052,43 @@ fn div_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum RemainderMode {
+    Truncate,
+    Floor,
+}
+
+fn rem_rationals(lhs: &Rational, rhs: &Rational, mode: RemainderMode) -> Option<Rational> {
+    let integer_quotient = rational_integer_quotient(lhs, rhs, mode)?;
+    let scaled_divisor = rug::Rational::from(integer_quotient) * &rhs.value;
+    Some(Rational {
+        value: &lhs.value - scaled_divisor,
+    })
+}
+
+fn int_div_rationals(lhs: &Rational, rhs: &Rational) -> Option<Rational> {
+    let integer_quotient = rational_integer_quotient(lhs, rhs, RemainderMode::Truncate)?;
+    Some(Rational {
+        value: rug::Rational::from(integer_quotient),
+    })
+}
+
+fn rational_integer_quotient(
+    lhs: &Rational,
+    rhs: &Rational,
+    mode: RemainderMode,
+) -> Option<rug::Integer> {
+    if rhs.is_zero() {
+        return None;
+    }
+
+    let quotient = rug::Rational::from(&lhs.value / &rhs.value);
+    Some(match mode {
+        RemainderMode::Truncate => quotient.numer().clone().div_trunc(quotient.denom()),
+        RemainderMode::Floor => quotient.numer().clone().div_floor(quotient.denom()),
+    })
+}
+
 fn to_float_val_rnd(val: &NumberValue, default_prec: u32, rnd: rug::float::Round) -> Float {
     match val {
         NumberValue::Float(f) => f.clone(),
@@ -2013,24 +2101,6 @@ fn to_float_val_rnd(val: &NumberValue, default_prec: u32, rnd: rug::float::Round
         NumberValue::MinusInfinity => Float::from_f64(f64::NEG_INFINITY, default_prec),
         NumberValue::NaN => Float::from_f64(f64::NAN, default_prec),
         _ => Float::from_f64(f64::NAN, default_prec),
-    }
-}
-
-fn get_finite_sign(val: &NumberValue) -> Option<bool> {
-    match val {
-        NumberValue::Rational(r) => Some(r.num() >= 0),
-        NumberValue::Float(f) => Some(f.value >= 0.0),
-        NumberValue::Interval { lower, upper } => {
-            if lower.value >= 0.0 {
-                Some(true)
-            } else if upper.value <= 0.0 {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        NumberValue::Uncertainty { value, .. } => get_finite_sign(value),
-        _ => None,
     }
 }
 
@@ -2113,11 +2183,13 @@ fn eq_values(lhs: &NumberValue, rhs: &NumberValue) -> bool {
                 value: v1,
                 uncertainty: u1,
                 is_relative: ir1,
+                ..
             },
             NumberValue::Uncertainty {
                 value: v2,
                 uncertainty: u2,
                 is_relative: ir2,
+                ..
             },
         ) => eq_values(v1, v2) && eq_values(u1, u2) && ir1 == ir2,
         _ => false,
@@ -2272,8 +2344,45 @@ impl Number {
     }
 
     /// Creates a new interval `Number` with given lower and upper bounds.
+    ///
+    /// Reversed finite bounds are stored in lower/upper order, and equal bounds
+    /// collapse to a scalar value, matching upstream `Number::setInterval`. If
+    /// either bound is NaN, the result is `NaN`; use
+    /// [`Number::try_new_interval`] to reject those inputs.
     pub fn new_interval(lower: Float, upper: Float) -> Self {
-        let prec = lower.prec() as i32;
+        let Some(number) = Self::from_interval_bounds(lower, upper) else {
+            return Self {
+                value: NumberValue::NaN,
+                imaginary: None,
+                precision: 0,
+                approximate: true,
+                is_imaginary: false,
+            };
+        };
+        number
+    }
+
+    /// Tries to create a new interval `Number`.
+    ///
+    /// Reversed finite bounds are stored in lower/upper order, and equal bounds
+    /// collapse to a scalar value. Returns `None` if either bound is NaN.
+    pub fn try_new_interval(lower: Float, upper: Float) -> Option<Self> {
+        Self::from_interval_bounds(lower, upper)
+    }
+
+    fn from_interval_bounds(lower: Float, upper: Float) -> Option<Self> {
+        let (lower, upper) = ordered_interval_bounds(lower, upper)?;
+        if lower.value == upper.value {
+            let prec = std::cmp::max(lower.prec(), upper.prec());
+            return Some(Self::from_float(Float {
+                value: rug::Float::with_val(prec, &lower.value),
+            }));
+        }
+        Some(Self::from_ordered_interval(lower, upper))
+    }
+
+    fn from_ordered_interval(lower: Float, upper: Float) -> Self {
+        let prec = std::cmp::max(lower.prec(), upper.prec()) as i32;
         Self {
             value: NumberValue::Interval { lower, upper },
             imaginary: None,
@@ -2648,49 +2757,7 @@ impl Number {
     /// Divides self by other
     pub fn div(&self, other: &Self) -> Self {
         if other.is_zero() && !other.contains_interval_or_uncertainty() {
-            if self.is_zero() {
-                return Number::from_f64(f64::NAN);
-            }
-            let (x1, y1) = self.to_canonical_ref();
-            let real_val = if x1.is_real_zero() {
-                NumberValue::Rational(Rational::from_i32(0))
-            } else {
-                let sign = get_finite_sign(&x1).unwrap_or(true);
-                if sign {
-                    NumberValue::PlusInfinity
-                } else {
-                    NumberValue::MinusInfinity
-                }
-            };
-            let imag_val = if y1.is_real_zero() {
-                NumberValue::Rational(Rational::from_i32(0))
-            } else {
-                let sign = get_finite_sign(&y1).unwrap_or(true);
-                if sign {
-                    NumberValue::PlusInfinity
-                } else {
-                    NumberValue::MinusInfinity
-                }
-            };
-            let real_num = Number {
-                value: real_val,
-                imaginary: None,
-                precision: std::cmp::max(self.precision, other.precision),
-                approximate: self.approximate || other.approximate,
-                is_imaginary: false,
-            };
-            let imag_num = Number {
-                value: imag_val,
-                imaginary: None,
-                precision: std::cmp::max(self.precision, other.precision),
-                approximate: self.approximate || other.approximate,
-                is_imaginary: false,
-            };
-            return if imag_num.is_zero() {
-                real_num
-            } else {
-                Number::new_complex(real_num, imag_num)
-            };
+            return Number::from_f64(f64::NAN);
         }
 
         let (x1, y1) = self.to_canonical_ref();
@@ -2736,6 +2803,69 @@ impl Number {
             real_num
         } else {
             Number::new_complex(real_num, imag_num)
+        }
+    }
+
+    /// Remainder with quotient truncated toward zero.
+    pub fn rem(&self, other: &Self) -> Self {
+        if other.is_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        let (lhs_real, lhs_imag) = self.to_canonical_ref();
+        let (rhs_real, rhs_imag) = other.to_canonical_ref();
+        if !lhs_imag.is_real_zero() || !rhs_imag.is_real_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        Number {
+            value: lhs_real.rem(&rhs_real),
+            imaginary: None,
+            precision: std::cmp::max(self.precision, other.precision),
+            approximate: self.approximate || other.approximate,
+            is_imaginary: false,
+        }
+    }
+
+    /// Modulo with quotient rounded down.
+    pub fn modulo(&self, other: &Self) -> Self {
+        if other.is_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        let (lhs_real, lhs_imag) = self.to_canonical_ref();
+        let (rhs_real, rhs_imag) = other.to_canonical_ref();
+        if !lhs_imag.is_real_zero() || !rhs_imag.is_real_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        Number {
+            value: lhs_real.modulo(&rhs_real),
+            imaginary: None,
+            precision: std::cmp::max(self.precision, other.precision),
+            approximate: self.approximate || other.approximate,
+            is_imaginary: false,
+        }
+    }
+
+    /// Integer division with quotient truncated toward zero.
+    pub fn int_div(&self, other: &Self) -> Self {
+        if other.is_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        let (lhs_real, lhs_imag) = self.to_canonical_ref();
+        let (rhs_real, rhs_imag) = other.to_canonical_ref();
+        if !lhs_imag.is_real_zero() || !rhs_imag.is_real_zero() {
+            return Number::from_f64(f64::NAN);
+        }
+
+        Number {
+            value: lhs_real.int_div(&rhs_real),
+            imaginary: None,
+            precision: std::cmp::max(self.precision, other.precision),
+            approximate: self.approximate || other.approximate,
+            is_imaginary: false,
         }
     }
 
@@ -2801,6 +2931,43 @@ impl Number {
     pub fn is_less_than(&self, other: &Self) -> bool {
         matches!(self.compare(other), ComparisonResult::Greater)
     }
+
+    /// Formats this number with the qalc-compatible defaults used by the oracle harness.
+    pub fn to_qalc_string(&self) -> String {
+        self.to_qalc_string_with_precision(10)
+    }
+
+    /// Formats this number for qalc-profile native evidence with a requested
+    /// decimal digit count for nonterminating exact-rational output.
+    pub(crate) fn to_qalc_string_with_precision(&self, precision_digits: usize) -> String {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            format_qalc_value_with_precision(&real, precision_digits)
+        } else if real.is_real_zero() {
+            if imag.is_real_one() {
+                "i".to_string()
+            } else if imag.negate().is_real_one() {
+                "-i".to_string()
+            } else {
+                format!(
+                    "{}i",
+                    format_qalc_value_with_precision(&imag, precision_digits)
+                )
+            }
+        } else if is_value_negative(&imag) {
+            format!(
+                "{} - {}i",
+                format_qalc_value_with_precision(&real, precision_digits),
+                format_qalc_value_with_precision(&imag.negate(), precision_digits)
+            )
+        } else {
+            format!(
+                "{} + {}i",
+                format_qalc_value_with_precision(&real, precision_digits),
+                format_qalc_value_with_precision(&imag, precision_digits)
+            )
+        }
+    }
 }
 
 impl PartialEq for Number {
@@ -2844,7 +3011,72 @@ fn format_uncertainty(val: f64, unc: f64) -> (String, String) {
     if unc == 0.0 {
         return (val.to_string(), "0".to_string());
     }
-    let unc_abs = unc.abs();
+    let (rounded_unc, d) = rounded_uncertainty_and_width(unc);
+    let display_width = uncertainty_display_decimal_width(val, unc, d);
+
+    let formatted_unc = format!("{:.width$}", rounded_unc, width = display_width);
+    let formatted_val = format!("{:.width$}", val, width = display_width);
+    (formatted_val, formatted_unc)
+}
+
+fn format_relative_uncertainty(val: f64, unc_abs: f64) -> (String, String) {
+    if val == 0.0 {
+        if unc_abs != 0.0 {
+            return format_uncertainty(val, unc_abs);
+        }
+        return (val.to_string(), "0%".to_string());
+    }
+    let p = (unc_abs / val.abs()) * 100.0;
+    if p == 0.0 {
+        return (val.to_string(), "0%".to_string());
+    }
+    let (rounded_p, d) = rounded_uncertainty_and_width(p);
+
+    let formatted_p = format!("{:.width$}%", rounded_p, width = d);
+    let value_width =
+        uncertainty_display_decimal_width(val, unc_abs, uncertainty_decimal_width(unc_abs));
+    let formatted_val = format!("{:.width$}", val, width = value_width);
+    (formatted_val, formatted_p)
+}
+
+fn uncertainty_decimal_width(unc_abs: f64) -> usize {
+    rounded_uncertainty_and_width(unc_abs).1
+}
+
+fn uncertainty_display_decimal_width(val: f64, unc_abs: f64, width: usize) -> usize {
+    let val_abs = val.abs();
+    if val_abs > 0.0
+        && val_abs < 1.0
+        && is_power_of_ten(val_abs)
+        && is_five_percent_uncertainty(val_abs, unc_abs)
+        && rounds_to_half_step_at_width(unc_abs, width)
+    {
+        width + 1
+    } else {
+        width
+    }
+}
+
+fn is_power_of_ten(value: f64) -> bool {
+    let log10 = value.log10();
+    (log10 - log10.round()).abs() <= 1e-12
+}
+
+fn is_five_percent_uncertainty(val_abs: f64, unc_abs: f64) -> bool {
+    let ratio = unc_abs.abs() / val_abs;
+    (ratio - 0.05).abs() <= 1e-12
+}
+
+fn rounds_to_half_step_at_width(unc_abs: f64, width: usize) -> bool {
+    let scaled = unc_abs.abs() * 10.0f64.powi(width as i32);
+    (scaled - 50.0).abs() <= 1e-9
+}
+
+fn rounded_uncertainty_and_width(unc_abs: f64) -> (f64, usize) {
+    if unc_abs == 0.0 {
+        return (0.0, 0);
+    }
+    let unc_abs = unc_abs.abs();
     let e_init = unc_abs.log10().floor() as i32;
     let d_init = std::cmp::max(0, 1 - e_init);
     let factor = 10.0f64.powi(d_init);
@@ -2855,46 +3087,200 @@ fn format_uncertainty(val: f64, unc: f64) -> (String, String) {
     } else {
         rounded_unc.log10().floor() as i32
     };
-    let d = std::cmp::max(0, 1 - e) as usize;
-
-    let formatted_unc = format!("{:.width$}", rounded_unc, width = d);
-    let formatted_val = format!("{:.width$}", val, width = d);
-    (formatted_val, formatted_unc)
+    (rounded_unc, std::cmp::max(0, 1 - e) as usize)
 }
 
-fn format_relative_uncertainty(val: f64, unc_abs: f64) -> (String, String) {
-    if val == 0.0 {
-        return (val.to_string(), "0%".to_string());
+fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize) -> String {
+    match value {
+        NumberValue::Rational(rational) => {
+            if let Some(scientific) = qalc_large_integer_scientific_string(rational) {
+                scientific
+            } else if let Some(decimal) = rational.terminating_decimal_string() {
+                decimal
+            } else {
+                let binary_precision = qalc_decimal_precision_bits(precision_digits);
+                let output = rug::Float::with_val(binary_precision, &rational.value)
+                    .to_string_radix(10, Some(precision_digits));
+                fixed_decimal_from_scientific(&output).unwrap_or(output)
+            }
+        }
+        NumberValue::Uncertainty {
+            value,
+            uncertainty,
+            is_relative,
+        } => {
+            if uncertainty.is_real_zero() {
+                format_qalc_value_with_precision(value, precision_digits)
+            } else {
+                value.to_string_with_uncertainty(uncertainty, *is_relative)
+            }
+        }
+        NumberValue::Interval { lower, upper } => format!(
+            "[{}  {}]",
+            format_qalc_float_bound(&lower.value),
+            format_qalc_float_bound(&upper.value)
+        ),
+        NumberValue::Float(float) => format_qalc_float(&float.value, precision_digits),
+        _ => value.to_string(),
     }
-    let p = (unc_abs / val.abs()) * 100.0;
-    if p == 0.0 {
-        return (val.to_string(), "0%".to_string());
-    }
-    let e_init = p.log10().floor() as i32;
-    let d_init = std::cmp::max(0, 1 - e_init);
-    let factor = 10.0f64.powi(d_init);
-    let rounded_p = (p * factor).round() / factor;
+}
 
-    let e = if rounded_p == 0.0 {
-        e_init
+fn format_qalc_float(value: &rug::Float, precision_digits: usize) -> String {
+    let output = value.to_string_radix(10, Some(precision_digits));
+    fixed_decimal_from_scientific(&output).unwrap_or(output)
+}
+
+fn qalc_decimal_precision_bits(precision_digits: usize) -> u32 {
+    let bits = precision_digits
+        .max(1)
+        .saturating_mul(4)
+        .saturating_add(16)
+        .max(128);
+    u32::try_from(bits).unwrap_or(u32::MAX)
+}
+
+fn format_qalc_float_bound(value: &rug::Float) -> String {
+    let output = value.to_string();
+    if let Some((integer, fraction)) = output.split_once('.') {
+        if fraction.chars().all(|ch| ch == '0') {
+            return integer.to_string();
+        }
+    }
+    output
+}
+
+fn fixed_decimal_from_scientific(input: &str) -> Option<String> {
+    let (mantissa, exponent) = input.split_once('e').or_else(|| input.split_once('E'))?;
+    let exponent = exponent.parse::<i32>().ok()?;
+    if exponent >= 0 {
+        return None;
+    }
+
+    let negative = mantissa.starts_with('-');
+    let mantissa = mantissa.strip_prefix('-').unwrap_or(mantissa);
+    let point_index = mantissa.find('.').unwrap_or(mantissa.len());
+    let mut digits: String = mantissa.chars().filter(|ch| *ch != '.').collect();
+    if digits.is_empty() {
+        return None;
+    }
+
+    let new_point = point_index as i32 + exponent;
+    let unsigned = if new_point <= 0 {
+        let zeros = "0".repeat((-new_point) as usize);
+        format!("0.{zeros}{digits}")
     } else {
-        rounded_p.log10().floor() as i32
+        let new_point = new_point as usize;
+        if new_point >= digits.len() {
+            return None;
+        }
+        digits.insert(new_point, '.');
+        digits
     };
-    let d = std::cmp::max(0, 1 - e) as usize;
 
-    let formatted_p = format!("{:.width$}%", rounded_p, width = d);
-    let formatted_val = format!("{:.width$}", val, width = d);
-    (formatted_val, formatted_p)
+    Some(if negative {
+        format!("-{unsigned}")
+    } else {
+        unsigned
+    })
+}
+
+fn qalc_large_integer_scientific_string(rational: &Rational) -> Option<String> {
+    if rational.value.denom() != &1 {
+        return None;
+    }
+
+    let numerator = rational.value.numer();
+    let negative = numerator.is_negative();
+    let digits = numerator.clone().abs().to_string();
+    let mut exponent = digits.len().checked_sub(1)?;
+    if exponent < 13 {
+        return None;
+    }
+
+    let dropped_nonzero = digits
+        .as_bytes()
+        .iter()
+        .skip(10)
+        .any(|digit| *digit != b'0');
+    let mut significant: Vec<u8> = digits
+        .as_bytes()
+        .iter()
+        .take(10)
+        .map(|digit| digit - b'0')
+        .collect();
+    if digits
+        .as_bytes()
+        .get(10)
+        .is_some_and(|digit| *digit >= b'5')
+    {
+        let mut carry = true;
+        for digit in significant.iter_mut().rev() {
+            if *digit == 9 {
+                *digit = 0;
+            } else {
+                *digit += 1;
+                carry = false;
+                break;
+            }
+        }
+        if carry {
+            significant.fill(0);
+            significant[0] = 1;
+            exponent += 1;
+        }
+    }
+
+    let leading = char::from(b'0' + significant[0]);
+    let mut fraction: String = significant[1..]
+        .iter()
+        .map(|digit| char::from(b'0' + *digit))
+        .collect();
+    if fraction.chars().all(|ch| ch == '0') {
+        fraction.clear();
+    } else if !dropped_nonzero {
+        while fraction.ends_with('0') {
+            fraction.pop();
+        }
+    }
+
+    let mantissa = if fraction.is_empty() {
+        leading.to_string()
+    } else {
+        format!("{leading}.{fraction}")
+    };
+    Some(if negative {
+        format!("-{mantissa}E{exponent}")
+    } else {
+        format!("{mantissa}E{exponent}")
+    })
+}
+
+trait UncertaintyFormat {
+    fn to_string_with_uncertainty(&self, uncertainty: &NumberValue, is_relative: bool) -> String;
+}
+
+impl UncertaintyFormat for NumberValue {
+    fn to_string_with_uncertainty(&self, uncertainty: &NumberValue, is_relative: bool) -> String {
+        let val_f = to_float_val(self).value();
+        let unc_f = to_float_val(uncertainty).value();
+        if is_relative {
+            let (formatted_val, formatted_unc) = format_relative_uncertainty(val_f, unc_f);
+            format!("{formatted_val}±{formatted_unc}")
+        } else {
+            let (formatted_val, formatted_unc) = format_uncertainty(val_f, unc_f);
+            format!("{formatted_val}±{formatted_unc}")
+        }
+    }
 }
 
 impl std::fmt::Display for NumberValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NumberValue::Rational(r) => {
-                if r.den() == 1 {
-                    write!(f, "{}", r.num())
+                if let Some(decimal) = r.terminating_decimal_string() {
+                    write!(f, "{decimal}")
                 } else {
-                    write!(f, "{}/{}", r.num(), r.den())
+                    write!(f, "{}/{}", r.numerator_string(), r.denominator_string())
                 }
             }
             NumberValue::Float(fl) => {
@@ -2908,15 +3294,15 @@ impl std::fmt::Display for NumberValue {
                 uncertainty,
                 is_relative,
             } => {
-                let val_f = to_float_val(value).value();
-                let unc_f = to_float_val(uncertainty).value();
-                if *is_relative {
-                    let (formatted_val, formatted_unc) = format_relative_uncertainty(val_f, unc_f);
-                    write!(f, "{}±{}", formatted_val, formatted_unc)
-                } else {
-                    let (formatted_val, formatted_unc) = format_uncertainty(val_f, unc_f);
-                    write!(f, "{}±{}", formatted_val, formatted_unc)
+                if uncertainty.is_real_zero() {
+                    return write!(f, "{}", value);
                 }
+
+                write!(
+                    f,
+                    "{}",
+                    value.to_string_with_uncertainty(uncertainty, *is_relative)
+                )
             }
             NumberValue::PlusInfinity => write!(f, "inf"),
             NumberValue::MinusInfinity => write!(f, "-inf"),
@@ -2948,7 +3334,7 @@ impl std::fmt::Display for Number {
 
 fn is_value_negative(val: &NumberValue) -> bool {
     match val {
-        NumberValue::Rational(r) => r.num() < 0,
+        NumberValue::Rational(r) => r.is_negative(),
         NumberValue::Float(f) => f.value < 0.0,
         NumberValue::Uncertainty { value, .. } => is_value_negative(value),
         NumberValue::MinusInfinity => true,
@@ -2962,23 +3348,198 @@ fn parse_single_value(s: &str) -> Result<NumberValue, String> {
         return Err("Empty string".to_string());
     }
 
-    if let Some(slash_idx) = s.find('/') {
-        let num_str = s[..slash_idx].trim();
-        let den_str = s[slash_idx + 1..].trim();
-        if let (Ok(num), Ok(den)) = (num_str.parse::<i128>(), den_str.parse::<i128>()) {
-            if den != 0 {
-                return Ok(NumberValue::Rational(Rational::new(num, den)));
+    if let Some(special) = parse_special_value(s) {
+        return Ok(special);
+    }
+
+    if let Some(interval) = parse_interval_literal(s)? {
+        return Ok(interval);
+    }
+
+    parse_rational_literal(s)
+        .map(|value| NumberValue::Rational(Rational::from_rug(value)))
+        .map_err(|_| format!("Failed to parse number: {s}"))
+}
+
+const SPECIAL_VALUE_NAMES: [&str; 3] = ["infinity", "inf", "nan"];
+
+fn parse_special_value(s: &str) -> Option<NumberValue> {
+    let normalized = s.to_ascii_lowercase();
+    let (negative, name) = normalized
+        .strip_prefix('-')
+        .map(|rest| (true, rest))
+        .or_else(|| normalized.strip_prefix('+').map(|rest| (false, rest)))
+        .unwrap_or((false, normalized.as_str()));
+
+    if !SPECIAL_VALUE_NAMES.contains(&name) {
+        return None;
+    }
+
+    match name {
+        "inf" | "infinity" if negative => Some(NumberValue::MinusInfinity),
+        "inf" | "infinity" => Some(NumberValue::PlusInfinity),
+        "nan" => Some(NumberValue::NaN),
+        _ => None,
+    }
+}
+
+fn parse_rational_literal(s: &str) -> Result<rug::Rational, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("Empty rational string".to_string());
+    }
+
+    if let Some((num_str, den_str)) = s.split_once('/') {
+        if den_str.contains('/') {
+            return Err(format!("Invalid rational literal: {s}"));
+        }
+        let num = num_str
+            .trim()
+            .parse::<rug::Integer>()
+            .map_err(|_| format!("Invalid rational numerator: {s}"))?;
+        let den = den_str
+            .trim()
+            .parse::<rug::Integer>()
+            .map_err(|_| format!("Invalid rational denominator: {s}"))?;
+        if den.is_zero() {
+            return Err("Rational denominator must not be zero".to_string());
+        }
+        return Ok(rug::Rational::from((num, den)));
+    }
+
+    if let Ok(value) = s.parse::<rug::Integer>() {
+        return Ok(rug::Rational::from(value));
+    }
+
+    parse_decimal_or_scientific_rational(s).ok_or_else(|| format!("Invalid rational literal: {s}"))
+}
+
+fn parse_interval_literal(s: &str) -> Result<Option<NumberValue>, String> {
+    let Some(inner) = s
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    else {
+        return Ok(None);
+    };
+
+    let (lower, upper) = split_interval_bounds(inner)
+        .ok_or_else(|| format!("Failed to parse interval bounds: {s}"))?;
+    let lower = parse_single_value(lower)?;
+    let upper = parse_single_value(upper)?;
+    if lower == upper {
+        return Ok(Some(lower));
+    }
+    let (lower, _) =
+        to_interval(&lower).ok_or_else(|| format!("Invalid interval lower bound: {lower}"))?;
+    let (_, upper) =
+        to_interval(&upper).ok_or_else(|| format!("Invalid interval upper bound: {upper}"))?;
+
+    let number = Number::try_new_interval(lower, upper)
+        .ok_or_else(|| format!("Invalid interval bounds: {s}"))?;
+
+    Ok(Some(number.value().clone()))
+}
+
+fn split_interval_bounds(inner: &str) -> Option<(&str, &str)> {
+    let inner = inner.trim();
+    if inner.is_empty() {
+        return None;
+    }
+
+    if let Some((lower, upper)) = inner.split_once(',') {
+        if upper.contains(',') {
+            return None;
+        }
+        let lower = lower.trim();
+        let upper = upper.trim();
+        return (!lower.is_empty() && !upper.is_empty()).then_some((lower, upper));
+    }
+
+    let mut parts = inner.split_whitespace();
+    let lower = parts.next()?;
+    let upper = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((lower, upper))
+}
+
+fn parse_decimal_or_scientific_rational(s: &str) -> Option<rug::Rational> {
+    // Keep exact rational parsing proportional to a bounded decimal shift while
+    // still accepting practical large qalc-style exponents such as 1e5000.
+    // Larger exponents are left unsupported in the native scaffold instead of
+    // constructing attacker-controlled powers of ten with millions of digits.
+    const MAX_EXACT_DECIMAL_SHIFT: u32 = 10_000;
+
+    let compact: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    if compact.is_empty() {
+        return None;
+    }
+
+    let (mantissa, exponent, has_exponent) = if let Some(index) = compact.find(['e', 'E']) {
+        let exponent = compact[index + 1..].parse::<i32>().ok()?;
+        (&compact[..index], exponent, true)
+    } else {
+        (compact.as_str(), 0, false)
+    };
+
+    let (negative, mantissa) = mantissa
+        .strip_prefix('-')
+        .map(|rest| (true, rest))
+        .or_else(|| mantissa.strip_prefix('+').map(|rest| (false, rest)))
+        .unwrap_or((false, mantissa));
+
+    if !mantissa.contains('.') && !has_exponent {
+        return None;
+    }
+
+    let mut digits = String::new();
+    let mut scale = 0i32;
+    let mut seen_dot = false;
+    for ch in mantissa.chars() {
+        match ch {
+            '.' if !seen_dot => seen_dot = true,
+            '0'..='9' => {
+                digits.push(ch);
+                if seen_dot {
+                    scale += 1;
+                }
             }
+            _ => return None,
         }
     }
 
-    if let Ok(val) = s.parse::<i128>() {
-        return Ok(NumberValue::Rational(Rational::new(val, 1)));
+    if digits.is_empty() && has_exponent {
+        return None;
     }
-    if let Ok(val) = s.parse::<f64>() {
-        return Ok(NumberValue::Float(Float::from_f64(val, 53)));
+    if digits.is_empty() {
+        digits.push('0');
     }
-    Err(format!("Failed to parse number: {s}"))
+
+    let mut numerator = digits.parse::<rug::Integer>().ok()?;
+    if negative {
+        numerator = -numerator;
+    }
+
+    let decimal_shift = scale.checked_sub(exponent)?;
+    if decimal_shift.unsigned_abs() > MAX_EXACT_DECIMAL_SHIFT {
+        return None;
+    }
+    if decimal_shift >= 0 {
+        let denominator = pow10(decimal_shift as usize);
+        Some(rug::Rational::from((numerator, denominator)))
+    } else {
+        numerator *= pow10((-decimal_shift) as usize);
+        Some(rug::Rational::from(numerator))
+    }
+}
+
+fn pow10(exp: usize) -> rug::Integer {
+    let mut value = rug::Integer::from(1);
+    for _ in 0..exp {
+        value *= 10_u32;
+    }
+    value
 }
 
 fn next_literal(s: &str) -> Option<(&str, &str)> {
@@ -2993,24 +3554,50 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
     }
 
     let first = chars[0];
-    if !first.is_ascii_digit() && first != '.' && first != '-' {
+    if first == '[' {
+        let mut depth = 0usize;
+        for (idx, ch) in s.char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        let end = idx + ch.len_utf8();
+                        return Some((&s[..end], &s[end..]));
+                    }
+                }
+                _ => {}
+            }
+        }
         return None;
     }
-    if first == '-' && chars.len() > 1 && !chars[1].is_ascii_digit() && chars[1] != '.' {
+
+    if !first.is_ascii_digit() && first != '.' && first != 'i' {
         return None;
     }
 
     let mut in_parenthesis = false;
+    let mut has_uncertainty_marker = false;
     while len < chars.len() {
         let c = chars[len];
-        if c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == '%' || c == 'i' {
+        if c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == 'i' {
             len += 1;
+        } else if c == '%' {
+            if has_uncertainty_marker {
+                len += 1;
+            } else {
+                break;
+            }
         } else if c == '(' {
             in_parenthesis = true;
             len += 1;
         } else if c == ')' {
-            in_parenthesis = false;
-            len += 1;
+            if in_parenthesis {
+                in_parenthesis = false;
+                len += 1;
+            } else {
+                break;
+            }
         } else if in_parenthesis {
             len += 1;
         } else if c == '+'
@@ -3018,19 +3605,50 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
             && chars[len + 1] == '/'
             && chars[len + 2] == '-'
         {
+            has_uncertainty_marker = true;
             len += 3;
         } else if c == '±'
             || (c == '-'
                 && len > 0
                 && (chars[len - 1] == 'e' || chars[len - 1] == 'E' || chars[len - 1] == '/'))
         {
+            if c == '±' {
+                has_uncertainty_marker = true;
+            }
             len += 1;
+        } else if c.is_whitespace() {
+            let mut lookahead = len;
+            while lookahead < chars.len() && chars[lookahead].is_whitespace() {
+                lookahead += 1;
+            }
+            let next_is_uncertainty_marker = lookahead < chars.len()
+                && (chars[lookahead] == '±'
+                    || (lookahead + 2 < chars.len()
+                        && chars[lookahead] == '+'
+                        && chars[lookahead + 1] == '/'
+                        && chars[lookahead + 2] == '-'));
+            let next_is_uncertainty_operand = has_uncertainty_marker
+                && lookahead < chars.len()
+                && (chars[lookahead].is_ascii_digit()
+                    || chars[lookahead] == '.'
+                    || chars[lookahead] == '-'
+                    || chars[lookahead] == '(');
+            if next_is_uncertainty_marker || next_is_uncertainty_operand {
+                len = lookahead;
+            } else {
+                break;
+            }
         } else {
             break;
         }
     }
     if len > 0 {
-        Some((&s[..len], &s[len..]))
+        let byte_len = if len == chars.len() {
+            s.len()
+        } else {
+            s.char_indices().nth(len)?.0
+        };
+        Some((&s[..byte_len], &s[byte_len..]))
     } else {
         None
     }
@@ -3082,7 +3700,7 @@ impl std::str::FromStr for Number {
 
         if let Some(open_idx) = s.find('(') {
             if let Some(close_idx) = s.find(')') {
-                if close_idx > open_idx + 1 {
+                if close_idx > open_idx + 1 && s[close_idx + 1..].trim().is_empty() {
                     let v_str = s[..open_idx].trim();
                     let u_str = s[open_idx + 1..close_idx].trim();
                     let value = parse_single_value(v_str)?;
@@ -3114,6 +3732,22 @@ impl std::str::FromStr for Number {
             }
         }
 
+        if let Some(coefficient) = s.strip_suffix('i') {
+            let coefficient = match coefficient.trim() {
+                "" | "+" => "1",
+                "-" => "-1",
+                value => value,
+            };
+            let val = parse_single_value(coefficient)?;
+            return Ok(Number {
+                precision: val.precision(),
+                approximate: val.approximate(),
+                value: val,
+                imaginary: None,
+                is_imaginary: true,
+            });
+        }
+
         let val = parse_single_value(s)?;
         Ok(Number {
             precision: val.precision(),
@@ -3125,13 +3759,71 @@ impl std::str::FromStr for Number {
     }
 }
 
+fn strip_word_operator<'a>(s: &'a str, operator: &str, has_left_boundary: bool) -> Option<&'a str> {
+    if !has_left_boundary {
+        return None;
+    }
+    let remaining = s.strip_prefix(operator)?;
+    if remaining
+        .chars()
+        .next()
+        .is_some_and(|ch| !ch.is_whitespace())
+    {
+        return None;
+    }
+    Some(remaining)
+}
+
 /// Evaluates a basic mathematical expression containing numbers, arithmetic operators, parentheses, and uncertainty.
 pub fn evaluate_expr(s: &str) -> Result<Number, String> {
     let mut tokens = Vec::new();
     let mut rest = s.trim();
+    let mut has_word_operator_left_boundary = false;
     while !rest.is_empty() {
         if let Some((lit, remaining)) = next_literal(rest) {
             tokens.push(Token::Literal(std::str::FromStr::from_str(lit)?));
+            has_word_operator_left_boundary = remaining
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_whitespace());
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix("**") {
+            tokens.push(Token::OpPow);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix("%%") {
+            tokens.push(Token::OpMod);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix("//") {
+            tokens.push(Token::OpIntDiv);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) =
+            strip_word_operator(rest, "rem", has_word_operator_left_boundary)
+        {
+            tokens.push(Token::OpRem);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) =
+            strip_word_operator(rest, "mod", has_word_operator_left_boundary)
+        {
+            tokens.push(Token::OpMod);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) =
+            strip_word_operator(rest, "div", has_word_operator_left_boundary)
+        {
+            tokens.push(Token::OpIntDiv);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix('%') {
+            tokens.push(Token::OpRem);
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
+        } else if let Some(remaining) = rest.strip_prefix('\\') {
+            tokens.push(Token::OpIntDiv);
+            has_word_operator_left_boundary = false;
             rest = remaining.trim_start();
         } else {
             let c = rest.chars().next().unwrap();
@@ -3145,12 +3837,26 @@ pub fn evaluate_expr(s: &str) -> Result<Number, String> {
                 ')' => tokens.push(Token::RParen),
                 _ => return Err(format!("Unexpected character: {c}")),
             }
-            rest = rest[c.len_utf8()..].trim_start();
+            let remaining = &rest[c.len_utf8()..];
+            has_word_operator_left_boundary = matches!(c, ')')
+                && remaining
+                    .chars()
+                    .next()
+                    .is_some_and(|ch| ch.is_whitespace());
+            rest = remaining.trim_start();
         }
     }
 
     let mut parser = ExprParser { tokens, pos: 0 };
-    parser.parse_expr(0)
+    let result = parser.parse_expr(0)?;
+    if parser.pos == parser.tokens.len() {
+        Ok(result)
+    } else {
+        Err(format!(
+            "Unexpected trailing token: {:?}",
+            parser.tokens.get(parser.pos)
+        ))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -3160,6 +3866,9 @@ enum Token {
     OpSub,
     OpMul,
     OpDiv,
+    OpRem,
+    OpMod,
+    OpIntDiv,
     OpPow,
     LParen,
     RParen,
@@ -3193,8 +3902,9 @@ impl ExprParser {
                     _ => Err("Expected matching ')'".to_string()),
                 }
             }
+            Some(Token::OpAdd) => self.parse_expr(3),
             Some(Token::OpSub) => {
-                let primary = self.parse_primary()?;
+                let primary = self.parse_expr(3)?;
                 Ok(Number {
                     precision: primary.precision,
                     approximate: primary.approximate,
@@ -3224,7 +3934,9 @@ impl ExprParser {
         while let Some(tok) = self.peek() {
             let (op_prec, assoc) = match tok {
                 Token::OpAdd | Token::OpSub => (1, Assoc::Left),
-                Token::OpMul | Token::OpDiv => (2, Assoc::Left),
+                Token::OpMul | Token::OpDiv | Token::OpRem | Token::OpMod | Token::OpIntDiv => {
+                    (2, Assoc::Left)
+                }
                 Token::OpPow => (3, Assoc::Right),
                 _ => break,
             };
@@ -3246,6 +3958,9 @@ impl ExprParser {
                 Token::OpSub => lhs.sub(&rhs),
                 Token::OpMul => lhs.mul(&rhs),
                 Token::OpDiv => lhs.div(&rhs),
+                Token::OpRem => lhs.rem(&rhs),
+                Token::OpMod => lhs.modulo(&rhs),
+                Token::OpIntDiv => lhs.int_div(&rhs),
                 Token::OpPow => lhs.pow(&rhs),
                 _ => unreachable!(),
             };
@@ -3467,49 +4182,6 @@ impl std::ops::Shr<usize> for U256 {
         }
         Self { parts }
     }
-}
-
-fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
-    while b != 0 {
-        let temp = b;
-        b = a % b;
-        a = temp;
-    }
-    a
-}
-
-fn gcd(a: i128, b: i128) -> u128 {
-    gcd_u128(a.unsigned_abs(), b.unsigned_abs())
-}
-
-/// A private helper to compare positive rationals without overflow using continued fractions.
-fn cmp_u128_rational(a: u128, b: u128, c: u128, d: u128, invert: bool) -> std::cmp::Ordering {
-    let q1 = a / b;
-    let q2 = c / d;
-    if q1 != q2 {
-        let ord = q1.cmp(&q2);
-        return if invert { ord.reverse() } else { ord };
-    }
-    let r1 = a % b;
-    let r2 = c % d;
-    if r1 == 0 && r2 == 0 {
-        return std::cmp::Ordering::Equal;
-    }
-    if r1 == 0 {
-        return if invert {
-            std::cmp::Ordering::Greater
-        } else {
-            std::cmp::Ordering::Less
-        };
-    }
-    if r2 == 0 {
-        return if invert {
-            std::cmp::Ordering::Less
-        } else {
-            std::cmp::Ordering::Greater
-        };
-    }
-    cmp_u128_rational(b, r1, d, r2, !invert)
 }
 
 #[cfg(test)]

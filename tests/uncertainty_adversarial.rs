@@ -62,7 +62,7 @@ fn test_parsing_percentage_variations() {
 
     // Zero percentage uncertainty
     let n2 = "100 +/- 0%".parse::<Number>().unwrap();
-    assert_eq!(n2.to_string(), "100±0%");
+    assert_eq!(n2.to_string(), "100");
 
     // Negative percentage uncertainty
     let n3 = "100 +/- -5%".parse::<Number>().unwrap();
@@ -256,7 +256,7 @@ fn test_uncertainty_propagation_boundary_cases() {
     // Multiplication with zero uncertainty
     let zero_unc = "10 +/- 0".parse::<Number>().unwrap();
     let zero_unc_sum = zero_unc.add(&zero_unc);
-    assert_eq!(zero_unc_sum.to_string(), "20±0");
+    assert_eq!(zero_unc_sum.to_string(), "20");
 
     // Auditor specific cases:
     // 1. Exponentiating a negative base with exponent having 0 uncertainty
@@ -317,15 +317,71 @@ fn test_uncertainty_formatting_boundary_cases() {
     let n1 = "1.00000000 +/- 0.00000001".parse::<Number>().unwrap();
     assert_eq!(n1.to_string(), "1.000000000±0.000000010");
 
+    let subunit_abs = "0.1 +/- 0.005".parse::<Number>().unwrap();
+    assert_eq!(subunit_abs.to_string(), "0.10000±0.00500");
+
+    let subunit_relative = "0.1 +/- 5%".parse::<Number>().unwrap();
+    assert_eq!(subunit_relative.to_string(), "0.10000±5.0%");
+
+    let small_subunit_abs = "0.001 +/- 0.00005".parse::<Number>().unwrap();
+    assert_eq!(small_subunit_abs.to_string(), "0.0010000±0.0000500");
+
+    let small_subunit_relative = "0.001 +/- 5%".parse::<Number>().unwrap();
+    assert_eq!(small_subunit_relative.to_string(), "0.0010000±5.0%");
+
+    let half_ratio_abs = "0.1 +/- 0.05".parse::<Number>().unwrap();
+    assert_eq!(half_ratio_abs.to_string(), "0.100±0.050");
+
+    let half_ratio_relative = "0.1 +/- 50%".parse::<Number>().unwrap();
+    assert_eq!(half_ratio_relative.to_string(), "0.100±50%");
+
+    let subunit_nonmatching_ratio = "0.01 +/- 0.005".parse::<Number>().unwrap();
+    assert_eq!(subunit_nonmatching_ratio.to_string(), "0.0100±0.0050");
+
     // Very large uncertainty
     let n2 = "1 +/- 1000000".parse::<Number>().unwrap();
     assert_eq!(n2.to_string(), "1±1000000");
 
-    // Relative uncertainty mixed addition formatting
+    // Mixed absolute/relative addition prints the propagated absolute
+    // uncertainty, matching upstream qalc's display policy.
     let r1 = "100 +/- 5".parse::<Number>().unwrap();
     let r2 = "200 +/- 10%".parse::<Number>().unwrap();
     let r_sum = r1.add(&r2);
-    assert_eq!(r_sum.to_string(), "300.0±6.9%");
+    assert_eq!(r_sum.to_string(), "300±21");
+
+    // All-relative addition and scalar scaling keep relative display.
+    let r3 = "100 +/- 5%".parse::<Number>().unwrap();
+    let r4 = "200 +/- 10%".parse::<Number>().unwrap();
+    let relative_sum = r3.add(&r4);
+    assert_eq!(relative_sum.to_string(), "300±6.9%");
+
+    let equal_relative_sum = r3.add(&r3);
+    assert_eq!(equal_relative_sum.to_string(), "200.0±3.5%");
+
+    let two = "2".parse::<Number>().unwrap();
+    let half = "0.5".parse::<Number>().unwrap();
+    let three = "3".parse::<Number>().unwrap();
+
+    let scaled = r3.mul(&two);
+    assert_eq!(scaled.to_string(), "200±5.0%");
+
+    let scaled_half = r3.mul(&half);
+    assert_eq!(scaled_half.to_string(), "50.0±5.0%");
+
+    let divided_by_half = r3.div(&half);
+    assert_eq!(divided_by_half.to_string(), "200±5.0%");
+
+    let scaled_back = scaled.div(&two);
+    assert_eq!(scaled_back.to_string(), "100.0±5.0%");
+
+    let scaled_three_halves = r3.mul(&three).div(&two);
+    assert_eq!(scaled_three_halves.to_string(), "150.0±5.0%");
+
+    let relative_sum_halved = relative_sum.div(&two);
+    assert_eq!(relative_sum_halved.to_string(), "150±6.9%");
+
+    let zero_center = r3.sub(&r3);
+    assert_eq!(zero_center.to_string(), "0.0±7.1");
 }
 
 // =========================================================================

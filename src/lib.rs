@@ -15,11 +15,14 @@ pub mod batch;
 /// contained here behind the safe `Calculator` wrapper.
 pub mod ffi;
 
-/// Core `Number` representation (placeholder for GMP/MPFR).
+mod numberbase;
+mod session;
+
+/// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.
-/// This module uses `i128`/`f64` placeholders. When the GMP/MPFR backend is
-/// added, this module's internals will be replaced while preserving the public API.
+/// This module preserves a small Rust-facing scaffold while the full upstream
+/// `Number` API surface is ported incrementally.
 pub mod number;
 
 #[cfg(test)]

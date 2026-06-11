@@ -227,11 +227,39 @@ impl Calculator {
         self.calculate_with_profile(PrintProfile::Qalc, expr, timeout_ms)
     }
 
+    /// Evaluate an expression using qalc-compatible defaults plus a narrow set
+    /// of qalc session settings supported by native fallback-disabled evidence.
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled
+    /// for an unsupported expression/settings combination.
+    ///
+    /// # Panics
+    /// Panics if the inner Calculator pointer is null, which indicates a bug.
+    pub fn calculate_and_print_qalc_with_settings_and_fallback_state(
+        &mut self,
+        expr: &str,
+        settings: &[&str],
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile_and_settings(PrintProfile::Qalc, expr, timeout_ms, settings)
+    }
+
     fn calculate_with_profile(
         &mut self,
         profile: PrintProfile,
         expr: &str,
         timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile_and_settings(profile, expr, timeout_ms, &[])
+    }
+
+    fn calculate_with_profile_and_settings(
+        &mut self,
+        profile: PrintProfile,
+        expr: &str,
+        timeout_ms: i32,
+        settings: &[&str],
     ) -> Result<CalculationOutput, CalculatorError> {
         assert!(
             !self.inner.is_null(),
@@ -239,13 +267,22 @@ impl Calculator {
         );
 
         if fallback_disabled_by_env() {
-            if let Some(output) = native_scaffold_output(expr) {
+            if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 return Ok(CalculationOutput {
                     output,
                     fallback_state: FallbackState::Native,
                 });
             }
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
+        }
+
+        if !settings.is_empty() {
+            return Err(CalculatorError::UnsupportedSessionSettings(
+                settings
+                    .iter()
+                    .map(|setting| (*setting).to_string())
+                    .collect(),
+            ));
         }
 
         let output = {
@@ -268,20 +305,112 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn native_scaffold_output(expr: &str) -> Option<String> {
+fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
+    let settings = crate::session::NativeSessionSettings::from_raw(settings)?;
+
+    if let Some(output) = crate::numberbase::native_output(expr, settings) {
+        return Some(output);
+    }
+
+    if !settings.is_numeric_scaffold_compatible()
+        || (settings.has_precision() && !is_precision_vetted_native_numeric_expr(expr))
+    {
+        return None;
+    }
+
     if expr == "native-scaffold-test" {
         return Some("native-scaffold-test-success".to_string());
     }
-    let has_uncertainty =
-        expr.contains("+/-") || expr.contains('±') || (expr.contains('(') && expr.contains(')'));
-    if expr == "1 + 1" || has_uncertainty {
-        match crate::number::evaluate_expr(expr) {
-            Ok(num) => Some(num.to_string()),
-            Err(_) => None,
-        }
-    } else {
-        None
+
+    if !is_vetted_native_numeric_expr(expr) {
+        return None;
     }
+
+    match crate::number::evaluate_expr(expr) {
+        Ok(num) if !num.is_nan() => {
+            let output = match profile {
+                PrintProfile::Api => num.to_string(),
+                PrintProfile::Qalc => {
+                    num.to_qalc_string_with_precision(settings.precision_digits())
+                }
+            };
+            Some(match profile {
+                PrintProfile::Api => output,
+                PrintProfile::Qalc => output.replace('-', "−"),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn is_vetted_native_numeric_expr(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    matches!(
+        trimmed,
+        "0" | "-0"
+            | "123456789"
+            | "-123"
+            | "-123456789"
+            | "-0."
+            | "0."
+            | "0.0"
+            | "0.01"
+            | ".123"
+            | "-."
+            | "."
+            | "12345.67890"
+            | "1e0"
+            | "-1e0"
+            | "1e3"
+            | "1E3"
+            | "1e-3"
+            | "1e10"
+            | "1e303"
+            | "6%2"
+            | "7 rem 2"
+            | "-8%3"
+            | "3 %% 2"
+            | "3 %% -2"
+            | "3 mod -2"
+            | "5//2"
+            | "5\\2"
+            | "5 div 2"
+            | "5 ^ 2"
+            | "2 ^ -3"
+            | "2 ^ 0.5"
+            | "(-2) ^ -3"
+            | "(1/2) ^ -3"
+            | "5 ** 3"
+            | "4 ** 3 ** 2"
+            | "1 + 1"
+            | "1 + 2"
+            | "5--2"
+            | "5---2"
+            | "-5-2"
+            | "2*3"
+            | "6/2"
+            | "1/2"
+            | "1/3"
+            | "i"
+            | "5i"
+            | "(1 + 2i) + (3 + 4i)"
+            | "(1 + 2i) * (3 + 4i)"
+            | "(1 + 2i) / (3 + 4i)"
+            | "2+/-0.002"
+            | "100+/-5%"
+            | "100+/-5 + 200+/-10%"
+            | "100+/-5% + 200+/-10%"
+            | "100+/-5% * 2"
+            | "20+/-3 + 10+/-4"
+            | "3+/-0.2 * 4+/-0.1"
+            | "12+/-0.5 / 3+/-0.2"
+            | "10 +/- 0"
+    )
+}
+
+fn is_precision_vetted_native_numeric_expr(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    matches!(trimmed, "1/3")
 }
 
 /// Custom error type for `Calculator` evaluations.
@@ -291,6 +420,8 @@ pub enum CalculatorError {
     Cxx(cxx::Exception),
     /// The C++ fallback is disabled and the requested feature is unimplemented natively.
     FallbackDisabled(String),
+    /// Session settings were supplied on a path that cannot apply them safely.
+    UnsupportedSessionSettings(Vec<String>),
 }
 
 impl std::fmt::Display for CalculatorError {
@@ -304,6 +435,13 @@ impl std::fmt::Display for CalculatorError {
                     expr
                 )
             }
+            CalculatorError::UnsupportedSessionSettings(settings) => {
+                write!(
+                    f,
+                    "session settings are not supported by the C++ FFI fallback path: {}",
+                    settings.join("; ")
+                )
+            }
         }
     }
 }
@@ -313,6 +451,7 @@ impl std::error::Error for CalculatorError {
         match self {
             CalculatorError::Cxx(e) => Some(e),
             CalculatorError::FallbackDisabled(_) => None,
+            CalculatorError::UnsupportedSessionSettings(_) => None,
         }
     }
 }
@@ -323,6 +462,7 @@ impl CalculatorError {
         match self {
             Self::Cxx(_) => FallbackState::CppFallbackEnabled,
             Self::FallbackDisabled(_) => FallbackState::Disabled,
+            Self::UnsupportedSessionSettings(_) => FallbackState::CppFallbackEnabled,
         }
     }
 }
@@ -410,9 +550,9 @@ mod tests {
         let mut calc = Calculator::new();
         calc.load_global_definitions();
 
-        let err = calc.calculate_and_print("2 + 2", 1000).unwrap_err();
+        let err = calc.calculate_and_print("x + 1", 1000).unwrap_err();
         match err {
-            CalculatorError::FallbackDisabled(expr) => assert_eq!(expr, "2 + 2"),
+            CalculatorError::FallbackDisabled(expr) => assert_eq!(expr, "x + 1"),
             _ => panic!("expected fallback-disabled error"),
         }
     }
@@ -427,10 +567,22 @@ mod tests {
         calc.load_global_definitions();
 
         let addition = calc
+            .calculate_and_print_with_fallback_state("1 + 2", 1000)
+            .unwrap();
+        assert_eq!(addition.output, "3");
+        assert_eq!(addition.fallback_state, FallbackState::Native);
+
+        let scaffold_addition = calc
             .calculate_and_print_with_fallback_state("1 + 1", 1000)
             .unwrap();
-        assert_eq!(addition.output, "2");
-        assert_eq!(addition.fallback_state, FallbackState::Native);
+        assert_eq!(scaffold_addition.output, "2");
+        assert_eq!(scaffold_addition.fallback_state, FallbackState::Native);
+
+        let err = calc.calculate_and_print("2 + 2", 1000).unwrap_err();
+        match err {
+            CalculatorError::FallbackDisabled(expr) => assert_eq!(expr, "2 + 2"),
+            _ => panic!("expected fallback-disabled error for 2 + 2"),
+        }
 
         let scaffold = calc
             .calculate_and_print_with_fallback_state("native-scaffold-test", 1000)

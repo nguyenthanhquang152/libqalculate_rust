@@ -24,6 +24,7 @@ fn main() {
             Some(path) => parse_batch(Path::new(&path)),
             None => Err("--parse-batch requires a file path".to_owned()),
         },
+        Some("-set") => evaluate_expression_with_leading_setting(args),
         Some("--help") | Some("-h") | None => {
             print_help();
             Ok(())
@@ -47,6 +48,7 @@ fn print_help() {
     println!("  --self-check           Verify upstream fixture inventory is readable");
     println!("  --list-upstream-tests  List upstream .batch fixtures");
     println!("  --parse-batch <path>   Parse a libqalculate .batch fixture");
+    println!("  -set <setting>         Limited native-evidence qalc setting support");
     println!("  <expression>           Evaluate through the C++ fallback bridge");
 }
 
@@ -82,15 +84,71 @@ fn join_expression(first: String, rest: impl Iterator<Item = String>) -> String 
     expression
 }
 
+fn evaluate_expression_with_leading_setting(
+    mut args: impl Iterator<Item = String>,
+) -> Result<(), String> {
+    let mut settings = Vec::new();
+
+    loop {
+        let Some(setting) = args.next() else {
+            return Err("-set requires a setting".to_owned());
+        };
+        settings.push(setting);
+
+        match args.next() {
+            Some(flag) if flag == "-set" => continue,
+            Some(separator) if separator == "--" => {
+                let Some(expression) = args.next() else {
+                    return Err("-- requires an expression".to_owned());
+                };
+                return evaluate_expression_with_settings(
+                    join_expression(expression, args),
+                    settings,
+                );
+            }
+            Some(expression) => {
+                return evaluate_expression_with_settings(
+                    join_expression(expression, args),
+                    settings,
+                );
+            }
+            None => return Err("-set requires an expression".to_owned()),
+        }
+    }
+}
+
 fn evaluate_expression(expression: String) -> Result<(), String> {
+    evaluate_expression_with_settings(expression, Vec::new())
+}
+
+fn evaluate_expression_with_settings(
+    expression: String,
+    settings: Vec<String>,
+) -> Result<(), String> {
     let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
     let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
+
+    if !fallback_disabled && !settings.is_empty() {
+        return Err("session settings require QALCULATE_DISABLE_FALLBACK=1".to_owned());
+    }
+
     let mut calc = Calculator::new();
     if !fallback_disabled && !calc.load_global_definitions() {
         return Err("failed to load global definitions".to_owned());
     }
 
-    match calc.calculate_and_print_qalc_with_fallback_state(&expression, 1000) {
+    let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
+    let result = if setting_refs.is_empty() {
+        calc.calculate_and_print_qalc_with_fallback_state(&expression, 1000)
+    } else {
+        calc.calculate_and_print_qalc_with_settings_and_fallback_state(
+            &expression,
+            &setting_refs,
+            1000,
+        )
+    };
+
+    match result {
         Ok(result) => {
             if report_fallback {
                 eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());

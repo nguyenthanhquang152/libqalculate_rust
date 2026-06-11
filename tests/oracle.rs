@@ -8,13 +8,16 @@
 //!
 //! - **C++ Oracle**: The upstream `qalc` binary, located via `QALCULATE_ORACLE` env var
 //!   or auto-detected at `../libqalculate/src/qalc`.
-//! - **Rust Subject**: Runs the `qalc-rs` binary. During Epic 0 this evaluates
-//!   expressions through the qalc-compatible C++ FFI fallback.
+//! - **Rust Subject**: Runs the `qalc-rs` binary. Inventory rows use the
+//!   qalc-compatible C++ FFI fallback; rows promoted to `native-pass` run with
+//!   the fallback disabled and must report `fallback=native`.
 //! - **Comparison**: Exact UTF-8 string comparison of stdout, with structured mismatch reporting.
 //!
-//! The strict default gate is currently scoped to no-session batches such as
-//! `parser.batch`. Session-dependent batches remain unsupported by the Rust
-//! subject path until `qalc-rs` can receive equivalent settings.
+//! The strict default gate started with no-session batches such as
+//! `parser.batch`. A small exact-gated numberbase slice now passes accumulated
+//! settings through `qalc-rs -set ...` when those rows are promoted to
+//! `native-pass`; other session-dependent inventory rows remain unsupported by
+//! the Rust subject path.
 //!
 //! # Running
 //!
@@ -353,12 +356,11 @@ fn run_oracle_expression(
 
 /// Run a single expression through the Rust implementation.
 ///
-/// Currently uses the qalc-compatible FFI fallback exposed by the `qalc-rs`
-/// binary since native evaluation is not yet implemented. Accumulated batch
-/// session settings are reported as unsupported rather than silently ignored.
-///
-/// When native Rust evaluation is implemented, this function should be updated
-/// to use the native path instead.
+/// Inventory rows use the qalc-compatible FFI fallback exposed by the `qalc-rs`
+/// binary. Native-pass rows run with fallback disabled through the same CLI and
+/// are verified by the fallback-state oracle gate. Accumulated batch session
+/// settings are passed through only for fallback-disabled native rows; inventory
+/// rows with settings are reported as unsupported rather than silently ignored.
 fn run_rust_expression(
     expression: &str,
     settings: &[SessionCommand],
@@ -366,7 +368,7 @@ fn run_rust_expression(
     disable_fallback: bool,
     report_fallback: bool,
 ) -> CapturedOutput {
-    if !settings.is_empty() {
+    if !settings.is_empty() && !disable_fallback {
         return CapturedOutput {
             stdout: String::new(),
             stderr: format!(
@@ -395,13 +397,18 @@ fn run_rust_expression(
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
         .arg("--")
-        .arg("--")
-        .arg(expression)
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
         .env("QALCULATE_DEFINITIONS_DIR", defs)
         .env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");
+
+    for setting in settings {
+        for arg in setting.to_qalc_args() {
+            cmd.arg(arg);
+        }
+    }
+    cmd.arg("--").arg(expression);
 
     if disable_fallback {
         cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
@@ -658,6 +665,345 @@ fn differential_oracle_parser_batch() {
         mismatches.is_empty(),
         "differential oracle parser.batch found {} mismatch(es)",
         mismatches.len()
+    );
+}
+
+/// Differential oracle test for exact operator cases promoted to `native-pass`.
+#[test]
+fn differential_oracle_exact_operators_batch() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping differential_oracle_exact_operators_batch; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let batch_path = upstream_tests_dir().join("operators.batch");
+    if !batch_path.exists() {
+        eprintln!(
+            "skipping differential_oracle_exact_operators_batch; {} not found",
+            batch_path.display()
+        );
+        return;
+    }
+
+    let defs = defs_dir();
+    let mismatches = differential_oracle_batch(&batch_path, &qalc, &defs);
+    report_mismatches(&mismatches);
+
+    assert!(
+        mismatches.is_empty(),
+        "differential oracle operators.batch found {} mismatch(es)",
+        mismatches.len()
+    );
+}
+
+/// Differential oracle test for `numberbase.batch`, including accumulated
+/// input-base and Unicode settings on the final two rows.
+#[test]
+fn differential_oracle_numberbase_batch() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping differential_oracle_numberbase_batch; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let batch_path = upstream_tests_dir().join("numberbase.batch");
+    if !batch_path.exists() {
+        eprintln!(
+            "skipping differential_oracle_numberbase_batch; {} not found",
+            batch_path.display()
+        );
+        return;
+    }
+
+    let defs = defs_dir();
+    let mismatches = differential_oracle_batch(&batch_path, &qalc, &defs);
+    report_mismatches(&mismatches);
+
+    assert!(
+        mismatches.is_empty(),
+        "differential oracle numberbase.batch found {} mismatch(es)",
+        mismatches.len()
+    );
+}
+
+/// Focused fallback-disabled oracle evidence for no-session `numberbase.batch`
+/// rows. The session-setting rows are covered separately below.
+#[test]
+fn focused_epic2_numberbase_no_session_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_numberbase_no_session_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let cases = [
+        ("numberbase.batch:1", "52 to bin"),
+        ("numberbase.batch:3", "52 to bin16"),
+        ("numberbase.batch:5", "52 to oct"),
+        ("numberbase.batch:7", "52 to hex"),
+        ("numberbase.batch:9", "0x34"),
+        ("numberbase.batch:11", "hex(34)"),
+        ("numberbase.batch:13", "523<<2&250 to bin"),
+        ("numberbase.batch:15", "52.345 to float"),
+        (
+            "numberbase.batch:17",
+            "float(01000010010100010110000101001000)",
+        ),
+        ("numberbase.batch:19", "floatError(52.345)"),
+        ("numberbase.batch:21", "1978 to roman"),
+        ("numberbase.batch:23", "52 to base 32"),
+        ("numberbase.batch:25", "sqrt(32) to base sqrt(2)"),
+    ];
+
+    for (case_id, expression) in cases {
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+/// Focused fallback-disabled oracle evidence for the remaining
+/// `numberbase.batch` rows that depend on accumulated session settings.
+#[test]
+fn focused_epic2_numberbase_session_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_numberbase_session_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [(&str, &str, &[&str]); 2] = [
+        (
+            "numberbase.batch:28",
+            "5p10+AEp-2*p23",
+            &["set input base 16"],
+        ),
+        (
+            "numberbase.batch:32",
+            "52.34 to sexa",
+            &["set input base 16", "set input base 10", "/set unicode 1"],
+        ),
+    ];
+
+    for (case_id, expression, raw_settings) in cases {
+        let settings = raw_settings
+            .iter()
+            .map(|raw| SessionCommand {
+                raw: (*raw).to_string(),
+            })
+            .collect::<Vec<_>>();
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+/// Focused fallback-disabled oracle evidence for Epic 2 numeric slices that are
+/// not represented as simple no-session upstream batch rows.
+#[test]
+fn focused_epic2_native_numeric_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_native_numeric_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let cases = [
+        ("complex-imaginary-unit", "i"),
+        ("complex-imaginary-coefficient", "5i"),
+        ("complex-addition", "(1 + 2i) + (3 + 4i)"),
+        ("complex-multiplication", "(1 + 2i) * (3 + 4i)"),
+        ("complex-division", "(1 + 2i) / (3 + 4i)"),
+        ("nonterminating-rational-qalc-format", "1/3"),
+        ("fixed-power-of-ten-qalc-format", "1e10"),
+        ("original-scaffold-addition", "1 + 1"),
+        ("rational-integer-power-caret", "5 ^ 2"),
+        ("rational-negative-integer-power", "2 ^ -3"),
+        ("float-noninteger-power", "2 ^ 0.5"),
+        ("negative-rational-negative-integer-power", "(-2) ^ -3"),
+        ("fractional-rational-negative-integer-power", "(1/2) ^ -3"),
+        ("rational-integer-power-starstar", "5 ** 3"),
+        ("rational-right-associative-starstar", "4 ** 3 ** 2"),
+        ("absolute-uncertainty", "2+/-0.002"),
+        ("relative-uncertainty", "100+/-5%"),
+        (
+            "mixed-absolute-relative-uncertainty-addition",
+            "100+/-5 + 200+/-10%",
+        ),
+        ("relative-uncertainty-addition", "100+/-5% + 200+/-10%"),
+        ("relative-uncertainty-scalar-multiplication", "100+/-5% * 2"),
+        ("uncertainty-addition", "20+/-3 + 10+/-4"),
+        ("uncertainty-multiplication", "3+/-0.2 * 4+/-0.1"),
+        ("uncertainty-division", "12+/-0.5 / 3+/-0.2"),
+        ("zero-uncertainty-as-exact", "10 +/- 0"),
+    ];
+
+    for (case_id, expression) in cases {
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+#[test]
+fn focused_epic2_float_precision_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_float_precision_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [(&str, &str, &[&str]); 1] = [(
+        "rational-output-precision-context",
+        "1/3",
+        &["/set precision 128"],
+    )];
+
+    for (case_id, expression, raw_settings) in cases {
+        let settings = raw_settings
+            .iter()
+            .map(|raw| SessionCommand {
+                raw: (*raw).to_string(),
+            })
+            .collect::<Vec<_>>();
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+#[test]
+fn focused_epic2_float_precision_rejects_unvetted_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_float_precision_rejects_unvetted_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = [SessionCommand {
+        raw: "/set precision 128".to_string(),
+    }];
+    let cpp_out = run_oracle_expression(&qalc, &defs, "2 ^ 0.5", &settings);
+    let rust_out = run_rust_expression("2 ^ 0.5", &settings, &defs, true, true);
+    let fallback_state = oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+    assert!(
+        cpp_out
+            .stdout
+            .starts_with("1.414213562373095048801688724209698078"),
+        "upstream precision probe unexpectedly changed: {:?}",
+        cpp_out.stdout
+    );
+    assert_eq!(
+        rust_out.stdout, "",
+        "unvetted precision float power should not emit stale native stdout"
+    );
+    assert_ne!(
+        rust_out.exit_code, 0,
+        "unvetted precision float power should be rejected"
+    );
+    assert_eq!(
+        fallback_state,
+        FallbackState::Disabled.label(),
+        "unvetted precision float power should not claim native evidence"
     );
 }
 

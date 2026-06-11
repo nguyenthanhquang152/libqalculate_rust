@@ -403,6 +403,463 @@ fn test_rational_arithmetic_no_overflow() {
 }
 
 #[test]
+fn test_arbitrary_precision_rationals_do_not_fall_back_to_i128_surface() {
+    let beyond_i128 = (rug::Integer::from(i128::MAX) + 1_i32).to_string();
+
+    let parsed = beyond_i128
+        .parse::<Number>()
+        .expect("arbitrary-size integer literal should parse as an exact rational");
+    assert!(!parsed.approximate());
+    assert_eq!(parsed.to_string(), beyond_i128);
+    if let NumberValue::Rational(r) = parsed.value() {
+        assert_eq!(r.value.numer().to_string(), beyond_i128);
+        assert_eq!(r.value.denom().to_string(), "1");
+    } else {
+        panic!("Expected rational");
+    }
+
+    let sum = NumberValue::Rational(Rational::new(i128::MAX, 1))
+        .add(&NumberValue::Rational(Rational::new(1, 1)));
+    assert_eq!(sum.to_string(), beyond_i128);
+    assert_eq!(
+        sum.partial_cmp(&NumberValue::Rational(Rational::new(i128::MAX, 1))),
+        Some(std::cmp::Ordering::Greater)
+    );
+
+    let NumberValue::Rational(parsed_rational) = parsed.value() else {
+        panic!("Expected rational");
+    };
+    let one = Rational::new(1, 1);
+    assert_eq!(
+        parsed_rational
+            .checked_add(&one)
+            .expect("arbitrary-precision checked add should remain exact")
+            .numerator_string(),
+        (rug::Integer::from(i128::MAX) + 2_i32).to_string()
+    );
+    assert_eq!(
+        parsed_rational
+            .checked_sub(&one)
+            .expect("arbitrary-precision checked sub should remain exact")
+            .numerator_string(),
+        i128::MAX.to_string()
+    );
+    assert_eq!(
+        parsed_rational
+            .checked_mul(&one)
+            .expect("arbitrary-precision checked mul should remain exact")
+            .numerator_string(),
+        beyond_i128
+    );
+    assert_eq!(
+        parsed_rational
+            .checked_div(&one)
+            .expect("arbitrary-precision checked div should remain exact")
+            .numerator_string(),
+        beyond_i128
+    );
+}
+
+#[test]
+fn evaluate_expr_handles_grouping_parentheses() {
+    let result = evaluate_expr("(1 + 2) * 4").expect("grouped expression should parse");
+    assert_eq!(result.to_string(), "12");
+}
+
+#[test]
+fn evaluate_expr_rejects_trailing_literals_and_respects_unary_precedence() {
+    assert!(evaluate_expr("1 2").is_err());
+    assert!(evaluate_expr("1(2)3").is_err());
+    assert!(evaluate_expr("1.23(4)5").is_err());
+    assert!(evaluate_expr("1(2)%").is_err());
+
+    let result = evaluate_expr("-2^2").expect("expression should parse");
+    assert_eq!(result.to_string(), "-4");
+}
+
+#[test]
+fn exact_division_by_zero_yields_nan_not_fabricated_infinity() {
+    let result = evaluate_expr("1 / 0").expect("expression should parse");
+    assert!(result.is_nan());
+}
+
+#[test]
+fn exact_integer_powers_remain_rational_and_parse_starstar() {
+    let power = evaluate_expr("2 ^ 20").expect("integer power expression should parse");
+    assert_eq!(
+        power.value(),
+        &NumberValue::Rational(Rational::new(1_048_576, 1))
+    );
+
+    let reciprocal = evaluate_expr("2 ^ -3").expect("negative integer power should parse");
+    assert_eq!(
+        reciprocal.value(),
+        &NumberValue::Rational(Rational::new(1, 8))
+    );
+
+    let fractional_base =
+        evaluate_expr("(2 / 3) ^ -2").expect("fractional rational power should parse");
+    assert_eq!(
+        fractional_base.value(),
+        &NumberValue::Rational(Rational::new(9, 4))
+    );
+
+    assert_eq!(evaluate_expr("5 ** 3").unwrap().to_qalc_string(), "125");
+    assert_eq!(
+        evaluate_expr("4 ** 3 ** 2").unwrap().to_qalc_string(),
+        "262144"
+    );
+}
+
+#[test]
+fn exact_integer_powers_have_result_size_guard() {
+    let guarded = evaluate_expr("1e5000 ^ 1000").expect("guarded power expression should parse");
+    assert!(
+        matches!(guarded.value(), NumberValue::Float(_)),
+        "oversized exact rational power should fall back to approximate path"
+    );
+}
+
+#[test]
+fn rational_modulo_and_remainder_match_qalc_operators() {
+    for (expression, expected) in [
+        ("6%2", "0"),
+        ("7 rem 2", "1"),
+        ("-8%3", "-2"),
+        ("3 %% 2", "1"),
+        ("3 %% -2", "-1"),
+        ("3 mod -2", "-1"),
+    ] {
+        assert_eq!(
+            evaluate_expr(expression).unwrap().to_qalc_string(),
+            expected,
+            "{expression} should match upstream qalc"
+        );
+    }
+
+    assert_eq!(
+        evaluate_expr("7/2 rem 1").unwrap().value(),
+        &NumberValue::Rational(Rational::new(1, 2))
+    );
+    assert_eq!(
+        evaluate_expr("7/2 mod -1").unwrap().value(),
+        &NumberValue::Rational(Rational::new(-1, 2))
+    );
+
+    for expression in ["7rem 2", "3mod -2", "7 rem2", "3 mod-2", "7 rem+2"] {
+        assert!(
+            evaluate_expr(expression).is_err(),
+            "{expression} should require separated word operators"
+        );
+    }
+}
+
+#[test]
+fn rational_integer_division_matches_qalc_operators() {
+    for (expression, expected) in [
+        ("5//2", "2"),
+        ("5\\2", "2"),
+        ("5 div 2", "2"),
+        ("-5//2", "-2"),
+        ("5//-2", "-2"),
+        ("-5//-2", "2"),
+        ("7/2 div 1", "3"),
+        ("-7/2 div 1", "-3"),
+    ] {
+        assert_eq!(
+            evaluate_expr(expression).unwrap().to_qalc_string(),
+            expected,
+            "{expression} should match upstream qalc"
+        );
+    }
+
+    for expression in ["5div 2", "5 div2", "5 div+2"] {
+        assert!(
+            evaluate_expr(expression).is_err(),
+            "{expression} should require separated word operators"
+        );
+    }
+}
+
+#[test]
+fn decimal_and_scientific_literals_parse_without_f64_loss() {
+    let decimal = "0.01"
+        .parse::<Number>()
+        .expect("decimal literal should parse");
+    assert!(!decimal.approximate());
+    assert_eq!(decimal.to_string(), "0.01");
+    let NumberValue::Rational(r) = decimal.value() else {
+        panic!("Expected rational decimal storage");
+    };
+    assert_eq!(r.value.numer().to_string(), "1");
+    assert_eq!(r.value.denom().to_string(), "100");
+
+    let sum = evaluate_expr(".123 + 1").expect("decimal expression should parse");
+    assert_eq!(sum.to_string(), "1.123");
+
+    let scientific = evaluate_expr("1e3 + 2").expect("scientific expression should parse");
+    assert_eq!(scientific.to_string(), "1002");
+}
+
+#[test]
+fn terminating_rationals_use_qalc_decimal_output_shape() {
+    assert_eq!(evaluate_expr("1/2").unwrap().to_string(), "0.5");
+    assert_eq!(evaluate_expr("2/25").unwrap().to_string(), "0.08");
+    assert_eq!(evaluate_expr("10/2").unwrap().to_string(), "5");
+    assert_eq!(evaluate_expr("1/3").unwrap().to_string(), "1/3");
+}
+
+#[test]
+fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
+    assert_eq!(
+        evaluate_expr("1/3").unwrap().to_qalc_string(),
+        "0.3333333333"
+    );
+    assert_eq!(
+        evaluate_expr("1/3")
+            .unwrap()
+            .to_qalc_string_with_precision(128),
+        "0.33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333"
+    );
+    assert_eq!(
+        evaluate_expr("1e10").unwrap().to_qalc_string(),
+        "10000000000"
+    );
+    assert_eq!(
+        evaluate_expr("2 ^ 0.5").unwrap().to_qalc_string(),
+        "1.414213562"
+    );
+    assert_eq!(evaluate_expr("1e303").unwrap().to_qalc_string(), "1E303");
+    assert_eq!(evaluate_expr("2e303").unwrap().to_qalc_string(), "2E303");
+    assert_eq!(evaluate_expr("12e303").unwrap().to_qalc_string(), "1.2E304");
+    assert_eq!(
+        evaluate_expr("123456789012345").unwrap().to_qalc_string(),
+        "1.234567890E14"
+    );
+    assert_eq!(
+        evaluate_expr("129999999999999").unwrap().to_qalc_string(),
+        "1.300000000E14"
+    );
+}
+
+#[test]
+fn float_ln_preserves_operand_precision_without_f64_roundtrip() {
+    let input = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 2),
+    });
+
+    let actual = input.ln();
+    let NumberValue::Float(actual) = actual else {
+        panic!("expected high-precision ln result to remain a float");
+    };
+
+    assert_eq!(actual.prec(), 200);
+    let expected = rug::Float::with_val(200, rug::Float::with_val(200, 2).ln());
+    let diff = rug::Float::with_val(200, &actual.value - expected).abs();
+    let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+    assert!(
+        diff < limit,
+        "ln result lost MPFR precision: diff={diff}, limit={limit}"
+    );
+}
+
+#[test]
+fn float_pow_preserves_operand_precision_without_f64_roundtrip() {
+    let base = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 2),
+    });
+    let exponent = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 0.5),
+    });
+
+    let actual = base.pow(&exponent);
+    let NumberValue::Float(actual) = actual else {
+        panic!("expected high-precision pow result to remain a float");
+    };
+
+    assert_eq!(actual.prec(), 200);
+    let expected = rug::Float::with_val(200, 2).sqrt();
+    let diff = rug::Float::with_val(200, &actual.value - expected).abs();
+    let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+    assert!(
+        diff < limit,
+        "pow result lost MPFR precision: diff={diff}, limit={limit}"
+    );
+}
+
+#[test]
+fn mixed_float_pow_preserves_operand_precision_without_f64_roundtrip() {
+    let high_precision_half = NumberValue::Float(Float {
+        value: rug::Float::with_val(200, 0.5),
+    });
+    let rational_two = NumberValue::Rational(Rational::from_i32(2));
+
+    for actual in [
+        rational_two.pow(&high_precision_half),
+        NumberValue::Float(Float {
+            value: rug::Float::with_val(200, 2),
+        })
+        .pow(&NumberValue::Rational(Rational::new(1, 2))),
+    ] {
+        let NumberValue::Float(actual) = actual else {
+            panic!("expected mixed high-precision pow result to remain a float");
+        };
+
+        assert_eq!(actual.prec(), 200);
+        let expected = rug::Float::with_val(200, 2).sqrt();
+        let diff = rug::Float::with_val(200, &actual.value - expected).abs();
+        let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+        assert!(
+            diff < limit,
+            "mixed pow result lost MPFR precision: diff={diff}, limit={limit}"
+        );
+    }
+}
+
+#[test]
+fn interval_ln_preserves_endpoint_precision_without_f64_roundtrip() {
+    let input = NumberValue::Interval {
+        lower: Float {
+            value: rug::Float::with_val(200, 2),
+        },
+        upper: Float {
+            value: rug::Float::with_val(200, 3),
+        },
+    };
+
+    let actual = input.ln();
+    let NumberValue::Interval { lower, upper } = actual else {
+        panic!("expected interval ln to remain an interval");
+    };
+
+    assert_eq!(lower.prec(), 200);
+    assert_eq!(upper.prec(), 200);
+    let lower_expected = rug::Float::with_val(200, rug::Float::with_val(200, 2).ln());
+    let upper_expected = rug::Float::with_val(200, rug::Float::with_val(200, 3).ln());
+    let lower_diff = rug::Float::with_val(200, &lower.value - lower_expected).abs();
+    let upper_diff = rug::Float::with_val(200, &upper.value - upper_expected).abs();
+    let limit = rug::Float::with_val(200, rug::Float::with_val(200, 2).pow(-160));
+    assert!(
+        lower_diff < limit && upper_diff < limit,
+        "interval ln lost MPFR precision: lower_diff={lower_diff}, upper_diff={upper_diff}, limit={limit}"
+    );
+}
+
+#[test]
+fn displayed_special_values_parse_roundtrip() {
+    let inf = Number::from_f64(f64::INFINITY);
+    let parsed_inf = inf.to_string().parse::<Number>().unwrap();
+    assert!(parsed_inf.is_infinite());
+    assert_eq!(parsed_inf.value(), &NumberValue::PlusInfinity);
+
+    let neg_inf = Number::from_f64(f64::NEG_INFINITY);
+    let parsed_neg_inf = neg_inf.to_string().parse::<Number>().unwrap();
+    assert!(parsed_neg_inf.is_infinite());
+    assert_eq!(parsed_neg_inf.value(), &NumberValue::MinusInfinity);
+
+    let nan = Number::from_f64(f64::NAN);
+    let parsed_nan = nan.to_string().parse::<Number>().unwrap();
+    assert!(parsed_nan.is_nan());
+}
+
+#[test]
+fn scientific_literals_with_impractical_exponents_are_rejected() {
+    assert!("1e4097".parse::<Number>().is_ok());
+    assert!("1e-4097".parse::<Number>().is_ok());
+    assert_eq!(
+        "1e5000".parse::<Number>().unwrap().to_qalc_string(),
+        "1E5000"
+    );
+    assert!("1e-5000".parse::<Number>().is_ok());
+    assert!("1e10000".parse::<Number>().is_ok());
+    assert!("1e-10000".parse::<Number>().is_ok());
+    assert!("1e10001".parse::<Number>().is_err());
+    assert!("1e-10001".parse::<Number>().is_err());
+    assert!("1e2147483647".parse::<Number>().is_err());
+    assert!("1e-2147483648".parse::<Number>().is_err());
+    assert!("e1".parse::<Number>().is_err());
+    assert!("+e1".parse::<Number>().is_err());
+    assert!(".e1".parse::<Number>().is_err());
+    assert!("- . e1".parse::<Number>().is_err());
+
+    assert_eq!("1e303".parse::<Number>().unwrap().to_qalc_string(), "1E303");
+    assert_eq!("2e303".parse::<Number>().unwrap().to_qalc_string(), "2E303");
+}
+
+#[test]
+fn exact_large_rational_compare_does_not_collapse_to_f64_infinity() {
+    let smaller = "1e10000".parse::<Number>().unwrap();
+    let larger = "2e10000".parse::<Number>().unwrap();
+
+    assert_eq!(
+        smaller.value().compare(larger.value()),
+        ComparisonResult::Greater
+    );
+    assert_eq!(
+        larger.value().compare(smaller.value()),
+        ComparisonResult::Less
+    );
+    assert_ne!(
+        smaller.value().compare(larger.value()),
+        ComparisonResult::Equal
+    );
+
+    let zero = NumberValue::Rational(Rational::new(0, 1));
+    let smaller_uncertain = NumberValue::Uncertainty {
+        value: Box::new(smaller.value().clone()),
+        uncertainty: Box::new(zero.clone()),
+        is_relative: false,
+    };
+    let larger_uncertain = NumberValue::Uncertainty {
+        value: Box::new(larger.value().clone()),
+        uncertainty: Box::new(zero),
+        is_relative: false,
+    };
+
+    assert_eq!(
+        smaller_uncertain.compare(&larger_uncertain),
+        ComparisonResult::Greater
+    );
+    assert_eq!(
+        larger_uncertain.compare(&smaller_uncertain),
+        ComparisonResult::Less
+    );
+}
+
+#[test]
+fn simple_imaginary_literals_parse_natively() {
+    assert_eq!(evaluate_expr("i").unwrap().to_string(), "i");
+    assert_eq!(evaluate_expr("-i").unwrap().to_string(), "-i");
+    assert_eq!(evaluate_expr("5i").unwrap().to_string(), "5i");
+    assert_eq!(
+        evaluate_expr("(1 + 2i) + (3 + 4i)").unwrap().to_string(),
+        "4 + 6i"
+    );
+    assert_eq!(
+        evaluate_expr("(1 + 2i) * (3 + 4i)").unwrap().to_string(),
+        "-5 + 10i"
+    );
+    assert_eq!(
+        evaluate_expr("(1 + 2i) / (3 + 4i)").unwrap().to_string(),
+        "0.44 + 0.08i"
+    );
+}
+
+#[test]
+fn internal_interval_literals_parse_for_scaffold() {
+    let comma_interval = evaluate_expr("[1,2]").unwrap();
+    assert!(comma_interval.is_interval());
+    assert_eq!(comma_interval.to_qalc_string(), "[1  2]");
+    assert_eq!(evaluate_expr("[1 2]").unwrap().to_qalc_string(), "[1  2]");
+    assert_eq!(evaluate_expr("[-1,2]").unwrap().to_qalc_string(), "[-1  2]");
+    assert_eq!(
+        evaluate_expr("[1,2] + [3,4]").unwrap().to_qalc_string(),
+        "[4  6]"
+    );
+    assert_eq!(evaluate_expr("[2,1]").unwrap().to_qalc_string(), "[1  2]");
+}
+
+#[test]
 fn test_canonicalize_no_overflow_panics() {
     // i128::MIN / -1 = 2^127 which overflows i128, but fits in rug::Rational
     let r = Rational::new(i128::MIN, -1);
@@ -689,6 +1146,18 @@ fn test_native_uncertainty_behavior() {
 }
 
 #[test]
+fn test_zero_uncertainty_formats_as_underlying_value() {
+    let exact = "10 +/- 0".parse::<Number>().unwrap();
+    assert_eq!(exact.to_string(), "10");
+
+    let exact_sum = exact.add(&exact);
+    assert_eq!(exact_sum.to_string(), "20");
+
+    assert_eq!(evaluate_expr("10 +/- 0").unwrap().to_string(), "10");
+    assert_eq!(evaluate_expr("10 ± 0").unwrap().to_string(), "10");
+}
+
+#[test]
 fn test_exhaustive_comparison_results() {
     // 1. ComparisonResult variants existence/construction check
     let _ = ComparisonResult::Equal;
@@ -891,10 +1360,22 @@ fn test_new_rational_arithmetic_and_comparisons() {
     // Overflows
     let max_rat = Rational::try_new(i128::MAX, 1).unwrap();
     let one_rat = Rational::try_new(1, 1).unwrap();
-    assert_eq!(max_rat.checked_add(&one_rat), None);
+    assert_eq!(
+        max_rat
+            .checked_add(&one_rat)
+            .expect("checked add should remain exact past i128")
+            .numerator_string(),
+        (rug::Integer::from(i128::MAX) + 1_i32).to_string()
+    );
 
     let min_rat = Rational::try_new(i128::MIN, 1).unwrap();
-    assert_eq!(min_rat.checked_sub(&one_rat), None);
+    assert_eq!(
+        min_rat
+            .checked_sub(&one_rat)
+            .expect("checked sub should remain exact past i128")
+            .numerator_string(),
+        (rug::Integer::from(i128::MIN) - 1_i32).to_string()
+    );
 
     // Regression tests for premature overflow
     let max_over_2 = Rational::try_new(i128::MAX, 2).unwrap();
@@ -1373,18 +1854,7 @@ fn test_coverage_boost() {
     assert!(is_value_negative(&v_unc));
     assert!(!is_value_negative(&v_nan));
 
-    // 4. get_finite_sign helper function
-    assert_eq!(get_finite_sign(&v_rat_pos), Some(true));
-    assert_eq!(get_finite_sign(&v_rat_neg), Some(false));
-    assert_eq!(get_finite_sign(&v_fl_pos), Some(true));
-    assert_eq!(get_finite_sign(&v_fl_neg), Some(false));
-    assert_eq!(get_finite_sign(&v_interval_pos), Some(true));
-    assert_eq!(get_finite_sign(&v_interval_neg), Some(false));
-    assert_eq!(get_finite_sign(&v_interval_mixed), None);
-    assert_eq!(get_finite_sign(&v_unc), Some(false));
-    assert_eq!(get_finite_sign(&v_nan), None);
-
-    // 5. get_sign_multiplier helper function
+    // 4. get_sign_multiplier helper function
     assert_eq!(get_sign_multiplier(&v_rat_pos), Some(1.0));
     assert_eq!(get_sign_multiplier(&v_rat_neg), Some(-1.0));
     assert_eq!(get_sign_multiplier(&v_fl_pos), Some(1.0));
@@ -1397,7 +1867,7 @@ fn test_coverage_boost() {
     assert_eq!(get_sign_multiplier(&v_unc), Some(-1.0));
     assert_eq!(get_sign_multiplier(&v_nan), None);
 
-    // 6. Number constructors and predicates coverage
+    // 5. Number constructors and predicates coverage
     let n_default = Number::default();
     assert!(n_default.is_zero());
 
@@ -1417,22 +1887,16 @@ fn test_coverage_boost() {
     assert!(n_complex.is_complex());
     assert!(n_complex.is_imaginary() || n_complex.has_real_part());
 
-    // 7. norm and conjugate
+    // 6. norm and conjugate
     let n_comp = Number::new_complex(Number::from_i32(3), Number::from_i32(4));
     assert_eq!(n_comp.conjugate().to_string(), "3 - 4i");
     assert_eq!(n_comp.norm().to_string(), "5");
 
-    // 8. cmp_u128_rational
-    assert_eq!(
-        cmp_u128_rational(1, 2, 2, 3, false),
-        std::cmp::Ordering::Less
-    );
-
-    // 9. min4 / max4
+    // 7. min4 / max4
     assert_eq!(min4(1.0, 2.0, 3.0, 4.0), 1.0);
     assert_eq!(max4(1.0, 2.0, 3.0, 4.0), 4.0);
 
-    // 10. to_interval
+    // 8. to_interval
     let int_bounds = to_interval(&v_rat_pos);
     assert!(int_bounds.is_some());
     let int_bounds_unc = to_interval(&v_unc);
