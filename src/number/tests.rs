@@ -81,6 +81,16 @@ fn test_intervals() {
 }
 
 #[test]
+fn interval_function_parser_normalizes_reversed_bounds_for_qalc_display() {
+    let interval = evaluate_expr("interval(5;2)").expect("interval function should parse");
+    assert!(interval.is_interval());
+    assert_eq!(
+        interval.to_qalc_interval_display_string(10).as_deref(),
+        Some("interval(2.000000000, 5.000000000)")
+    );
+}
+
+#[test]
 fn test_complex() {
     let real = Number::from_i32(3);
     let imag = Number::from_i32(4);

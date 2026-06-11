@@ -921,30 +921,9 @@ fn focused_epic2_native_numeric_oracle_cases() {
     }
 }
 
-#[test]
-fn focused_epic2_float_precision_oracle_cases() {
-    let Some(qalc) = oracle_binary() else {
-        eprintln!(
-            "skipping focused_epic2_float_precision_oracle_cases; \
-             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
-        );
-        return;
-    };
+type NativeOracleCase<'a> = (&'a str, &'a str, &'a [&'a str]);
 
-    let defs = defs_dir();
-    let cases: [(&str, &str, &[&str]); 2] = [
-        (
-            "rational-output-precision-context",
-            "1/3",
-            &["/set precision 128"],
-        ),
-        (
-            "float-power-precision-context",
-            "2 ^ 0.5",
-            &["/set precision 128"],
-        ),
-    ];
-
+fn assert_native_oracle_cases(qalc: &Path, defs: &Path, cases: &[NativeOracleCase<'_>]) {
     for (case_id, expression, raw_settings) in cases {
         let settings = raw_settings
             .iter()
@@ -952,8 +931,8 @@ fn focused_epic2_float_precision_oracle_cases() {
                 raw: (*raw).to_string(),
             })
             .collect::<Vec<_>>();
-        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
-        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let cpp_out = run_oracle_expression(qalc, defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, defs, true, true);
         let fallback_state =
             oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
 
@@ -975,6 +954,53 @@ fn focused_epic2_float_precision_oracle_cases() {
             "{case_id} did not run natively"
         );
     }
+}
+
+#[test]
+fn focused_epic2_float_precision_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_float_precision_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [NativeOracleCase<'_>; 2] = [
+        (
+            "rational-output-precision-context",
+            "1/3",
+            &["/set precision 128"],
+        ),
+        (
+            "float-power-precision-context",
+            "2 ^ 0.5",
+            &["/set precision 128"],
+        ),
+    ];
+
+    assert_native_oracle_cases(&qalc, &defs, &cases);
+}
+
+#[test]
+fn focused_epic2_interval_display_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_interval_display_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [NativeOracleCase<'_>; 1] = [(
+        "interval-function-normalizes-reversed-bounds",
+        "interval(5;2)",
+        &["/set interval display 2"],
+    )];
+
+    assert_native_oracle_cases(&qalc, &defs, &cases);
 }
 
 /// Differential oracle test for ALL 17 upstream batch files.

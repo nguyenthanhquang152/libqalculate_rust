@@ -198,6 +198,83 @@ fn cli_applies_precision_setting_for_native_float_power() {
 }
 
 #[test]
+fn cli_applies_interval_display_setting_for_native_interval_function() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "interval display 2", "--", "interval(5;2)"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("interval(2.000000000, 5.000000000)\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_requires_interval_display_setting_for_native_interval_function() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.arg("interval(5;2)")
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ))
+        .stderr(predicate::str::contains(
+            "expression 'interval(5;2)' has no native Rust implementation",
+        ));
+}
+
+#[test]
+fn cli_rejects_interval_display_setting_for_unrelated_native_evidence() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "interval display 2", "--", "1 + 2"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ))
+        .stderr(predicate::str::contains(
+            "expression '1 + 2' has no native Rust implementation",
+        ));
+}
+
+#[test]
+fn cli_rejects_interval_display_setting_for_numberbase_evidence() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args([
+        "-set",
+        "interval display 2",
+        "-set",
+        "input base 16",
+        "--",
+        "5p10+AEp-2*p23",
+    ])
+    .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+    .env("QALCULATE_DISABLE_FALLBACK", "1")
+    .env("QALCULATE_REPORT_FALLBACK", "1")
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "[qalc-rs-metadata] fallback=disabled",
+    ))
+    .stderr(predicate::str::contains(
+        "expression '5p10+AEp-2*p23' has no native Rust implementation",
+    ));
+}
+
+#[test]
 fn cli_runs_native_complex_subtraction_conjugate_and_norm() {
     for (expression, expected) in [
         ("(1 + 2i) - (3 + 4i)", "−2 − 2i\n"),

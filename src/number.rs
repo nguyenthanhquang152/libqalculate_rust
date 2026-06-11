@@ -2988,6 +2988,25 @@ impl Number {
             )
         }
     }
+
+    /// Formats an interval using qalc's `interval display 2` constructor form.
+    pub(crate) fn to_qalc_interval_display_string(
+        &self,
+        precision_digits: usize,
+    ) -> Option<String> {
+        let (real, imag) = self.to_canonical_real_imag();
+        if !imag.is_real_zero() {
+            return None;
+        }
+        match real {
+            NumberValue::Interval { lower, upper } => Some(format!(
+                "interval({}, {})",
+                format_qalc_float(&lower.value, precision_digits),
+                format_qalc_float(&upper.value, precision_digits)
+            )),
+            _ => None,
+        }
+    }
 }
 
 impl PartialEq for Number {
@@ -3492,6 +3511,43 @@ fn parse_interval_literal(s: &str) -> Result<Option<NumberValue>, String> {
     Ok(Some(number.value().clone()))
 }
 
+fn parse_interval_function_expression(s: &str) -> Result<Option<Number>, String> {
+    let trimmed = s.trim();
+    let Some(rest) = strip_function_name(trimmed, "interval") else {
+        return Ok(None);
+    };
+    let rest = rest.trim_start();
+    let Some(inner) = rest
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return Err(format!("Expected interval(lower; upper): {trimmed}"));
+    };
+
+    let (lower, upper) = split_interval_function_bounds(inner)
+        .ok_or_else(|| format!("Failed to parse interval bounds: {trimmed}"))?;
+    let lower = parse_single_value(lower)?;
+    let upper = parse_single_value(upper)?;
+    let (lower, _) =
+        to_interval(&lower).ok_or_else(|| format!("Invalid interval lower bound: {lower}"))?;
+    let (_, upper) =
+        to_interval(&upper).ok_or_else(|| format!("Invalid interval upper bound: {upper}"))?;
+
+    Number::try_new_interval(lower, upper)
+        .ok_or_else(|| format!("Invalid interval bounds: {trimmed}"))
+        .map(Some)
+}
+
+fn split_interval_function_bounds(inner: &str) -> Option<(&str, &str)> {
+    let (lower, upper) = inner.split_once(';')?;
+    if upper.contains(';') {
+        return None;
+    }
+    let lower = lower.trim();
+    let upper = upper.trim();
+    Some((lower, upper))
+}
+
 fn split_interval_bounds(inner: &str) -> Option<(&str, &str)> {
     let inner = inner.trim();
     if inner.is_empty() {
@@ -3905,6 +3961,10 @@ pub(crate) fn evaluate_expr_with_precision_digits(
 }
 
 fn evaluate_expr_with_context(s: &str, context: EvalContext) -> Result<Number, String> {
+    if let Some(interval) = parse_interval_function_expression(s)? {
+        return Ok(interval);
+    }
+
     let mut tokens = Vec::new();
     let mut rest = s.trim();
     let mut has_word_operator_left_boundary = false;
