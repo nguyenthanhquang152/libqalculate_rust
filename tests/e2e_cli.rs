@@ -421,6 +421,67 @@ fn cli_runs_native_uncertainty_power() {
 }
 
 #[test]
+fn cli_runs_native_unicode_uncertainty_input() {
+    for (expression, expected) in [
+        ("2±0.002", "2.0000±0.0020\n"),
+        ("2±0.002 + 3", "5.0000±0.0020\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.arg(expression)
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_applies_concise_uncertainty_setting_for_native_input() {
+    for (expression, expected) in [
+        ("1.23(4)", "1.230±0.040\n"),
+        ("123(4)", "123.0±4.0\n"),
+        ("1.23(4) + 2.0(3)", "3.23±0.30\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", "concise uncertainty 1", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_rejects_concise_uncertainty_without_setting() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.arg("1.23(4)")
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ))
+        .stderr(predicate::str::contains(
+            "expression '1.23(4)' has no native Rust implementation",
+        ));
+}
+
+#[test]
 fn cli_runs_native_complex_subtraction_conjugate_and_norm() {
     for (expression, expected) in [
         ("(1 + 2i) - (3 + 4i)", "−2 − 2i\n"),

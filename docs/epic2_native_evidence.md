@@ -88,6 +88,19 @@ focused expressions with fallback disabled:
 - `(2+/-3)^3.2`
 - `10 +/- 0`
 
+`tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
+focused Refs #15 input-form slice without changing batch-manifest counts:
+
+- `2±0.002`
+- `2±0.002 + 3`
+- `1.23(4)` under `/set concise uncertainty 1`
+- `123(4)` under `/set concise uncertainty 1`
+- `1.23(4) + 2.0(3)` under `/set concise uncertainty 1`
+
+Upstream default `1.23(4)` remains a multiplication expression and prints
+`4.92`; it is intentionally not accepted as native uncertainty evidence unless
+`/set concise uncertainty 1` is present.
+
 ## Native Representation Invariants
 
 - `Rational` now exposes a public lossless arbitrary-precision construction and
@@ -171,6 +184,14 @@ focused expressions with fallback disabled:
   formatter keeps the existing significant-uncertainty output for ordinary
   uncertainty arithmetic, while preserving MPFR fractional digits only for this
   promoted float-valued uncertainty power case.
+- Fallback-disabled native Refs #15 uncertainty input-form evidence now covers
+  Unicode absolute uncertainty input `2±0.002 -> 2.0000±0.0020` and
+  `2±0.002 + 3 -> 5.0000±0.0020`. Concise uncertainty notation is supported
+  only for vetted setting-gated cases under `/set concise uncertainty 1`:
+  `1.23(4) -> 1.230±0.040`, `123(4) -> 123.0±4.0`, and
+  `1.23(4) + 2.0(3) -> 3.23±0.30`. This does not add function propagation,
+  `/set ic 2`, interval display changes, complex uncertainty, Lambert W, Ei,
+  or broad `explog.batch` promotions.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -243,6 +264,16 @@ rtk cargo test --lib fixed_decimal_precision_helpers_distinguish_significant_fra
 rtk cargo test --lib fallback_disabled_runs_native_scaffold_cases -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_uncertainty_power -- --nocapture
 rtk cargo test --test oracle focused_epic2_native_numeric_oracle_cases -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_unicode_uncertainty_input -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_concise_uncertainty_setting_for_native_input -- --nocapture
+rtk cargo test --test e2e_cli cli_rejects_concise_uncertainty_without_setting -- --nocapture
+rtk cargo test --test oracle focused_issue15_uncertainty_input_oracle_cases -- --nocapture
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002 + 3'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '1.23(4)'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '123(4)'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' -set 'concise uncertainty 1' '1.23(4) + 2.0(3)'
+rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '1.23(4)'
 cargo mutants --timeout 180 --jobs 2 --file src/number.rs --file src/ffi.rs -F 'to_qalc_string_preserving_float_uncertainty_precision|format_qalc_value_with_uncertainty_format|format_qalc_uncertainty|fixed_decimal_has_fractional_precision|trim_fixed_decimal_trailing_zeros|mantissa_and_exponent|native_numeric_evidence' -- --lib
 rtk cargo test --test oracle differential_oracle_numberbase_batch -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_no_session_oracle_cases -- --nocapture

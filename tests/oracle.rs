@@ -974,6 +974,40 @@ fn assert_native_oracle_cases(qalc: &Path, defs: &Path, cases: &[NativeOracleCas
 }
 
 #[test]
+fn focused_issue15_uncertainty_input_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue15_uncertainty_input_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [NativeOracleCase<'_>; 5] = [
+        ("unicode-absolute-uncertainty", "2±0.002", &[]),
+        ("unicode-absolute-uncertainty-addition", "2±0.002 + 3", &[]),
+        (
+            "concise-uncertainty-decimal",
+            "1.23(4)",
+            &["/set concise uncertainty 1"],
+        ),
+        (
+            "concise-uncertainty-integer",
+            "123(4)",
+            &["/set concise uncertainty 1"],
+        ),
+        (
+            "concise-uncertainty-addition",
+            "1.23(4) + 2.0(3)",
+            &["/set concise uncertainty 1"],
+        ),
+    ];
+
+    assert_native_oracle_cases(&qalc, &defs, &cases);
+}
+
+#[test]
 fn focused_epic2_float_precision_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
         eprintln!(
