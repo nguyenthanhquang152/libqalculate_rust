@@ -784,6 +784,10 @@ fn cli_runs_native_uncertainty_api_functions() {
         ("uncertainty(10;0;0)", "10\n"),
         ("errorPart(2+/-0.002)", "0.002000000000\n"),
         ("errorPart(100+/-5%)", "5\n"),
+        ("errorPart(2+/-0.002;0)", "0.002000000000\n"),
+        ("errorPart(2+/-0.002;1)", "0.001000000000\n"),
+        ("errorPart(100+/-5%;0)", "5\n"),
+        ("errorPart(100+/-5%;1)", "0.05000000000\n"),
         ("valuePart(2+/-0.002)", "2\n"),
         ("valuePart(100+/-5%)", "100\n"),
         ("midpoint(2+/-0.002)", "2\n"),
@@ -1039,21 +1043,6 @@ fn cli_rejects_unsupported_uncertainty_special_function_when_fallback_disabled()
         ))
         .stderr(predicate::str::contains(
             "expression 'Ei(3+/-0.3)' has no native Rust implementation",
-        ));
-
-    let invalid_defs = tempdir().expect("temp dir should be created");
-    let mut cmd = qalc_rs();
-    cmd.arg("errorPart(100+/-5%;1)")
-        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
-        .env("QALCULATE_DISABLE_FALLBACK", "1")
-        .env("QALCULATE_REPORT_FALLBACK", "1")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "[qalc-rs-metadata] fallback=disabled",
-        ))
-        .stderr(predicate::str::contains(
-            "expression 'errorPart(100+/-5%;1)' has no native Rust implementation",
         ));
 }
 

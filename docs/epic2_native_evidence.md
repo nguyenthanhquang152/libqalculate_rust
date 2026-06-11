@@ -125,6 +125,10 @@ focused Refs #15 input/API slice without changing batch-manifest counts:
 - `uncertainty(10;0;0)`
 - `errorPart(2+/-0.002)`
 - `errorPart(100+/-5%)`
+- `errorPart(2+/-0.002;0)`
+- `errorPart(2+/-0.002;1)`
+- `errorPart(100+/-5%;0)`
+- `errorPart(100+/-5%;1)`
 - `valuePart(2+/-0.002)`
 - `valuePart(100+/-5%)`
 - `midpoint(2+/-0.002)`
@@ -294,17 +298,17 @@ Refs #12 precision-context rows:
   scalar constructor/extraction slice: `uncertainty(2;0.002;0) ->
   2.0000±0.0020`, `uncertainty(100;0.05;1) -> 100.0±5.0`,
   `uncertainty(10;0;0) -> 10`, `errorPart(2+/-0.002) -> 0.002000000000`,
-  `errorPart(100+/-5%) -> 5`, `valuePart(2+/-0.002) -> 2`,
-  `valuePart(100+/-5%) -> 100`, `midpoint(2+/-0.002) -> 2`,
-  `lowerEndpoint(2+/-0.002) -> 1.998000000`, and
-  `upperEndpoint(2+/-0.002) -> 2.002000000`. Propagation evidence also now
+  `errorPart(100+/-5%) -> 5`, `errorPart(2+/-0.002;0) -> 0.002000000000`,
+  `errorPart(2+/-0.002;1) -> 0.001000000000`,
+  `errorPart(100+/-5%;0) -> 5`, `errorPart(100+/-5%;1) -> 0.05000000000`,
+  `valuePart(2+/-0.002) -> 2`, `valuePart(100+/-5%) -> 100`,
+  `midpoint(2+/-0.002) -> 2`, `lowerEndpoint(2+/-0.002) -> 1.998000000`,
+  and `upperEndpoint(2+/-0.002) -> 2.002000000`. Propagation evidence also now
   includes `20+/-3 - 10+/-4 -> 10.0±5.0` and
-  `3+/-0.2 / 4+/-0.1 -> 0.750±0.053`. Relative extraction via
-  `errorPart(value;1)`, complex uncertainty, Lambert W, Ei, interval
-  calculation mode, ASCII/Unicode print-option toggles, and broad
-  `explog.batch` promotions remain incomplete; `Ei(3+/-0.3)` and
-  `errorPart(100+/-5%;1)` are covered only by fallback-disabled rejection
-  guards.
+  `3+/-0.2 / 4+/-0.1 -> 0.750±0.053`. Complex uncertainty, Lambert W, Ei,
+  interval calculation mode, ASCII/Unicode print-option toggles, and broad
+  `explog.batch` promotions remain incomplete; `Ei(3+/-0.3)` is covered only
+  by a fallback-disabled rejection guard.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -457,6 +461,8 @@ rtk cargo test --lib uncertainty_constructor -- --nocapture
 rtk cargo test --test uncertainty_adversarial -- --nocapture
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'errorPart(2+/-0.002)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'errorPart(2+/-0.002;1)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'errorPart(100+/-5%;1)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' '2±0.002 + 3'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'ln(5+/-0.3)'
 rtk proxy env QALCULATE_DEFINITIONS_DIR=../libqalculate/data LC_ALL=C.UTF-8 TZ=UTC ../libqalculate/src/qalc -defaults -terse -set 'decimal_comma 0' -set 'curconv 0' 'Ei(3+/-0.3)'

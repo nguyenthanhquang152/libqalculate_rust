@@ -1024,7 +1024,7 @@ fn focused_issue15_uncertainty_input_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 19] = [
+    let cases: [NativeOracleCase<'_>; 23] = [
         ("spaced-ascii-absolute-uncertainty", "2 +/- 0.002", &[]),
         (
             "spaced-ascii-absolute-uncertainty-addition",
@@ -1052,6 +1052,26 @@ fn focused_issue15_uncertainty_input_oracle_cases() {
         (
             "relative-uncertainty-absolute-error-part",
             "errorPart(100+/-5%)",
+            &[],
+        ),
+        (
+            "uncertainty-explicit-absolute-error-part",
+            "errorPart(2+/-0.002;0)",
+            &[],
+        ),
+        (
+            "uncertainty-relative-error-part-from-absolute-input",
+            "errorPart(2+/-0.002;1)",
+            &[],
+        ),
+        (
+            "relative-uncertainty-explicit-absolute-error-part",
+            "errorPart(100+/-5%;0)",
+            &[],
+        ),
+        (
+            "relative-uncertainty-relative-error-part",
+            "errorPart(100+/-5%;1)",
             &[],
         ),
         ("uncertainty-value-part", "valuePart(2+/-0.002)", &[]),
