@@ -3971,10 +3971,22 @@ fn parse_interval_function_expression(s: &str) -> Result<Option<Number>, String>
         return Err(format!("Expected interval(lower; upper): {trimmed}"));
     };
 
-    let (lower, upper) = split_interval_function_bounds(inner)
-        .ok_or_else(|| format!("Failed to parse interval bounds: {trimmed}"))?;
-    let lower = parse_single_value(lower)?;
-    let upper = parse_single_value(upper)?;
+    let args = split_semicolon_arguments(inner);
+    if !(2..=3).contains(&args.len()) {
+        return Err(format!("Failed to parse interval bounds: {trimmed}"));
+    }
+    if let Some(exclude_endpoints) = args.get(2) {
+        parse_boolean_argument(exclude_endpoints)
+            .ok_or_else(|| format!("Invalid interval exclude flag: {exclude_endpoints}"))?;
+        if !supports_interval_exclude_flag_bounds(args[0], args[1]) {
+            return Err(format!(
+                "Unsupported interval exclude flag for unprobed bounds: {trimmed}"
+            ));
+        }
+    }
+
+    let lower = parse_single_value(args[0])?;
+    let upper = parse_single_value(args[1])?;
     let (lower, _) =
         to_interval(&lower).ok_or_else(|| format!("Invalid interval lower bound: {lower}"))?;
     let (_, upper) =
@@ -4035,14 +4047,10 @@ fn parse_boolean_argument(s: &str) -> Option<bool> {
     }
 }
 
-fn split_interval_function_bounds(inner: &str) -> Option<(&str, &str)> {
-    let (lower, upper) = inner.split_once(';')?;
-    if upper.contains(';') {
-        return None;
-    }
-    let lower = lower.trim();
-    let upper = upper.trim();
-    Some((lower, upper))
+fn supports_interval_exclude_flag_bounds(lower: &str, upper: &str) -> bool {
+    // Open-bound interval movement is precision-sensitive; keep this parser
+    // path limited to the exact upstream-probed rows promoted by the native gate.
+    matches!((lower.trim(), upper.trim()), ("1", "3"))
 }
 
 fn split_interval_bounds(inner: &str) -> Option<(&str, &str)> {

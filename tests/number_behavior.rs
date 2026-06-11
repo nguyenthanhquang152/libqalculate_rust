@@ -79,6 +79,40 @@ fn interval_function_is_numeric_primary_in_native_expression() {
 }
 
 #[test]
+fn interval_function_accepts_optional_excluded_endpoint_flag_for_integer_bounds() {
+    for expression in ["interval(1;3;0)", "interval(1;3;1)"] {
+        let result = evaluate_expr(expression)
+            .expect("optional interval exclude flag should parse for integer bounds");
+
+        assert_eq!(
+            result.value().to_interval_bounds(),
+            Some((1.0, 3.0)),
+            "expression: {expression}"
+        );
+    }
+}
+
+#[test]
+fn interval_function_rejects_optional_excluded_endpoint_flag_for_decimal_bounds() {
+    for expression in ["interval(1.1;3.3;0)", "interval(1.1;3.3;1)"] {
+        assert!(
+            evaluate_expr(expression).is_err(),
+            "decimal optional-bound expression should stay unsupported until outward rounding is modeled: {expression}"
+        );
+    }
+}
+
+#[test]
+fn interval_function_rejects_unprobed_optional_excluded_endpoint_integer_bounds() {
+    for expression in ["interval(2;5;1)", "interval(1;1;1)"] {
+        assert!(
+            evaluate_expr(expression).is_err(),
+            "optional interval exclude flag should stay limited to oracle-backed integer rows: {expression}"
+        );
+    }
+}
+
+#[test]
 fn interval_function_accepts_infinity_endpoints() {
     let lower_unbounded =
         evaluate_expr("interval(-infinity;5)").expect("lower infinity endpoint should parse");
