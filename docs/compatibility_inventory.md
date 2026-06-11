@@ -14,12 +14,12 @@
 | Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
 | Implementation Files | 41 | 0 | 0 | 1 | 3 | 37 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
-| Batch Test Files | 17 | 0 | 0 | 2 | 0 | 15 | 0 |
-| Batch Test Cases | 656 | 53 | 0 | 0 | 0 | 603 | 0 |
+| Batch Test Files | 17 | 1 | 0 | 3 | 0 | 13 | 0 |
+| Batch Test Cases | 656 | 54 | 0 | 0 | 0 | 602 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 53 `native-pass` rows across `parser.batch`, `operators.batch`, and `numberbase.batch`; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 54 `native-pass` rows across `parser.batch`, `operators.batch`, `numberbase.batch`, and one no-session `explog.batch` uncertainty-power row; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
 
 ---
 
@@ -235,7 +235,7 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 | 1 | `bitwise.batch` | 24 | 0 | — | `unstarted` |
 | 2 | `calculus.batch` | 11 | 0 | — | `unstarted` |
 | 3 | `dates.batch` | 11 | 0 | — | `unstarted` |
-| 4 | `explog.batch` | 10 | 1 | — | `unstarted` |
+| 4 | `explog.batch` | 10 | 1 | — | `scaffold` |
 | 5 | `geometry.batch` | 30 | 0 | — | `unstarted` |
 | 6 | `limits.batch` | 181 | 4 | — | `unstarted` |
 | 7 | `matrixvector.batch` | 130 | 0 | — | `unstarted` |
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 53 |
-| Inventory-only batch cases | 603 |
+| Native-pass batch cases | 54 |
+| Inventory-only batch cases | 602 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -518,18 +518,18 @@ status_summary:
     unstarted: 9
     out_of_scope: 0
   batch_tests:
-    native_pass: 0
+    native_pass: 1
     tooling_pass: 0
-    scaffold: 2
+    scaffold: 3
     fallback_only: 0
-    unstarted: 15
+    unstarted: 13
     out_of_scope: 0
   batch_test_cases:
-    native_pass: 53
+    native_pass: 54
     tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 603
+    unstarted: 602
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2

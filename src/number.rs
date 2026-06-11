@@ -3183,7 +3183,7 @@ fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize
             if uncertainty.is_real_zero() {
                 format_qalc_value_with_precision(value, precision_digits)
             } else {
-                value.to_string_with_uncertainty(uncertainty, *is_relative)
+                format_qalc_uncertainty(value, uncertainty, *is_relative, precision_digits)
             }
         }
         NumberValue::Interval { lower, upper } => format!(
@@ -3199,6 +3199,75 @@ fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize
 fn format_qalc_float(value: &rug::Float, precision_digits: usize) -> String {
     let output = value.to_string_radix(10, Some(precision_digits));
     fixed_decimal_from_scientific(&output).unwrap_or(output)
+}
+
+fn format_qalc_uncertainty(
+    value: &NumberValue,
+    uncertainty: &NumberValue,
+    is_relative: bool,
+    precision_digits: usize,
+) -> String {
+    if is_relative {
+        return value.to_string_with_uncertainty(uncertainty, true);
+    }
+
+    if let (NumberValue::Float(value_float), NumberValue::Float(uncertainty_float)) =
+        (value, uncertainty)
+    {
+        let display_width = absolute_uncertainty_display_decimal_width(
+            value_float.value(),
+            uncertainty_float.value(),
+        );
+        if display_width == 0
+            && is_wide_absolute_float_uncertainty(value_float.value(), uncertainty_float.value())
+        {
+            let precise_value = format_qalc_float(&value_float.value, precision_digits);
+            let precise_uncertainty = format_qalc_float(&uncertainty_float.value, precision_digits);
+            if fixed_decimal_has_fractional_precision(&precise_value)
+                || fixed_decimal_has_fractional_precision(&precise_uncertainty)
+            {
+                let precise_value = trim_fixed_decimal_trailing_zeros(precise_value);
+                let precise_uncertainty = trim_fixed_decimal_trailing_zeros(precise_uncertainty);
+                return format!("{precise_value}±{precise_uncertainty}");
+            }
+        }
+    }
+
+    value.to_string_with_uncertainty(uncertainty, false)
+}
+
+fn absolute_uncertainty_display_decimal_width(value: f64, uncertainty: f64) -> usize {
+    let (_, width) = rounded_uncertainty_and_width(uncertainty);
+    uncertainty_display_decimal_width(value, uncertainty, width)
+}
+
+fn is_wide_absolute_float_uncertainty(value: f64, uncertainty: f64) -> bool {
+    if uncertainty == 0.0 {
+        return false;
+    }
+    let value_abs = value.abs();
+    if value_abs == 0.0 {
+        return true;
+    }
+    uncertainty.abs() >= value_abs * 4.0
+}
+
+fn fixed_decimal_has_fractional_precision(value: &str) -> bool {
+    value
+        .split_once('.')
+        .is_some_and(|(_, fraction)| fraction.chars().any(|ch| ch != '0'))
+}
+
+fn trim_fixed_decimal_trailing_zeros(value: String) -> String {
+    let Some((integer, fraction)) = value.split_once('.') else {
+        return value;
+    };
+    let trimmed = fraction.trim_end_matches('0');
+    if trimmed.is_empty() {
+        integer.to_string()
+    } else {
+        format!("{integer}.{trimmed}")
+    }
 }
 
 fn qalc_decimal_precision_bits(precision_digits: usize) -> u32 {

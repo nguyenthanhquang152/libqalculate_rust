@@ -379,74 +379,78 @@ impl NativeNumericEvidence {
     }
 }
 
+const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
+    ("1/3", NativeNumericEvidence::Precision),
+    ("2 ^ 0.5", NativeNumericEvidence::Precision),
+    ("interval(5;2)", NativeNumericEvidence::IntervalDisplay),
+    ("0", NativeNumericEvidence::DefaultOnly),
+    ("-0", NativeNumericEvidence::DefaultOnly),
+    ("123456789", NativeNumericEvidence::DefaultOnly),
+    ("-123", NativeNumericEvidence::DefaultOnly),
+    ("-123456789", NativeNumericEvidence::DefaultOnly),
+    ("-0.", NativeNumericEvidence::DefaultOnly),
+    ("0.", NativeNumericEvidence::DefaultOnly),
+    ("0.0", NativeNumericEvidence::DefaultOnly),
+    ("0.01", NativeNumericEvidence::DefaultOnly),
+    (".123", NativeNumericEvidence::DefaultOnly),
+    ("-.", NativeNumericEvidence::DefaultOnly),
+    (".", NativeNumericEvidence::DefaultOnly),
+    ("12345.67890", NativeNumericEvidence::DefaultOnly),
+    ("1e0", NativeNumericEvidence::DefaultOnly),
+    ("-1e0", NativeNumericEvidence::DefaultOnly),
+    ("1e3", NativeNumericEvidence::DefaultOnly),
+    ("1E3", NativeNumericEvidence::DefaultOnly),
+    ("1e-3", NativeNumericEvidence::DefaultOnly),
+    ("1e10", NativeNumericEvidence::DefaultOnly),
+    ("1e303", NativeNumericEvidence::DefaultOnly),
+    ("6%2", NativeNumericEvidence::DefaultOnly),
+    ("7 rem 2", NativeNumericEvidence::DefaultOnly),
+    ("-8%3", NativeNumericEvidence::DefaultOnly),
+    ("3 %% 2", NativeNumericEvidence::DefaultOnly),
+    ("3 %% -2", NativeNumericEvidence::DefaultOnly),
+    ("3 mod -2", NativeNumericEvidence::DefaultOnly),
+    ("5//2", NativeNumericEvidence::DefaultOnly),
+    ("5\\2", NativeNumericEvidence::DefaultOnly),
+    ("5 div 2", NativeNumericEvidence::DefaultOnly),
+    ("5 ^ 2", NativeNumericEvidence::DefaultOnly),
+    ("2 ^ -3", NativeNumericEvidence::DefaultOnly),
+    ("(-2) ^ -3", NativeNumericEvidence::DefaultOnly),
+    ("(1/2) ^ -3", NativeNumericEvidence::DefaultOnly),
+    ("5 ** 3", NativeNumericEvidence::DefaultOnly),
+    ("4 ** 3 ** 2", NativeNumericEvidence::DefaultOnly),
+    ("1 + 1", NativeNumericEvidence::DefaultOnly),
+    ("1 + 2", NativeNumericEvidence::DefaultOnly),
+    ("5--2", NativeNumericEvidence::DefaultOnly),
+    ("5---2", NativeNumericEvidence::DefaultOnly),
+    ("-5-2", NativeNumericEvidence::DefaultOnly),
+    ("2*3", NativeNumericEvidence::DefaultOnly),
+    ("6/2", NativeNumericEvidence::DefaultOnly),
+    ("1/2", NativeNumericEvidence::DefaultOnly),
+    ("i", NativeNumericEvidence::DefaultOnly),
+    ("5i", NativeNumericEvidence::DefaultOnly),
+    ("(1 + 2i) + (3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("(1 + 2i) - (3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("(1 + 2i) * (3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("(1 + 2i) / (3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("conj(3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("norm(3 + 4i)", NativeNumericEvidence::DefaultOnly),
+    ("2+/-0.002", NativeNumericEvidence::DefaultOnly),
+    ("100+/-5%", NativeNumericEvidence::DefaultOnly),
+    ("100+/-5 + 200+/-10%", NativeNumericEvidence::DefaultOnly),
+    ("100+/-5% + 200+/-10%", NativeNumericEvidence::DefaultOnly),
+    ("100+/-5% * 2", NativeNumericEvidence::DefaultOnly),
+    ("20+/-3 + 10+/-4", NativeNumericEvidence::DefaultOnly),
+    ("3+/-0.2 * 4+/-0.1", NativeNumericEvidence::DefaultOnly),
+    ("12+/-0.5 / 3+/-0.2", NativeNumericEvidence::DefaultOnly),
+    ("(2+/-3)^3.2", NativeNumericEvidence::DefaultOnly),
+    ("10 +/- 0", NativeNumericEvidence::DefaultOnly),
+];
+
 fn native_numeric_evidence(expr: &str) -> Option<NativeNumericEvidence> {
     let trimmed = expr.trim();
-    let evidence = match trimmed {
-        "1/3" | "2 ^ 0.5" => NativeNumericEvidence::Precision,
-        "interval(5;2)" => NativeNumericEvidence::IntervalDisplay,
-        "0"
-        | "-0"
-        | "123456789"
-        | "-123"
-        | "-123456789"
-        | "-0."
-        | "0."
-        | "0.0"
-        | "0.01"
-        | ".123"
-        | "-."
-        | "."
-        | "12345.67890"
-        | "1e0"
-        | "-1e0"
-        | "1e3"
-        | "1E3"
-        | "1e-3"
-        | "1e10"
-        | "1e303"
-        | "6%2"
-        | "7 rem 2"
-        | "-8%3"
-        | "3 %% 2"
-        | "3 %% -2"
-        | "3 mod -2"
-        | "5//2"
-        | "5\\2"
-        | "5 div 2"
-        | "5 ^ 2"
-        | "2 ^ -3"
-        | "(-2) ^ -3"
-        | "(1/2) ^ -3"
-        | "5 ** 3"
-        | "4 ** 3 ** 2"
-        | "1 + 1"
-        | "1 + 2"
-        | "5--2"
-        | "5---2"
-        | "-5-2"
-        | "2*3"
-        | "6/2"
-        | "1/2"
-        | "i"
-        | "5i"
-        | "(1 + 2i) + (3 + 4i)"
-        | "(1 + 2i) - (3 + 4i)"
-        | "(1 + 2i) * (3 + 4i)"
-        | "(1 + 2i) / (3 + 4i)"
-        | "conj(3 + 4i)"
-        | "norm(3 + 4i)"
-        | "2+/-0.002"
-        | "100+/-5%"
-        | "100+/-5 + 200+/-10%"
-        | "100+/-5% + 200+/-10%"
-        | "100+/-5% * 2"
-        | "20+/-3 + 10+/-4"
-        | "3+/-0.2 * 4+/-0.1"
-        | "12+/-0.5 / 3+/-0.2"
-        | "10 +/- 0" => NativeNumericEvidence::DefaultOnly,
-        _ => return None,
-    };
-    Some(evidence)
+    NATIVE_NUMERIC_EVIDENCE
+        .iter()
+        .find_map(|(expression, evidence)| (*expression == trimmed).then_some(*evidence))
 }
 
 /// Custom error type for `Calculator` evaluations.
