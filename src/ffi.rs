@@ -325,10 +325,8 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return Some("native-scaffold-test-success".to_string());
     }
 
-    if settings.is_empty() {
-        if let Some(output) = native_boolean_evidence(expr) {
-            return Some(output);
-        }
+    if let Some(output) = native_boolean_evidence(expr, settings) {
+        return Some(output);
     }
 
     let evidence = native_numeric_evidence(expr)?;
@@ -387,31 +385,74 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     }
 }
 
-const NATIVE_BOOLEAN_EVIDENCE: &[&str] = &[
-    "(1 + i) = (1 + i)",
-    "(1 + i) == (1 + i)",
-    "(1 + i) = (1 - i)",
-    "(1 + i) != (1 - i)",
-    "(1 + i) ≠ (1 - i)",
-    "(1 + i) != (1 + i)",
-    "(1 + i) < (1 + i)",
-    "(1 + i) <= (1 + i)",
-    "(1 + i) > (1 + i)",
-    "(1 + i) >= (1 + i)",
-    "(1 + i) ≤ (1 + i)",
-    "(1 + i) ≥ (1 + i)",
+#[derive(Clone, Copy)]
+enum NativeBooleanEvidence {
+    DefaultOnly,
+    PrecisionRequired,
+}
+
+const NATIVE_BOOLEAN_EVIDENCE: &[(&str, NativeBooleanEvidence)] = &[
+    ("(1 + i) = (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) == (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) = (1 - i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) != (1 - i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) ≠ (1 - i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) != (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) < (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) <= (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) > (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) >= (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) ≤ (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    ("(1 + i) ≥ (1 + i)", NativeBooleanEvidence::DefaultOnly),
+    (
+        "(2 ^ 0.5) < (3 ^ 0.5)",
+        NativeBooleanEvidence::PrecisionRequired,
+    ),
+    (
+        "(2 ^ 0.5) = (2 ^ 0.5)",
+        NativeBooleanEvidence::PrecisionRequired,
+    ),
+    (
+        "(2 ^ 0.5) = (3 ^ 0.5)",
+        NativeBooleanEvidence::PrecisionRequired,
+    ),
+    (
+        "(2 ^ 0.5) + 1/3 > 1",
+        NativeBooleanEvidence::PrecisionRequired,
+    ),
+    ("(2 ^ 0.5) < 1/3", NativeBooleanEvidence::PrecisionRequired),
 ];
 
-fn native_boolean_evidence(expr: &str) -> Option<String> {
+fn native_boolean_evidence(
+    expr: &str,
+    settings: crate::session::NativeSessionSettings,
+) -> Option<String> {
     let trimmed = expr.trim();
-    if !NATIVE_BOOLEAN_EVIDENCE.contains(&trimmed) {
+    let evidence = NATIVE_BOOLEAN_EVIDENCE
+        .iter()
+        .find_map(|(candidate, evidence)| (*candidate == trimmed).then_some(*evidence))?;
+
+    if settings.has_interval_calculation()
+        || settings.has_interval_display()
+        || settings.has_concise_uncertainty()
+    {
         return None;
     }
 
-    crate::number::evaluate_relation_expr(trimmed)
-        .ok()
-        .flatten()
-        .map(|value| value.to_string())
+    let evaluated = match evidence {
+        NativeBooleanEvidence::DefaultOnly if settings.is_empty() => {
+            crate::number::evaluate_relation_expr(trimmed)
+        }
+        NativeBooleanEvidence::PrecisionRequired if settings.has_precision() => {
+            crate::number::evaluate_relation_expr_with_precision_digits(
+                trimmed,
+                settings.precision_digits(),
+            )
+        }
+        _ => return None,
+    };
+
+    evaluated.ok().flatten().map(|value| value.to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -475,6 +516,12 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
         NativeNumericEvidence::PrecisionRequired,
     ),
     ("(2 ^ 0.5) + 1/3", NativeNumericEvidence::PrecisionRequired),
+    ("0.1 + 0.2", NativeNumericEvidence::PrecisionRequired),
+    (
+        "1.25e-20 + 2.5e-20",
+        NativeNumericEvidence::PrecisionRequired,
+    ),
+    ("2.5e3 / 4", NativeNumericEvidence::PrecisionRequired),
     ("interval(5;2)", NativeNumericEvidence::IntervalDisplay),
     (
         "interval(-infinity;5)",
@@ -540,6 +587,11 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("infinity * 2", NativeNumericEvidence::DefaultOnly),
     ("infinity * -2", NativeNumericEvidence::DefaultOnly),
     ("1 / infinity", NativeNumericEvidence::DefaultOnly),
+    ("infinity / 2", NativeNumericEvidence::DefaultOnly),
+    ("infinity / -2", NativeNumericEvidence::DefaultOnly),
+    ("-infinity / 2", NativeNumericEvidence::DefaultOnly),
+    ("-infinity / -2", NativeNumericEvidence::DefaultOnly),
+    ("1 / -infinity", NativeNumericEvidence::DefaultOnly),
     ("0", NativeNumericEvidence::DefaultOnly),
     ("-0", NativeNumericEvidence::DefaultOnly),
     ("123456789", NativeNumericEvidence::DefaultOnly),

@@ -237,6 +237,54 @@ fn cli_applies_precision_setting_for_native_real_float_arithmetic() {
 }
 
 #[test]
+fn cli_applies_precision_setting_for_native_decimal_scientific_float_arithmetic() {
+    for precision in ["64", "128"] {
+        for (expression, expected) in [
+            ("0.1 + 0.2", "0.3\n"),
+            ("1.25e-20 + 2.5e-20", "0.0000000000000000000375\n"),
+            ("2.5e3 / 4", "625\n"),
+        ] {
+            let invalid_defs = tempdir().expect("temp dir should be created");
+            let mut cmd = qalc_rs();
+            cmd.args(["-set", &format!("precision {precision}"), "--", expression])
+                .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+                .env("QALCULATE_DISABLE_FALLBACK", "1")
+                .env("QALCULATE_REPORT_FALLBACK", "1")
+                .assert()
+                .success()
+                .stdout(expected)
+                .stderr(predicate::str::contains(
+                    "[qalc-rs-metadata] fallback=native",
+                ));
+        }
+    }
+}
+
+#[test]
+fn cli_applies_precision_setting_for_native_real_float_comparisons() {
+    for (expression, expected) in [
+        ("(2 ^ 0.5) < (3 ^ 0.5)", "true\n"),
+        ("(2 ^ 0.5) = (2 ^ 0.5)", "true\n"),
+        ("(2 ^ 0.5) = (3 ^ 0.5)", "false\n"),
+        ("(2 ^ 0.5) + 1/3 > 1", "true\n"),
+        ("(2 ^ 0.5) < 1/3", "false\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", "precision 128", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
 fn cli_rejects_native_real_float_arithmetic_without_precision_setting() {
     for expression in [
         "(2 ^ 0.5) + (3 ^ 0.5)",
@@ -724,6 +772,30 @@ fn cli_runs_native_infinity_arithmetic() {
         ("infinity * 2", "+∞\n"),
         ("infinity * -2", "−∞\n"),
         ("1 / infinity", "0\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.arg(expression)
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_runs_native_signed_infinity_division() {
+    for (expression, expected) in [
+        ("infinity / 2", "+∞\n"),
+        ("infinity / -2", "−∞\n"),
+        ("-infinity / 2", "−∞\n"),
+        ("-infinity / -2", "+∞\n"),
+        ("1 / -infinity", "0\n"),
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
         let mut cmd = qalc_rs();

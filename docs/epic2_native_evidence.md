@@ -87,6 +87,11 @@ focused expressions with fallback disabled:
 - `infinity * 2`
 - `infinity * -2`
 - `1 / infinity`
+- `infinity / 2`
+- `infinity / -2`
+- `-infinity / 2`
+- `-infinity / -2`
+- `1 / -infinity`
 - `1/3`
 - `1e10`
 - `1 + 1`
@@ -120,6 +125,26 @@ focused Refs #15 input-form slice without changing batch-manifest counts:
 Upstream default `1.23(4)` remains a multiplication expression and prints
 `4.92`; it is intentionally not accepted as native uncertainty evidence unless
 `/set concise uncertainty 1` is present.
+
+`tests/oracle.rs::focused_epic2_float_precision_oracle_cases` records focused
+Refs #12 precision-context rows:
+
+- `1/3` under `/set precision 128`
+- `2 ^ 0.5` under `/set precision 128`
+- `(2 ^ 0.5) + (3 ^ 0.5)` under `/set precision 128`
+- `(3 ^ 0.5) - (2 ^ 0.5)` under `/set precision 128`
+- `(2 ^ 0.5) * (3 ^ 0.5)` under `/set precision 128`
+- `(3 ^ 0.5) / (2 ^ 0.5)` under `/set precision 128`
+- `(2 ^ 0.5) + 1/3` under `/set precision 128`
+- `0.1 + 0.2` under `/set precision 64` and `/set precision 128`
+- `1.25e-20 + 2.5e-20` under `/set precision 64` and
+  `/set precision 128`
+- `2.5e3 / 4` under `/set precision 64` and `/set precision 128`
+- `(2 ^ 0.5) < (3 ^ 0.5)` under `/set precision 128`
+- `(2 ^ 0.5) = (2 ^ 0.5)` under `/set precision 128`
+- `(2 ^ 0.5) = (3 ^ 0.5)` under `/set precision 128`
+- `(2 ^ 0.5) + 1/3 > 1` under `/set precision 128`
+- `(2 ^ 0.5) < 1/3` under `/set precision 128`
 
 ## Native Representation Invariants
 
@@ -161,13 +186,16 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
 - Fallback-disabled native Refs #12 special-value evidence covers alphabetic
   infinity literals and selected arithmetic: `infinity -> +∞`,
   `-infinity -> −∞`, `infinity + 1 -> +∞`, `-infinity - 1 -> −∞`,
-  `infinity * 2 -> +∞`, `infinity * -2 -> −∞`, and
-  `1 / infinity -> 0`. The native expression tokenizer accepts only the
-  qalc-compatible `infinity` name as a whole literal before passing it to the
-  existing `Number` parser; internal `inf`/`nan` `Number::from_str` roundtrips
-  remain outside the expression evidence gate. Upstream probes showed exact
-  division by zero such as `1 / 0` remains symbolic, so division-by-zero parity
-  remains outside this native slice.
+  `infinity * 2 -> +∞`, `infinity * -2 -> −∞`, `1 / infinity -> 0`,
+  `infinity / 2 -> +∞`, `infinity / -2 -> −∞`, `-infinity / 2 -> −∞`,
+  `-infinity / -2 -> +∞`, and `1 / -infinity -> 0`. The native expression
+  tokenizer accepts only the qalc-compatible `infinity` name as a whole literal
+  before passing it to the existing `Number` parser; internal `inf`/`nan`
+  `Number::from_str` roundtrips remain outside the expression evidence gate.
+  Upstream probes showed exact division by zero and indeterminate infinity
+  forms remain symbolic, e.g. `1 / 0 -> 1 / 0`, `0 / 0 -> 0 / 0`,
+  `infinity - infinity -> (+∞) − (+∞)`, `infinity + -infinity -> (+∞) − (+∞)`,
+  and `0 * infinity -> 0(+∞)`, so those forms stay fallback-disabled.
 - Exact rational remainder and modulo now match upstream qalc for the promoted
   operator rows. `%` and `rem` use quotient truncation toward zero, while `%%`
   and `mod` use floor-division semantics, including negative operands and
@@ -193,10 +221,16 @@ Upstream default `1.23(4)` remains a multiplication expression and prints
   finite real MPFR arithmetic over precision-context non-integer powers:
   `(2 ^ 0.5) + (3 ^ 0.5)`, `(3 ^ 0.5) - (2 ^ 0.5)`,
   `(2 ^ 0.5) * (3 ^ 0.5)`, `(3 ^ 0.5) / (2 ^ 0.5)`, and
-  `(2 ^ 0.5) + 1/3`. Precision-enabled non-integer rational powers now
-  evaluate with a precision-derived MPFR context instead of the default 53-bit
-  context, and the promoted add/sub/mul/div cases preserve that MPFR precision
-  through ordinary real arithmetic.
+  `(2 ^ 0.5) + 1/3`. Precision-context evidence now also covers exact
+  decimal/scientific input rows at two settings: `0.1 + 0.2`, `1.25e-20 +
+  2.5e-20`, and `2.5e3 / 4` under `/set precision 64` and `/set precision 128`.
+  Precision-enabled non-integer rational powers now evaluate with a
+  precision-derived MPFR context instead of the default 53-bit context, and the
+  promoted add/sub/mul/div cases preserve that MPFR precision through ordinary
+  real arithmetic. Refs #12 comparison evidence is also setting-gated and covers
+  `true`/`false` qalc outputs for `(2 ^ 0.5) < (3 ^ 0.5)`, `(2 ^ 0.5) =
+  (2 ^ 0.5)`, `(2 ^ 0.5) = (3 ^ 0.5)`, `(2 ^ 0.5) + 1/3 > 1`, and
+  `(2 ^ 0.5) < 1/3` under `/set precision 128`.
 - Fallback-disabled native complex evidence covers imaginary literals and
   selected exact arithmetic output shapes: addition, subtraction,
   multiplication, division, zero-collapse (`i + (-i)`), pure-real collapse,
@@ -303,14 +337,19 @@ rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
 rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
 rtk cargo test --lib precision_context_applies_to_noninteger_rational_power -- --nocapture
 rtk cargo test --lib precision_context_applies_to_real_float_arithmetic -- --nocapture
+rtk cargo test --lib precision_context_decimal_and_scientific_rows_stay_exact_without_f64_shortcuts -- --nocapture
+rtk cargo test --lib precision_context_real_float_comparisons_match_upstream_booleans -- --nocapture
 rtk cargo test --lib native_log_and_sqrt_functions_match_qalc_profile -- --nocapture
 rtk cargo test --lib qalc_profile_formats_infinities_with_upstream_signs -- --nocapture
 rtk cargo test --lib special_value_literals_parse_in_expressions_with_name_boundaries -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_rational_output -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_float_power -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_arithmetic -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_decimal_scientific_float_arithmetic -- --exact --nocapture
+rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_comparisons -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_float_log_and_sqrt_functions -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_infinity_arithmetic -- --exact --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_signed_infinity_division -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_rejects_unsupported_uncertainty_special_function_when_fallback_disabled -- --nocapture
 rtk cargo test --test oracle focused_epic2_float_precision_oracle_cases -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
@@ -424,8 +463,8 @@ Mutation evidence for this slice:
 
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
   remain incomplete beyond the promoted native precision-output and
-  precision-context non-integer power/arithmetic, `ln`, `sqrt`, and focused
-  infinity literal/arithmetic evidence.
+  precision-context non-integer power/arithmetic, decimal/scientific input,
+  comparison, `ln`, `sqrt`, and focused infinity literal/arithmetic evidence.
 - Broad complex special-function behavior remains incomplete beyond the
   promoted exact arithmetic, `conj`, `norm`, `i^2`, focused equality/inequality
   constraints, equal-operand ordering constraints, and `explog.batch:7`
