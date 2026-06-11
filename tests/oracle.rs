@@ -13,9 +13,11 @@
 //!   the fallback disabled and must report `fallback=native`.
 //! - **Comparison**: Exact UTF-8 string comparison of stdout, with structured mismatch reporting.
 //!
-//! The strict default gate is currently scoped to no-session batches such as
-//! `parser.batch`. Session-dependent batches remain unsupported by the Rust
-//! subject path until `qalc-rs` can receive equivalent settings.
+//! The strict default gate started with no-session batches such as
+//! `parser.batch`. A small exact-gated numberbase slice now passes accumulated
+//! settings through `qalc-rs -set ...` when those rows are promoted to
+//! `native-pass`; other session-dependent inventory rows remain unsupported by
+//! the Rust subject path.
 //!
 //! # Running
 //!
@@ -357,7 +359,8 @@ fn run_oracle_expression(
 /// Inventory rows use the qalc-compatible FFI fallback exposed by the `qalc-rs`
 /// binary. Native-pass rows run with fallback disabled through the same CLI and
 /// are verified by the fallback-state oracle gate. Accumulated batch session
-/// settings are reported as unsupported rather than silently ignored.
+/// settings are passed through only for fallback-disabled native rows; inventory
+/// rows with settings are reported as unsupported rather than silently ignored.
 fn run_rust_expression(
     expression: &str,
     settings: &[SessionCommand],
@@ -365,7 +368,7 @@ fn run_rust_expression(
     disable_fallback: bool,
     report_fallback: bool,
 ) -> CapturedOutput {
-    if !settings.is_empty() {
+    if !settings.is_empty() && !disable_fallback {
         return CapturedOutput {
             stdout: String::new(),
             stderr: format!(
@@ -394,13 +397,18 @@ fn run_rust_expression(
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
         .arg("--")
-        .arg("--")
-        .arg(expression)
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
         .env("QALCULATE_DEFINITIONS_DIR", defs)
         .env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");
+
+    for setting in settings {
+        for arg in setting.to_qalc_args() {
+            cmd.arg(arg);
+        }
+    }
+    cmd.arg("--").arg(expression);
 
     if disable_fallback {
         cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
@@ -691,9 +699,40 @@ fn differential_oracle_exact_operators_batch() {
     );
 }
 
+/// Differential oracle test for `numberbase.batch`, including accumulated
+/// input-base and Unicode settings on the final two rows.
+#[test]
+fn differential_oracle_numberbase_batch() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping differential_oracle_numberbase_batch; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let batch_path = upstream_tests_dir().join("numberbase.batch");
+    if !batch_path.exists() {
+        eprintln!(
+            "skipping differential_oracle_numberbase_batch; {} not found",
+            batch_path.display()
+        );
+        return;
+    }
+
+    let defs = defs_dir();
+    let mismatches = differential_oracle_batch(&batch_path, &qalc, &defs);
+    report_mismatches(&mismatches);
+
+    assert!(
+        mismatches.is_empty(),
+        "differential oracle numberbase.batch found {} mismatch(es)",
+        mismatches.len()
+    );
+}
+
 /// Focused fallback-disabled oracle evidence for no-session `numberbase.batch`
-/// rows. The remaining numberbase rows use accumulated session settings, which
-/// the Rust oracle runner still reports as unsupported.
+/// rows. The session-setting rows are covered separately below.
 #[test]
 fn focused_epic2_numberbase_no_session_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
@@ -726,6 +765,64 @@ fn focused_epic2_numberbase_no_session_oracle_cases() {
     ];
 
     for (case_id, expression) in cases {
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+/// Focused fallback-disabled oracle evidence for the remaining
+/// `numberbase.batch` rows that depend on accumulated session settings.
+#[test]
+fn focused_epic2_numberbase_session_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_numberbase_session_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [(&str, &str, &[&str]); 2] = [
+        (
+            "numberbase.batch:28",
+            "5p10+AEp-2*p23",
+            &["set input base 16"],
+        ),
+        (
+            "numberbase.batch:32",
+            "52.34 to sexa",
+            &["set input base 16", "set input base 10", "/set unicode 1"],
+        ),
+    ];
+
+    for (case_id, expression, raw_settings) in cases {
+        let settings = raw_settings
+            .iter()
+            .map(|raw| SessionCommand {
+                raw: (*raw).to_string(),
+            })
+            .collect::<Vec<_>>();
         let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
         let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
         let fallback_state =

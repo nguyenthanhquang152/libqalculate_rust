@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **51** |
-| Inventory-only test cases | **605** |
+| Native-pass test cases | **53** |
+| Inventory-only test cases | **603** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -614,8 +614,8 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 11 | `numberbase.batch:21` | `1978 to roman` | `MCMLXXVIII` | — | native-pass |
 | 12 | `numberbase.batch:23` | `52 to base 32` | `1K` | — | native-pass |
 | 13 | `numberbase.batch:25` | `sqrt(32) to base sqrt(2)` | `100000` | — | native-pass |
-| 14 | `numberbase.batch:28` | `5p10+AEp-2*p23` | `364909568` | set input base 16 | inventory-only |
-| 15 | `numberbase.batch:32` | `52.34 to sexa` | `52°20′24″` | set input base 16; set input base 10; /set unicode 1 | inventory-only |
+| 14 | `numberbase.batch:28` | `5p10+AEp-2*p23` | `364909568` | set input base 16 | native-pass |
+| 15 | `numberbase.batch:32` | `52.34 to sexa` | `52°20′24″` | set input base 16; set input base 10; /set unicode 1 | native-pass |
 
 ---
 

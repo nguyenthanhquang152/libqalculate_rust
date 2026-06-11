@@ -15,6 +15,8 @@ pub mod batch;
 /// contained here behind the safe `Calculator` wrapper.
 pub mod ffi;
 
+mod numberbase;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.

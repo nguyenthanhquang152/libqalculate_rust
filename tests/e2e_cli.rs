@@ -18,7 +18,10 @@ fn cli_prints_help() {
     cmd.arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("--parse-batch <path>"));
+        .stdout(predicate::str::contains("--parse-batch <path>"))
+        .stdout(predicate::str::contains(
+            "Limited native-evidence qalc setting support",
+        ));
 }
 
 #[test]
@@ -137,6 +140,22 @@ fn cli_native_scaffold_does_not_require_definitions_when_fallback_disabled() {
         .assert()
         .success()
         .stdout("3\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_applies_limited_set_for_native_numberbase_evidence() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "input base 16", "--", "5p10+AEp-2*p23"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("364909568\n")
         .stderr(predicate::str::contains(
             "[qalc-rs-metadata] fallback=native",
         ));

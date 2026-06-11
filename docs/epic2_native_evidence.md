@@ -1,6 +1,6 @@
 # Epic 2 Native Numeric Evidence
 
-Date: 2026-06-10
+Date: 2026-06-11
 
 This note records fallback-disabled Rust-vs-upstream evidence for the current
 Epic 2 numeric slice. It is evidence for the cases listed here only; it does not
@@ -17,14 +17,14 @@ claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 51 rows as `native-pass`.
+`docs/batch_manifest.md` now marks 53 rows as `native-pass`.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.
 - `operators.batch`: lines 1, 10, 12, 14, 21, 30, 34, 37, 39, 41, 44, 46,
   48, 51, 53, 55, 58, 60, 62.
 - `numberbase.batch`: lines 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23,
-  25.
+  25, 28, 32.
 
 The oracle runner disables C++ fallback for these rows and verifies
 `fallback=native`.
@@ -32,7 +32,7 @@ The oracle runner disables C++ fallback for these rows and verifies
 `1 + 1` is also kept as focused native scaffold evidence because
 `ORIGINAL_REQUEST.md` explicitly names it as a fallback-disabled scaffold
 expression. It is not an upstream batch-manifest promotion and is not counted in
-the 51 `native-pass` batch rows above.
+the 53 `native-pass` batch rows above.
 
 ## Focused Native Oracle Cases
 
@@ -96,15 +96,14 @@ focused expressions with fallback disabled:
 - Exact rational integer division now matches upstream qalc for the promoted
   operator rows. `//`, `\`, and `div` return the quotient truncated toward zero,
   including negative operands and fractional rational dividends.
-- No-session numberbase rows now have focused native output support for the
-  exact promoted expressions covering binary, octal, hexadecimal, base-32,
-  Roman numeral, 32-bit float bit-pattern, bitwise-shift/AND-to-binary,
-  `float(...)`, `floatError(...)`, and `sqrt(n) to base sqrt(m)` cases. Other
-  numberbase-looking expressions remain outside the fallback-disabled native
-  gate until promoted with oracle evidence. The `numberbase.batch` rows that
-  depend on accumulated session settings remain inventory-only because the Rust
-  oracle runner still rejects native rows with session settings instead of
-  silently ignoring them.
+- Numberbase rows now have focused native output support for the exact promoted
+  expressions covering binary, octal, hexadecimal, base-32, Roman numeral,
+  32-bit float bit-pattern, bitwise-shift/AND-to-binary, `float(...)`,
+  `floatError(...)`, `sqrt(n) to base sqrt(m)`, the hexadecimal `p` binary
+  exponent expression under `set input base 16`, and Unicode sexagesimal output
+  after accumulated input-base/Unicode settings. Other numberbase-looking
+  expressions and broader session-setting combinations remain outside the
+  fallback-disabled native gate until promoted with oracle evidence.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -142,7 +141,9 @@ rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infin
 rtk cargo test --lib exact_integer_powers_remain_rational_and_parse_starstar -- --nocapture
 rtk cargo test --lib rational_modulo_and_remainder_match_qalc_operators -- --nocapture
 rtk cargo test --lib rational_integer_division_matches_qalc_operators -- --nocapture
+rtk cargo test --test oracle differential_oracle_numberbase_batch -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_no_session_oracle_cases -- --nocapture
+rtk cargo test --test oracle focused_epic2_numberbase_session_oracle_cases -- --nocapture
 rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
@@ -180,8 +181,6 @@ rtk timeout 600 just coverage
   semantics in several operations.
 - Uncertainty function examples from `explog.batch`, ASCII/Unicode print-option
   toggles, and session-setting-dependent behavior remain incomplete.
-- `numberbase.batch:28` and `numberbase.batch:32` remain inventory-only because
-  they require accumulated input-base and Unicode session settings.
 - Division-by-zero-style power output such as `0 ^ -1 -> 1 / 0` remains outside
   the fallback-disabled native subset.
 - `Calculator` expression evaluation remains fallback-first outside the vetted

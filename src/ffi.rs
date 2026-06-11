@@ -227,11 +227,39 @@ impl Calculator {
         self.calculate_with_profile(PrintProfile::Qalc, expr, timeout_ms)
     }
 
+    /// Evaluate an expression using qalc-compatible defaults plus a narrow set
+    /// of qalc session settings supported by native fallback-disabled evidence.
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled
+    /// for an unsupported expression/settings combination.
+    ///
+    /// # Panics
+    /// Panics if the inner Calculator pointer is null, which indicates a bug.
+    pub fn calculate_and_print_qalc_with_settings_and_fallback_state(
+        &mut self,
+        expr: &str,
+        settings: &[&str],
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile_and_settings(PrintProfile::Qalc, expr, timeout_ms, settings)
+    }
+
     fn calculate_with_profile(
         &mut self,
         profile: PrintProfile,
         expr: &str,
         timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile_and_settings(profile, expr, timeout_ms, &[])
+    }
+
+    fn calculate_with_profile_and_settings(
+        &mut self,
+        profile: PrintProfile,
+        expr: &str,
+        timeout_ms: i32,
+        settings: &[&str],
     ) -> Result<CalculationOutput, CalculatorError> {
         assert!(
             !self.inner.is_null(),
@@ -239,13 +267,22 @@ impl Calculator {
         );
 
         if fallback_disabled_by_env() {
-            if let Some(output) = native_scaffold_output(profile, expr) {
+            if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 return Ok(CalculationOutput {
                     output,
                     fallback_state: FallbackState::Native,
                 });
             }
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
+        }
+
+        if !settings.is_empty() {
+            return Err(CalculatorError::UnsupportedSessionSettings(
+                settings
+                    .iter()
+                    .map(|setting| (*setting).to_string())
+                    .collect(),
+            ));
         }
 
         let output = {
@@ -268,15 +305,17 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn native_scaffold_output(profile: PrintProfile, expr: &str) -> Option<String> {
-    if expr == "native-scaffold-test" {
-        return Some("native-scaffold-test-success".to_string());
+fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
+    if let Some(output) = crate::numberbase::native_output(expr, settings) {
+        return Some(output);
     }
 
-    if is_vetted_native_numberbase_expr(expr) {
-        if let Some(output) = native_numberbase_output(expr) {
-            return Some(output);
-        }
+    if !settings.is_empty() {
+        return None;
+    }
+
+    if expr == "native-scaffold-test" {
+        return Some("native-scaffold-test-success".to_string());
     }
 
     if !is_vetted_native_numeric_expr(expr) {
@@ -296,306 +335,6 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str) -> Option<String> {
         }
         _ => None,
     }
-}
-
-fn native_numberbase_output(expr: &str) -> Option<String> {
-    let trimmed = expr.trim();
-
-    if let Some(hex_digits) = trimmed.strip_prefix("0x") {
-        return parse_radix_u128(hex_digits, 16).map(|value| value.to_string());
-    }
-
-    if let Some(inner) = strip_function_call(trimmed, "hex") {
-        return parse_radix_u128(inner, 16).map(|value| value.to_string());
-    }
-
-    if let Some(inner) = strip_function_call(trimmed, "float") {
-        let bits = parse_bit_string_u32(inner)?;
-        return Some(format!("{:.8}", f32::from_bits(bits)));
-    }
-
-    if let Some(inner) = strip_function_call(trimmed, "floatError") {
-        return float_error_decimal(inner);
-    }
-
-    let (lhs, target) = trimmed.split_once(" to ")?;
-    let lhs = lhs.trim();
-    let target = target.trim();
-
-    if target == "float" {
-        let value = lhs.parse::<f32>().ok()?;
-        return Some(group_bits_4(&format!("{:032b}", value.to_bits())));
-    }
-
-    if let Some(output) = format_sqrt_base(lhs, target) {
-        return Some(output);
-    }
-
-    let value = eval_native_base_integer(lhs)?;
-    match target {
-        "bin" => Some(format_binary(value, None)),
-        "bin16" => Some(format_binary(value, Some(16))),
-        "oct" => Some(format!("0{value:o}")),
-        "hex" => Some(format!("0x{value:X}")),
-        "roman" => roman_numeral(value),
-        _ => {
-            let base = target.strip_prefix("base ")?.parse::<u32>().ok()?;
-            (2..=36)
-                .contains(&base)
-                .then(|| format_integer_base(value, base))
-        }
-    }
-}
-
-fn strip_function_call<'a>(expr: &'a str, name: &str) -> Option<&'a str> {
-    expr.strip_prefix(name)?
-        .strip_prefix('(')?
-        .strip_suffix(')')
-        .map(str::trim)
-}
-
-fn parse_radix_u128(digits: &str, radix: u32) -> Option<u128> {
-    let compact: String = digits.chars().filter(|ch| !ch.is_whitespace()).collect();
-    (!compact.is_empty())
-        .then_some(compact)
-        .and_then(|value| u128::from_str_radix(&value, radix).ok())
-}
-
-fn parse_bit_string_u32(bits: &str) -> Option<u32> {
-    let compact: String = bits.chars().filter(|ch| !ch.is_whitespace()).collect();
-    (compact.len() == 32 && compact.chars().all(|ch| matches!(ch, '0' | '1')))
-        .then_some(())
-        .and_then(|_| u32::from_str_radix(&compact, 2).ok())
-}
-
-fn eval_native_base_integer(expr: &str) -> Option<u128> {
-    if let Some((lhs, rhs)) = expr.split_once('&') {
-        let lhs = eval_native_shift(lhs.trim())?;
-        let rhs = rhs.trim().parse::<u128>().ok()?;
-        return Some(lhs & rhs);
-    }
-
-    eval_native_shift(expr)
-}
-
-fn eval_native_shift(expr: &str) -> Option<u128> {
-    if let Some((lhs, rhs)) = expr.split_once("<<") {
-        let lhs = lhs.trim().parse::<u128>().ok()?;
-        let rhs = rhs.trim().parse::<u32>().ok()?;
-        return lhs.checked_shl(rhs);
-    }
-
-    expr.trim().parse::<u128>().ok()
-}
-
-fn format_binary(value: u128, width: Option<usize>) -> String {
-    let raw = format!("{value:b}");
-    let width = width.unwrap_or_else(|| raw.len().div_ceil(8) * 8).max(8);
-    let padded = format!("{raw:0>width$}");
-    group_bits_4(&padded)
-}
-
-fn group_bits_4(bits: &str) -> String {
-    bits.as_bytes()
-        .chunks(4)
-        .map(|chunk| std::str::from_utf8(chunk).expect("binary digits are valid UTF-8"))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn format_integer_base(mut value: u128, base: u32) -> String {
-    const DIGITS: &[u8; 36] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    if value == 0 {
-        return "0".to_string();
-    }
-
-    let mut output = Vec::new();
-    let base = u128::from(base);
-    while value > 0 {
-        let digit = (value % base) as usize;
-        output.push(DIGITS[digit] as char);
-        value /= base;
-    }
-    output.into_iter().rev().collect()
-}
-
-fn format_sqrt_base(lhs: &str, target: &str) -> Option<String> {
-    let lhs_radicand = parse_sqrt_radicand(lhs)?;
-    let base_radicand = parse_sqrt_radicand(target.strip_prefix("base ")?.trim())?;
-    if base_radicand <= 1 {
-        return None;
-    }
-
-    let mut power = 1u128;
-    for exponent in 0..=128 {
-        if power == lhs_radicand {
-            return Some(format!("1{}", "0".repeat(exponent)));
-        }
-        power = power.checked_mul(base_radicand)?;
-        if power > lhs_radicand {
-            return None;
-        }
-    }
-    None
-}
-
-fn parse_sqrt_radicand(expr: &str) -> Option<u128> {
-    strip_function_call(expr.trim(), "sqrt")?
-        .parse::<u128>()
-        .ok()
-}
-
-fn float_error_decimal(decimal: &str) -> Option<String> {
-    let (decimal_num, decimal_den) = parse_decimal_rational(decimal)?;
-    let (float_num, float_den) = f32_rational_parts(decimal.parse::<f32>().ok()?)?;
-    let lhs = float_num.checked_mul(decimal_den as i128)?;
-    let rhs = i128::try_from(decimal_num.checked_mul(float_den)?).ok()?;
-    let diff_num = lhs.abs_diff(rhs);
-    let diff_den = float_den.checked_mul(decimal_den)?;
-    terminating_decimal(diff_num, diff_den)
-}
-
-fn parse_decimal_rational(decimal: &str) -> Option<(u128, u128)> {
-    let trimmed = decimal.trim();
-    let (whole, fractional) = trimmed.split_once('.').unwrap_or((trimmed, ""));
-    if whole.is_empty() && fractional.is_empty() {
-        return None;
-    }
-    if !whole.chars().all(|ch| ch.is_ascii_digit())
-        || !fractional.chars().all(|ch| ch.is_ascii_digit())
-    {
-        return None;
-    }
-
-    let digits = format!("{whole}{fractional}");
-    let numerator = digits.parse::<u128>().ok()?;
-    let denominator = 10u128.checked_pow(fractional.len() as u32)?;
-    Some((numerator, denominator))
-}
-
-fn f32_rational_parts(value: f32) -> Option<(i128, u128)> {
-    if !value.is_finite() {
-        return None;
-    }
-    let bits = value.to_bits();
-    let negative = (bits >> 31) != 0;
-    let exponent_bits = ((bits >> 23) & 0xff) as i32;
-    let fraction_bits = bits & 0x7f_ffff;
-    let (mantissa, exponent) = if exponent_bits == 0 {
-        (u128::from(fraction_bits), 1 - 127 - 23)
-    } else {
-        (
-            u128::from((1 << 23) | fraction_bits),
-            exponent_bits - 127 - 23,
-        )
-    };
-
-    let (numerator, denominator) = if exponent >= 0 {
-        (mantissa.checked_shl(exponent as u32)?, 1)
-    } else {
-        (mantissa, 1u128.checked_shl((-exponent) as u32)?)
-    };
-    let numerator = i128::try_from(numerator).ok()?;
-    Some((if negative { -numerator } else { numerator }, denominator))
-}
-
-fn terminating_decimal(mut numerator: u128, mut denominator: u128) -> Option<String> {
-    if denominator == 0 {
-        return None;
-    }
-    let gcd = gcd_u128(numerator, denominator);
-    numerator /= gcd;
-    denominator /= gcd;
-
-    let mut twos = 0usize;
-    while denominator.is_multiple_of(2) {
-        denominator /= 2;
-        twos += 1;
-    }
-    let mut fives = 0usize;
-    while denominator.is_multiple_of(5) {
-        denominator /= 5;
-        fives += 1;
-    }
-    if denominator != 1 {
-        return None;
-    }
-
-    let scale = twos.max(fives);
-    for _ in 0..(scale - twos) {
-        numerator = numerator.checked_mul(2)?;
-    }
-    for _ in 0..(scale - fives) {
-        numerator = numerator.checked_mul(5)?;
-    }
-
-    let mut digits = numerator.to_string();
-    if scale == 0 {
-        return Some(digits);
-    }
-    if digits.len() <= scale {
-        digits = format!("{}{}", "0".repeat(scale + 1 - digits.len()), digits);
-    }
-    let split = digits.len() - scale;
-    Some(format!("{}.{}", &digits[..split], &digits[split..]))
-}
-
-fn gcd_u128(mut lhs: u128, mut rhs: u128) -> u128 {
-    while rhs != 0 {
-        let rem = lhs % rhs;
-        lhs = rhs;
-        rhs = rem;
-    }
-    lhs
-}
-
-fn roman_numeral(mut value: u128) -> Option<String> {
-    if !(1..=3999).contains(&value) {
-        return None;
-    }
-    let table = [
-        (1000, "M"),
-        (900, "CM"),
-        (500, "D"),
-        (400, "CD"),
-        (100, "C"),
-        (90, "XC"),
-        (50, "L"),
-        (40, "XL"),
-        (10, "X"),
-        (9, "IX"),
-        (5, "V"),
-        (4, "IV"),
-        (1, "I"),
-    ];
-    let mut output = String::new();
-    for (arabic, roman) in table {
-        while value >= arabic {
-            output.push_str(roman);
-            value -= arabic;
-        }
-    }
-    Some(output)
-}
-
-fn is_vetted_native_numberbase_expr(expr: &str) -> bool {
-    let trimmed = expr.trim();
-    matches!(
-        trimmed,
-        "52 to bin"
-            | "52 to bin16"
-            | "52 to oct"
-            | "52 to hex"
-            | "0x34"
-            | "hex(34)"
-            | "523<<2&250 to bin"
-            | "52.345 to float"
-            | "float(01000010010100010110000101001000)"
-            | "floatError(52.345)"
-            | "1978 to roman"
-            | "52 to base 32"
-            | "sqrt(32) to base sqrt(2)"
-    )
 }
 
 fn is_vetted_native_numeric_expr(expr: &str) -> bool {
@@ -669,6 +408,8 @@ pub enum CalculatorError {
     Cxx(cxx::Exception),
     /// The C++ fallback is disabled and the requested feature is unimplemented natively.
     FallbackDisabled(String),
+    /// Session settings were supplied on a path that cannot apply them safely.
+    UnsupportedSessionSettings(Vec<String>),
 }
 
 impl std::fmt::Display for CalculatorError {
@@ -682,6 +423,13 @@ impl std::fmt::Display for CalculatorError {
                     expr
                 )
             }
+            CalculatorError::UnsupportedSessionSettings(settings) => {
+                write!(
+                    f,
+                    "session settings are not supported by the C++ FFI fallback path: {}",
+                    settings.join("; ")
+                )
+            }
         }
     }
 }
@@ -691,6 +439,7 @@ impl std::error::Error for CalculatorError {
         match self {
             CalculatorError::Cxx(e) => Some(e),
             CalculatorError::FallbackDisabled(_) => None,
+            CalculatorError::UnsupportedSessionSettings(_) => None,
         }
     }
 }
@@ -701,6 +450,7 @@ impl CalculatorError {
         match self {
             Self::Cxx(_) => FallbackState::CppFallbackEnabled,
             Self::FallbackDisabled(_) => FallbackState::Disabled,
+            Self::UnsupportedSessionSettings(_) => FallbackState::CppFallbackEnabled,
         }
     }
 }
