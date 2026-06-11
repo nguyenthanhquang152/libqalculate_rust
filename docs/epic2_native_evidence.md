@@ -46,8 +46,21 @@ focused expressions with fallback disabled:
 - `i`
 - `5i`
 - `(1 + 2i) + (3 + 4i)`
+- `(1 + 2i) - (3 + 4i)`
 - `(1 + 2i) * (3 + 4i)`
 - `(1 + 2i) / (3 + 4i)`
+- `i + (-i)`
+- `(1 + i) + (-1 + i)`
+- `(1 + i) + (2 - i)`
+- `(1 + i) * (1 - i)`
+- `(1 + i) / (1 - i)`
+- `conj(3 + 4i)`
+- `conj(i)`
+- `conj(-i)`
+- `conj(3)`
+- `norm(3 + 4i)`
+- `norm(i)`
+- `norm(-3i)`
 - `i^2`
 - `(2i - 3)^(3.2i + 3)`
 - `ln(0)`
@@ -143,12 +156,15 @@ focused expressions with fallback disabled:
   through ordinary real arithmetic.
 - Fallback-disabled native complex evidence covers imaginary literals and
   selected exact arithmetic output shapes: addition, subtraction,
-  multiplication, division, `conj(3 + 4i)`, `norm(3 + 4i)`, exact `i^2`, and
-  the no-session `explog.batch:7` complex-power row
-  `(2i - 3)^(3.2i + 3)`. These cases are compared against upstream qalc with
-  exact UTF-8 output, including Unicode minus signs in qalc-profile CLI output.
-  Focused unit regressions keep exact integer powers of `i` out of the
-  approximate complex-power branch, including upstream `i^1000000 -> 1`.
+  multiplication, division, zero-collapse (`i + (-i)`), pure-real collapse,
+  pure-imaginary preservation, `conj(...)`, `norm(...)`, exact `i^2`, and the
+  no-session `explog.batch:7` complex-power row `(2i - 3)^(3.2i + 3)`. These
+  cases are compared against upstream qalc with exact UTF-8 output, including
+  Unicode minus signs in qalc-profile CLI output. Focused unit regressions keep
+  exact integer powers of `i` out of the approximate complex-power branch,
+  including upstream `i^1000000 -> 1`, and assert that `Number::new_complex`
+  drops internal imaginary metadata when the canonical imaginary component is
+  zero while preserving exact/approx state.
 - Fallback-disabled native uncertainty evidence covers the first no-session
   `explog.batch` uncertainty power row: `(2+/-3)^3.2` now evaluates natively
   and prints `9.18958684±44.11001683` against upstream qalc. The qalc-profile
@@ -201,8 +217,10 @@ rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infin
 rtk cargo test --lib exact_integer_powers_remain_rational_and_parse_starstar -- --nocapture
 rtk cargo test --lib rational_modulo_and_remainder_match_qalc_operators -- --nocapture
 rtk cargo test --lib rational_integer_division_matches_qalc_operators -- --nocapture
+rtk cargo test --lib complex_zero_part_metadata_collapses_without_losing_exact_or_approx_state -- --nocapture
 rtk cargo test --lib complex_conjugate_and_norm_parse_natively -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_subtraction_conjugate_and_norm -- --nocapture
+rtk cargo test --test fallback_gate cli_native_expression_succeeds_when_fallback_disabled -- --nocapture
 rtk cargo test --lib complex_powers_match_focused_qalc_output -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_powers -- --nocapture
 rtk cargo test --lib uncertainty_power_matches_focused_qalc_display -- --nocapture
