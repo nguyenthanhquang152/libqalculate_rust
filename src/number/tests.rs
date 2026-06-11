@@ -951,6 +951,21 @@ fn displayed_special_values_parse_roundtrip() {
 }
 
 #[test]
+fn special_value_literals_parse_in_expressions_with_name_boundaries() {
+    assert_eq!(evaluate_expr("infinity").unwrap().to_qalc_string(), "+∞");
+    assert_eq!(
+        evaluate_expr("Infinity + 1").unwrap().to_qalc_string(),
+        "+∞"
+    );
+
+    assert!(evaluate_expr("infinity_value").is_err());
+    assert!(evaluate_expr("infinitely").is_err());
+    assert!(evaluate_expr("inf").is_err());
+    assert!(evaluate_expr("nan").is_err());
+    assert!(evaluate_expr("nan_value").is_err());
+}
+
+#[test]
 fn scientific_literals_with_impractical_exponents_are_rejected() {
     assert!("1e4097".parse::<Number>().is_ok());
     assert!("1e-4097".parse::<Number>().is_ok());
