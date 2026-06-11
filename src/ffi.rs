@@ -329,6 +329,9 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     if settings.has_precision() && !evidence.supports_precision() {
         return None;
     }
+    if evidence.requires_precision() && !settings.has_precision() {
+        return None;
+    }
     if evidence.requires_interval_display() && !settings.has_interval_display() {
         return None;
     }
@@ -370,13 +373,18 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
 enum NativeNumericEvidence {
     DefaultOnly,
     Precision,
+    PrecisionRequired,
     IntervalDisplay,
     PreciseFloatUncertainty,
 }
 
 impl NativeNumericEvidence {
     const fn supports_precision(self) -> bool {
-        matches!(self, Self::Precision)
+        matches!(self, Self::Precision | Self::PrecisionRequired)
+    }
+
+    const fn requires_precision(self) -> bool {
+        matches!(self, Self::PrecisionRequired)
     }
 
     const fn requires_interval_display(self) -> bool {
@@ -391,6 +399,23 @@ impl NativeNumericEvidence {
 const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("1/3", NativeNumericEvidence::Precision),
     ("2 ^ 0.5", NativeNumericEvidence::Precision),
+    (
+        "(2 ^ 0.5) + (3 ^ 0.5)",
+        NativeNumericEvidence::PrecisionRequired,
+    ),
+    (
+        "(3 ^ 0.5) - (2 ^ 0.5)",
+        NativeNumericEvidence::PrecisionRequired,
+    ),
+    (
+        "(2 ^ 0.5) * (3 ^ 0.5)",
+        NativeNumericEvidence::PrecisionRequired,
+    ),
+    (
+        "(3 ^ 0.5) / (2 ^ 0.5)",
+        NativeNumericEvidence::PrecisionRequired,
+    ),
+    ("(2 ^ 0.5) + 1/3", NativeNumericEvidence::PrecisionRequired),
     ("interval(5;2)", NativeNumericEvidence::IntervalDisplay),
     ("ln(0)", NativeNumericEvidence::DefaultOnly),
     ("ln(2)", NativeNumericEvidence::DefaultOnly),

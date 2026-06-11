@@ -133,9 +133,14 @@ focused expressions with fallback disabled:
   to emit the requested decimal digits. The native evidence gate accepts
   precision values from 1 through 4096 digits to avoid unbounded CLI-requested
   allocation. Focused upstream oracle evidence covers `1/3` under
-  `/set precision 128` and native `2 ^ 0.5` under `/set precision 128`;
-  precision-enabled non-integer rational powers now evaluate with a
-  precision-derived MPFR context instead of the default 53-bit context.
+  `/set precision 128`, native `2 ^ 0.5` under `/set precision 128`, and
+  finite real MPFR arithmetic over precision-context non-integer powers:
+  `(2 ^ 0.5) + (3 ^ 0.5)`, `(3 ^ 0.5) - (2 ^ 0.5)`,
+  `(2 ^ 0.5) * (3 ^ 0.5)`, `(3 ^ 0.5) / (2 ^ 0.5)`, and
+  `(2 ^ 0.5) + 1/3`. Precision-enabled non-integer rational powers now
+  evaluate with a precision-derived MPFR context instead of the default 53-bit
+  context, and the promoted add/sub/mul/div cases preserve that MPFR precision
+  through ordinary real arithmetic.
 - Fallback-disabled native complex evidence covers imaginary literals and
   selected exact arithmetic output shapes: addition, subtraction,
   multiplication, division, `conj(3 + 4i)`, `norm(3 + 4i)`, exact `i^2`, and
@@ -183,10 +188,12 @@ rtk cargo test --lib test_arbitrary_precision_rationals_do_not_fall_back_to_i128
 rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
 rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
 rtk cargo test --lib precision_context_applies_to_noninteger_rational_power -- --nocapture
+rtk cargo test --lib precision_context_applies_to_real_float_arithmetic -- --nocapture
 rtk cargo test --lib native_log_and_sqrt_functions_match_qalc_profile -- --nocapture
 rtk cargo test --lib qalc_profile_formats_infinities_with_upstream_signs -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_rational_output -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_float_power -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_arithmetic -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_float_log_and_sqrt_functions -- --nocapture
 rtk cargo test --test oracle focused_epic2_float_precision_oracle_cases -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
@@ -244,7 +251,7 @@ Mutation evidence for this slice:
 
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
   remain incomplete beyond the promoted native precision-output and
-  precision-context non-integer power, `ln`, and `sqrt` evidence.
+  precision-context non-integer power/arithmetic, `ln`, and `sqrt` evidence.
 - Broader complex powers and broad `explog.batch` complex cases remain
   incomplete beyond the promoted exact arithmetic, `conj`, `norm`, `i^2`, and
   `explog.batch:7` evidence.

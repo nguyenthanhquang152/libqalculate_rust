@@ -792,6 +792,45 @@ fn precision_context_applies_to_noninteger_rational_power() {
 }
 
 #[test]
+fn precision_context_applies_to_real_float_arithmetic() {
+    for (expression, expected) in [
+        (
+            "(2 ^ 0.5) + (3 ^ 0.5)",
+            "3.1462643699419723423291350657155704455124771291873287012324867174426654953709070759315337210848901484106399876463190000548947812",
+        ),
+        (
+            "(3 ^ 0.5) - (2 ^ 0.5)",
+            "0.31783724519578224472575761729617428837313337843343255487912724146120053844669299823075865242960700294061229518449440600504510904",
+        ),
+        (
+            "(2 ^ 0.5) * (3 ^ 0.5)",
+            "2.4494897427831780981972840747058913919659474806566701284326925672509603774573150265398594331046402348185946012266141891248588655",
+        ),
+        (
+            "(3 ^ 0.5) / (2 ^ 0.5)",
+            "1.2247448713915890490986420373529456959829737403283350642163462836254801887286575132699297165523201174092973006133070945624294327",
+        ),
+        (
+            "(2 ^ 0.5) + 1/3",
+            "1.7475468957064283821350220575430314119030052087102814065100130713240658117954403721837208676609749060683471795642456303582581694",
+        ),
+    ] {
+        let value = evaluate_expr_with_precision_digits(expression, 128)
+            .expect("precision-context arithmetic should evaluate natively");
+
+        assert_eq!(
+            value.to_qalc_string_with_precision(128),
+            expected,
+            "{expression} should match focused upstream precision output"
+        );
+        assert!(
+            value.precision() >= 128,
+            "{expression} should preserve precision-context MPFR arithmetic"
+        );
+    }
+}
+
+#[test]
 fn float_ln_preserves_operand_precision_without_f64_roundtrip() {
     let input = NumberValue::Float(Float {
         value: rug::Float::with_val(200, 2),
