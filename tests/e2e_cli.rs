@@ -279,6 +279,71 @@ fn cli_applies_interval_display_setting_for_native_interval_function() {
 }
 
 #[test]
+fn cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode() {
+    for (expression, expected) in [
+        (
+            "interval(1;2) + interval(3;4)",
+            "interval(4.000000000, 6.000000000)\n",
+        ),
+        (
+            "interval(3;4) - interval(1;2)",
+            "interval(1.000000000, 3.000000000)\n",
+        ),
+        (
+            "interval(-2;3) * interval(-4;5)",
+            "interval(\u{2212}12.00000000, 15.00000000)\n",
+        ),
+        (
+            "interval(4;6) / interval(2;3)",
+            "interval(1.333333333, 3.000000000)\n",
+        ),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args([
+            "-set",
+            "interval display 2",
+            "-set",
+            "ic 2",
+            "--",
+            expression,
+        ])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout(expected)
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+    }
+}
+
+#[test]
+fn cli_rejects_interval_arithmetic_without_ic2_endpoint_mode() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args([
+        "-set",
+        "interval display 2",
+        "--",
+        "interval(-2;3) * interval(-4;5)",
+    ])
+    .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+    .env("QALCULATE_DISABLE_FALLBACK", "1")
+    .env("QALCULATE_REPORT_FALLBACK", "1")
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "[qalc-rs-metadata] fallback=disabled",
+    ))
+    .stderr(predicate::str::contains(
+        "expression 'interval(-2;3) * interval(-4;5)' has no native Rust implementation",
+    ));
+}
+
+#[test]
 fn cli_requires_interval_display_setting_for_native_interval_function() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();

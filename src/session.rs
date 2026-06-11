@@ -11,6 +11,7 @@ pub(crate) struct NativeSessionSettings {
     unicode: bool,
     precision_digits: Option<usize>,
     interval_display: Option<u8>,
+    interval_calculation: Option<u8>,
 }
 
 impl NativeSessionSettings {
@@ -22,6 +23,7 @@ impl NativeSessionSettings {
                 "input base 10" => state.input_base = Some(10),
                 "unicode 1" => state.unicode = true,
                 "interval display 2" => state.interval_display = Some(2),
+                "ic 2" => state.interval_calculation = Some(2),
                 normalized => {
                     let precision = normalized.strip_prefix("precision ")?;
                     state.precision_digits = Some(parse_precision_digits(precision)?);
@@ -51,6 +53,7 @@ impl NativeSessionSettings {
             && !self.unicode
             && self.precision_digits.is_none()
             && self.interval_display.is_none()
+            && self.interval_calculation.is_none()
     }
 
     /// Returns true when settings can be applied to the vetted numeric
@@ -65,6 +68,10 @@ impl NativeSessionSettings {
 
     pub(crate) const fn has_interval_display(self) -> bool {
         self.interval_display.is_some()
+    }
+
+    pub(crate) const fn has_interval_calculation(self) -> bool {
+        self.interval_calculation.is_some()
     }
 }
 
@@ -96,13 +103,15 @@ mod tests {
                 "input base 10",
                 "/set unicode 1",
                 "/set precision 128",
-                "/set interval display 2"
+                "/set interval display 2",
+                "/set ic 2"
             ]),
             Some(NativeSessionSettings {
                 input_base: Some(10),
                 unicode: true,
                 precision_digits: Some(128),
                 interval_display: Some(2),
+                interval_calculation: Some(2),
             })
         );
     }
@@ -115,6 +124,7 @@ mod tests {
             NativeSessionSettings::from_raw(&["interval display 1"]),
             None
         );
+        assert_eq!(NativeSessionSettings::from_raw(&["ic 1"]), None);
         assert_eq!(
             NativeSessionSettings::from_raw(&["angle unit radians"]),
             None

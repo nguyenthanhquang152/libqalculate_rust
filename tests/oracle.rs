@@ -1045,6 +1045,85 @@ fn focused_epic2_interval_display_oracle_cases() {
     assert_native_oracle_cases(&qalc, &defs, &cases);
 }
 
+#[test]
+fn focused_epic2_interval_arithmetic_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_interval_arithmetic_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [NativeOracleCase<'_>; 4] = [
+        (
+            "interval-addition-closed-finite-endpoint-mode",
+            "interval(1;2) + interval(3;4)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-subtraction-closed-finite-endpoint-mode",
+            "interval(3;4) - interval(1;2)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-multiplication-closed-finite-endpoint-mode",
+            "interval(-2;3) * interval(-4;5)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-division-closed-finite-endpoint-mode",
+            "interval(4;6) / interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+    ];
+
+    assert_native_oracle_cases(&qalc, &defs, &cases);
+}
+
+#[test]
+fn focused_epic2_interval_arithmetic_requires_ic2_guard() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_interval_arithmetic_requires_ic2_guard; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let expression = "interval(-2;3) * interval(-4;5)";
+    let display_only = [SessionCommand {
+        raw: "/set interval display 2".to_string(),
+    }];
+    let endpoint_mode = [
+        SessionCommand {
+            raw: "/set interval display 2".to_string(),
+        },
+        SessionCommand {
+            raw: "/set ic 2".to_string(),
+        },
+    ];
+
+    let cpp_display_only = run_oracle_expression(&qalc, &defs, expression, &display_only);
+    let cpp_endpoint_mode = run_oracle_expression(&qalc, &defs, expression, &endpoint_mode);
+    assert_ne!(
+        cpp_display_only.stdout, cpp_endpoint_mode.stdout,
+        "upstream default interval calculation must differ before Rust can reject the default mode"
+    );
+
+    let rust_display_only = run_rust_expression(expression, &display_only, &defs, true, true);
+    let fallback_state =
+        oracle_fallback_gate::fallback_state_label(rust_display_only.fallback_state, false);
+
+    assert_eq!(
+        fallback_state,
+        FallbackState::Disabled.label(),
+        "Rust must not claim native interval arithmetic without /set ic 2"
+    );
+}
+
 /// Differential oracle test for ALL 17 upstream batch files.
 ///
 /// This test is marked `#[ignore]` because it is slow and requires the C++ oracle.

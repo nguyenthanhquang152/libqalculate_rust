@@ -177,6 +177,16 @@ focused expressions with fallback disabled:
   to a scalar value. Focused upstream probes confirm `interval(5;2)` and
   `interval(2;5)` both print `interval(2.000000000, 5.000000000)` with
   interval-display mode, while `interval(2;2)` prints `2`.
+- Finite closed interval arithmetic now has a fallback-disabled native evidence
+  path only when both `/set interval display 2` and `/set ic 2` are active. The
+  promoted endpoint-mode cases are `interval(1;2) + interval(3;4)`,
+  `interval(3;4) - interval(1;2)`,
+  `interval(-2;3) * interval(-4;5)`, and
+  `interval(4;6) / interval(2;3)`. Native expression parsing supports
+  `interval(lower; upper)` as a numeric primary for this vetted path. A focused
+  negative guard compares upstream display-only variance-mode output against
+  endpoint-mode output for multiplication and keeps Rust fallback-disabled
+  without `/set ic 2`.
 - Native interval literal parsing is an internal `Number` parser surface, not
   qalc bracket syntax parity. It now uses the same public constructor invariant
   for finite reversed endpoints, so `"[5, 1]".parse::<Number>()` stores lower
@@ -198,7 +208,10 @@ focused expressions with fallback disabled:
 ## Verified Commands
 
 ```sh
+rtk cargo fmt --check
+rtk git diff --check
 rtk cargo check --tests
+rtk timeout 600 cargo test --all-targets --all-features
 rtk cargo test --test number_behavior rational_from_str_exposes_lossless_arbitrary_precision_surface -- --nocapture
 rtk cargo test --lib test_arbitrary_precision_rationals_do_not_fall_back_to_i128_surface -- --nocapture
 rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
@@ -237,8 +250,16 @@ rtk cargo test --test oracle focused_epic2_numberbase_session_oracle_cases -- --
 rtk cargo test --test number_challenger -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_normalizes_reversed_bounds -- --nocapture
 rtk cargo test --test number_behavior interval_literal_parsing_collapses_equal_bounds_to_scalar -- --nocapture
+rtk cargo test --test number_behavior interval_function_is_numeric_primary_in_native_expression -- --nocapture
 rtk cargo test --test number_properties interval_constructor_collapses_equal_bounds_to_scalar -- --nocapture
 rtk cargo test --test number_properties interval_constructor -- --nocapture
+rtk cargo test --lib parses_supported_settings -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_interval_arithmetic_with_ic2_endpoint_mode -- --nocapture
+rtk cargo test --test e2e_cli cli_rejects_interval_arithmetic_without_ic2_endpoint_mode -- --nocapture
+rtk cargo test --test e2e_cli interval_arithmetic -- --nocapture
+rtk cargo test --test oracle focused_epic2_interval_arithmetic_oracle_cases -- --nocapture
+rtk cargo test --test oracle focused_epic2_interval_arithmetic_requires_ic2_guard -- --nocapture
+rtk cargo test --test oracle focused_epic2_interval_arithmetic -- --nocapture
 rtk cargo test --lib
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '2e303'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '12e303'
@@ -247,6 +268,11 @@ rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc 
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(5;2)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;5)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(2;2)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(1;2) + interval(3;4)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(3;4) - interval(1;2)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(-2;3) * interval(-4;5)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' -set 'ic 2' 'interval(4;6) / interval(2;3)'
+rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t -set 'interval display 2' 'interval(-2;3) * interval(-4;5)'
 rtk env QALCULATE_DEFINITIONS_DIR=../libqalculate/data ../libqalculate/src/qalc -defaults -t '[5,2]'
 rtk cargo test --test uncertainty_adversarial
 rtk cargo test --test fallback_gate cli_native_expression_succeeds_when_fallback_disabled -- --nocapture
@@ -273,10 +299,12 @@ Mutation evidence for this slice:
 - Broader complex powers and broad `explog.batch` complex cases remain
   incomplete beyond the promoted exact arithmetic, `conj`, `norm`, `i^2`, and
   `explog.batch:7` evidence.
-- Interval input syntax, options, intersections, open/closed bounds, and broad
-  interval oracle rows remain incomplete. Qalc bracket expressions are not used
-  as interval evidence because upstream default qalc treats them with vector-like
-  semantics in several operations.
+- Interval input syntax, interval options beyond `/set ic 2`, intersections,
+  open/closed bound variants, infinities, uncertainty intervals, complex
+  intervals, precision conversion, endpoint functions, and broad interval oracle
+  rows remain incomplete. Qalc bracket expressions are not used as interval
+  evidence because upstream default qalc treats them with vector-like semantics
+  in several operations.
 - Remaining uncertainty function examples from `explog.batch`, complex interval
   calculation mode, ASCII/Unicode print-option toggles, and
   session-setting-dependent behavior remain incomplete.

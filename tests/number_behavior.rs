@@ -1,4 +1,4 @@
-use libqalculate_rust::number::{Float, Number, NumberValue, Rational};
+use libqalculate_rust::number::{evaluate_expr, Float, Number, NumberValue, Rational};
 
 #[test]
 fn rational_addition_canonicalizes_result() {
@@ -68,6 +68,14 @@ fn interval_literal_parsing_collapses_equal_bounds_to_scalar() {
     assert_eq!(value.num(), 2);
     assert_eq!(value.den(), 1);
     assert_eq!(number.to_qalc_string(), "2");
+}
+
+#[test]
+fn interval_function_is_numeric_primary_in_native_expression() {
+    let result = evaluate_expr("interval(1;2) + interval(3;4)")
+        .expect("interval(lower; upper) should parse as a numeric primary");
+
+    assert_eq!(result.value().to_interval_bounds(), Some((4.0, 6.0)));
 }
 
 #[test]
