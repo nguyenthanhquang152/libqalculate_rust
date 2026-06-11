@@ -3961,6 +3961,11 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
     if s.is_empty() {
         return None;
     }
+
+    if let Some((lit, remaining)) = next_interval_function_literal(s) {
+        return Some((lit, remaining));
+    }
+
     let mut len = 0;
     let chars: Vec<char> = s.chars().collect();
     if chars.is_empty() {
@@ -4068,6 +4073,34 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
     }
 }
 
+fn next_interval_function_literal(s: &str) -> Option<(&str, &str)> {
+    let after_name = strip_function_name(s, "interval")?;
+    let name_len = s.len() - after_name.len();
+    let trimmed_after_name = after_name.trim_start();
+    let whitespace_len = after_name.len() - trimmed_after_name.len();
+    let open_idx = name_len + whitespace_len;
+    if !s[open_idx..].starts_with('(') {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    for (relative_idx, ch) in s[open_idx..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let end = open_idx + relative_idx + ch.len_utf8();
+                    return Some((&s[..end], &s[end..]));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 impl std::str::FromStr for Number {
     type Err = String;
 
@@ -4110,6 +4143,10 @@ impl std::str::FromStr for Number {
                 let unc_abs = unc.abs();
                 return Ok(Number::new_uncertainty(value, unc_abs, false));
             }
+        }
+
+        if let Some(interval) = parse_interval_function_expression(s)? {
+            return Ok(interval);
         }
 
         if let Some(open_idx) = s.find('(') {
@@ -4299,10 +4336,6 @@ pub(crate) fn evaluate_expr_with_precision_digits(
 }
 
 fn evaluate_expr_with_context(s: &str, context: EvalContext) -> Result<Number, String> {
-    if let Some(interval) = parse_interval_function_expression(s)? {
-        return Ok(interval);
-    }
-
     let mut tokens = Vec::new();
     let mut rest = s.trim();
     let mut has_word_operator_left_boundary = false;

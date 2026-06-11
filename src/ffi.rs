@@ -332,7 +332,13 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     if evidence.requires_precision() && !settings.has_precision() {
         return None;
     }
+    if settings.has_interval_calculation() && !evidence.requires_interval_calculation() {
+        return None;
+    }
     if evidence.requires_interval_display() && !settings.has_interval_display() {
+        return None;
+    }
+    if evidence.requires_interval_calculation() && !settings.has_interval_calculation() {
         return None;
     }
     if settings.has_interval_display() && !evidence.requires_interval_display() {
@@ -375,6 +381,7 @@ enum NativeNumericEvidence {
     Precision,
     PrecisionRequired,
     IntervalDisplay,
+    IntervalArithmetic,
     PreciseFloatUncertainty,
 }
 
@@ -388,7 +395,11 @@ impl NativeNumericEvidence {
     }
 
     const fn requires_interval_display(self) -> bool {
-        matches!(self, Self::IntervalDisplay)
+        matches!(self, Self::IntervalDisplay | Self::IntervalArithmetic)
+    }
+
+    const fn requires_interval_calculation(self) -> bool {
+        matches!(self, Self::IntervalArithmetic)
     }
 
     const fn preserves_float_uncertainty_precision(self) -> bool {
@@ -417,6 +428,22 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ),
     ("(2 ^ 0.5) + 1/3", NativeNumericEvidence::PrecisionRequired),
     ("interval(5;2)", NativeNumericEvidence::IntervalDisplay),
+    (
+        "interval(1;2) + interval(3;4)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(3;4) - interval(1;2)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(-2;3) * interval(-4;5)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(4;6) / interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
     ("ln(0)", NativeNumericEvidence::DefaultOnly),
     ("ln(2)", NativeNumericEvidence::DefaultOnly),
     ("sqrt(2)", NativeNumericEvidence::DefaultOnly),
