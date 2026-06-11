@@ -967,6 +967,116 @@ fn complex_conjugate_and_norm_parse_natively() {
 }
 
 #[test]
+fn complex_powers_match_focused_qalc_output() {
+    let i_squared = evaluate_expr("i^2").unwrap();
+    assert_eq!(i_squared.to_qalc_string(), "-1");
+    assert!(!i_squared.approximate());
+
+    let large_i_power = evaluate_expr("i^1000000").unwrap();
+    assert_eq!(large_i_power.to_qalc_string(), "1");
+    assert!(!large_i_power.approximate());
+
+    let one_plus_i_squared = evaluate_expr("(1 + i)^2").unwrap();
+    assert_eq!(one_plus_i_squared.to_qalc_string(), "2i");
+    assert!(!one_plus_i_squared.approximate());
+
+    let small_component = evaluate_expr("(1e-13 + i)^2").unwrap();
+    let (_, small_component_imag) = small_component.to_canonical_real_imag();
+    assert!(!small_component_imag.is_real_zero());
+
+    let near_integer_power = evaluate_expr("i^2.0000000000001").unwrap();
+    let (_, near_integer_imag) = near_integer_power.to_canonical_real_imag();
+    assert!(!near_integer_imag.is_real_zero());
+
+    assert_eq!(evaluate_expr("0^(1+i)").unwrap().to_qalc_string(), "0");
+
+    assert_eq!(
+        evaluate_expr("(2i - 3)^(3.2i + 3)")
+            .unwrap()
+            .to_qalc_string(),
+        "0.009212545193 - 0.009517560625i"
+    );
+}
+
+#[test]
+fn complex_power_helpers_keep_exact_integer_boundaries() {
+    let zero = NumberValue::Rational(Rational::from_i32(0));
+    let one = NumberValue::Rational(Rational::from_i32(1));
+    let half = NumberValue::Rational(Rational::new(1, 2));
+
+    assert_eq!(exact_i32_integer_exponent(&one), Some(1));
+    assert_eq!(exact_i32_integer_exponent(&half), None);
+
+    let zero_to_i = approximate_complex_power_number(&zero, &zero, &zero, &one);
+    assert!(zero_to_i.is_nan());
+
+    let i = Number::from_real_imag_values(zero.clone(), one.clone(), 0, false);
+    assert_eq!(
+        exact_unit_imaginary_integer_power(&i, 1)
+            .unwrap()
+            .to_qalc_string(),
+        "i"
+    );
+    assert_eq!(
+        exact_unit_imaginary_integer_power(&i, 3)
+            .unwrap()
+            .to_qalc_string(),
+        "-i"
+    );
+
+    let neg_i = Number::from_real_imag_values(
+        zero.clone(),
+        NumberValue::Rational(Rational::from_i32(-1)),
+        0,
+        false,
+    );
+    assert_eq!(
+        exact_unit_imaginary_integer_power(&neg_i, 1)
+            .unwrap()
+            .to_qalc_string(),
+        "-i"
+    );
+
+    let one_plus_i = Number::from_real_imag_values(one.clone(), one.clone(), 0, false);
+    assert!(exact_unit_imaginary_integer_power(&one_plus_i, 1).is_none());
+
+    let approximate_i = Number::from_real_imag_values(
+        zero.clone(),
+        NumberValue::Float(Float::from_f64(1.0, 53)),
+        53,
+        true,
+    );
+    assert!(exact_unit_imaginary_integer_power(&approximate_i, 1).is_none());
+
+    assert_eq!(
+        exact_complex_integer_power(&Number::from_i32(0), 0)
+            .unwrap()
+            .to_qalc_string(),
+        "1"
+    );
+    assert_eq!(
+        exact_complex_integer_power(&one_plus_i, -1)
+            .unwrap()
+            .to_qalc_string(),
+        "0.5 - 0.5i"
+    );
+    assert_eq!(
+        exact_complex_integer_power(&one_plus_i, 3)
+            .unwrap()
+            .to_qalc_string(),
+        "-2 + 2i"
+    );
+    assert!(exact_complex_integer_power(&one_plus_i, 10_000).is_some());
+    assert!(exact_complex_integer_power(&one_plus_i, 10_001).is_none());
+    assert!(exact_complex_integer_power(&Number::from_i32(0), -1).is_none());
+
+    let huge_real = NumberValue::Rational("1e10000".parse::<Rational>().unwrap());
+    let huge_base = Number::from_real_imag_values(huge_real, one, 0, false);
+    assert!(exact_complex_integer_power(&huge_base, 10_000).is_none());
+    assert!(huge_base.pow(&Number::from_i32(10_000)).approximate());
+}
+
+#[test]
 fn unary_function_parser_preserves_name_boundaries_and_errors() {
     assert_eq!(
         evaluate_expr("conj 3 + 4i").unwrap_err(),

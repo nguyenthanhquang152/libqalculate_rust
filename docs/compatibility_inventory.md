@@ -15,11 +15,11 @@
 | Implementation Files | 41 | 0 | 0 | 1 | 3 | 37 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
 | Batch Test Files | 17 | 1 | 0 | 3 | 0 | 13 | 0 |
-| Batch Test Cases | 656 | 54 | 0 | 0 | 0 | 602 | 0 |
+| Batch Test Cases | 656 | 55 | 0 | 0 | 0 | 601 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 54 `native-pass` rows across `parser.batch`, `operators.batch`, `numberbase.batch`, and one no-session `explog.batch` uncertainty-power row; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for an oracle-proven numeric subset that the Rust scaffold can parse and evaluate successfully. The batch manifest currently has 55 `native-pass` rows across `parser.batch`, `operators.batch`, `numberbase.batch`, and two no-session `explog.batch` rows for uncertainty and complex power evidence; every other batch case remains inventory-only until proven with fallback disabled. Focused native oracle evidence is recorded in `docs/epic2_native_evidence.md`.
 
 ---
 
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 54 |
-| Inventory-only batch cases | 602 |
+| Native-pass batch cases | 55 |
+| Inventory-only batch cases | 601 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -357,7 +357,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | 1 | NumberType enum | 1 | `scaffold` | `NumberValue` includes current Rust numeric variants, but this is not a complete upstream `Number.h` `NumberType` parity claim |
 | 2 | Construction | 9 | `scaffold` | Basic constructors exist (`new`, `from_i32`, `from_rational`, `from_float`, `from_f64`, `new_interval`, `try_new_interval`, `new_uncertainty`, `new_complex`); interval construction orders finite reversed bounds like upstream `setInterval`, while the full upstream construction/setter surface remains incomplete |
 | 3 | Setters | 6 | `unstarted` | `set()`, `setFloat()`, `setInterval()` |
-| 4 | Arithmetic | 15 | `scaffold` | `add`, `sub`, `mul`, `div`, `pow`, `sqrt`, `ln`, `negate`, `conjugate`, `norm`, and `abs` exist for selected variants; fallback-disabled oracle evidence covers selected exact complex arithmetic, `conj`, and `norm` expressions; float `ln` and non-integer `pow` use MPFR-backed arithmetic for the covered slice, division-by-zero declines native success, and full upstream edge-case parity remains incomplete |
+| 4 | Arithmetic | 15 | `scaffold` | `add`, `sub`, `mul`, `div`, `pow`, `sqrt`, `ln`, `negate`, `conjugate`, `norm`, and `abs` exist for selected variants; fallback-disabled oracle evidence covers selected exact complex arithmetic, `conj`, `norm`, exact `i^2`, and the focused `explog.batch:7` complex-power expression; float `ln` and non-integer real `pow` use MPFR-backed arithmetic for the covered slice, non-integer/complex exponent complex power evidence currently uses the qalc-profile approximate complex branch, division-by-zero declines native success, and full upstream edge-case parity remains incomplete |
 | 5 | Comparison | 6 | `scaffold` | `PartialEq` for value equality; `<`, `>`, `<=`, `>=` not yet implemented |
 | 6 | Predicates | 12 | `scaffold` | Current predicates include zero/one, complex, real/imaginary part, interval, infinity, NaN, approximation, and precision state used by the scaffold; full upstream predicate parity remains incomplete |
 | 7 | Conversion | 5 | `scaffold` | Bounded `num()`/`den()` accessors remain `i128`; internal exact rationals can exceed that range and display through `rug` strings |
@@ -525,11 +525,11 @@ status_summary:
     unstarted: 13
     out_of_scope: 0
   batch_test_cases:
-    native_pass: 54
+    native_pass: 55
     tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 602
+    unstarted: 601
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2

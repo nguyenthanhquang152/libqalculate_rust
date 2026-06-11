@@ -2141,6 +2141,131 @@ fn to_float_val(val: &NumberValue) -> Float {
     to_float_val_rnd(val, 53, rug::float::Round::Nearest)
 }
 
+fn approximate_complex_power_number(
+    base_real: &NumberValue,
+    base_imag: &NumberValue,
+    exponent_real: &NumberValue,
+    exponent_imag: &NumberValue,
+) -> Number {
+    let a = to_float_val(base_real).value();
+    let b = to_float_val(base_imag).value();
+    let c = to_float_val(exponent_real).value();
+    let d = to_float_val(exponent_imag).value();
+
+    let radius = a.hypot(b);
+    if radius == 0.0 {
+        if c > 0.0 {
+            return Number::from_i32(0);
+        }
+        return Number {
+            value: NumberValue::NaN,
+            imaginary: None,
+            precision: 53,
+            approximate: true,
+            is_imaginary: false,
+        };
+    }
+
+    let theta = b.atan2(a);
+    let log_radius = radius.ln();
+    let result_radius = (c * log_radius - d * theta).exp();
+    let result_angle = d * log_radius + c * theta;
+    Number::from_real_imag_values(
+        from_f64_and_prec(result_radius * result_angle.cos(), 53),
+        from_f64_and_prec(result_radius * result_angle.sin(), 53),
+        53,
+        true,
+    )
+}
+
+fn exact_i32_integer_exponent(value: &NumberValue) -> Option<i32> {
+    match value {
+        NumberValue::Rational(rational) if rational.value.denom() == &1 => {
+            rational.value.numer().to_i32()
+        }
+        _ => None,
+    }
+}
+
+fn exact_unit_imaginary_integer_power(base: &Number, exponent: i32) -> Option<Number> {
+    let (real, imag) = base.to_canonical_real_imag();
+    if !real.is_real_zero() || real.approximate() || imag.approximate() {
+        return None;
+    }
+
+    let unit_power = if imag.is_real_one() {
+        1_i64
+    } else if imag.negate().is_real_one() {
+        3_i64
+    } else {
+        return None;
+    };
+
+    match (unit_power * i64::from(exponent)).rem_euclid(4) {
+        0 => Some(Number::from_i32(1)),
+        1 => Some(Number::from_real_imag_values(
+            NumberValue::Rational(Rational::from_i32(0)),
+            NumberValue::Rational(Rational::from_i32(1)),
+            0,
+            false,
+        )),
+        2 => Some(Number::from_i32(-1)),
+        3 => Some(Number::from_real_imag_values(
+            NumberValue::Rational(Rational::from_i32(0)),
+            NumberValue::Rational(Rational::from_i32(-1)),
+            0,
+            false,
+        )),
+        _ => unreachable!("modulo-four cycle returns only 0..=3"),
+    }
+}
+
+fn exact_complex_integer_pow_is_bounded(base: &Number, exponent_magnitude: u32) -> bool {
+    let (real, imag) = base.to_canonical_real_imag();
+    if exponent_magnitude == 0 {
+        return true;
+    }
+
+    [real, imag].iter().all(|value| match value {
+        NumberValue::Rational(rational) => {
+            exact_rational_integer_pow_is_bounded(rational, exponent_magnitude)
+        }
+        _ => false,
+    })
+}
+
+fn exact_complex_integer_power(base: &Number, exponent: i32) -> Option<Number> {
+    if let Some(result) = exact_unit_imaginary_integer_power(base, exponent) {
+        return Some(result);
+    }
+
+    const MAX_EXACT_COMPLEX_POW_EXP: u32 = 10_000;
+    let magnitude = exponent.unsigned_abs();
+    if magnitude > MAX_EXACT_COMPLEX_POW_EXP
+        || (exponent.is_negative() && base.is_zero())
+        || !exact_complex_integer_pow_is_bounded(base, magnitude)
+    {
+        return None;
+    }
+
+    let mut result = Number::from_i32(1);
+    let mut factor = base.clone();
+    let mut remaining = magnitude;
+    while remaining != 0 {
+        if remaining & 1 == 1 {
+            result = result.mul(&factor);
+        }
+        remaining >>= 1;
+        factor = factor.mul(&factor);
+    }
+
+    if exponent.is_negative() {
+        Some(Number::from_i32(1).div(&result))
+    } else {
+        Some(result)
+    }
+}
+
 fn try_unwrap_single_val(val: &NumberValue) -> Option<NumberValue> {
     match val {
         NumberValue::Interval { lower, upper } => {
@@ -3078,16 +3203,18 @@ impl Number {
                 is_imaginary: false,
             }
         } else {
-            let f1 = to_float_val(&a);
-            let f2 = to_float_val(&c);
-            let val = NumberValue::Float(Float::from_f64(f1.value().powf(f2.value()), 53));
-            Number {
-                value: val,
-                imaginary: None,
-                precision: 53,
-                approximate: true,
-                is_imaginary: false,
+            if d.is_real_zero() {
+                if let Some(exponent) = exact_i32_integer_exponent(&c) {
+                    let precision = self.precision.max(a.precision()).max(b.precision());
+                    let approximate = self.approximate || a.approximate() || b.approximate();
+                    let base =
+                        Number::from_real_imag_values(a.clone(), b.clone(), precision, approximate);
+                    if let Some(result) = exact_complex_integer_power(&base, exponent) {
+                        return result;
+                    }
+                }
             }
+            approximate_complex_power_number(&a, &b, &c, &d)
         }
     }
 

@@ -17,7 +17,7 @@ claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 54 rows as `native-pass`.
+`docs/batch_manifest.md` now marks 55 rows as `native-pass`.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.
@@ -25,18 +25,18 @@ claim full `Number.cc` parity.
   48, 51, 53, 55, 58, 60, 62.
 - `numberbase.batch`: lines 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23,
   25, 28, 32.
-- `explog.batch`: line 4.
+- `explog.batch`: lines 4, 7.
 
 The focused and differential oracle commands listed below disable C++ fallback
 for the covered promoted rows and verify `fallback=native`. The promoted
-`explog.batch:4` row is covered by focused native oracle/e2e/lib evidence, not
-by a full `explog.batch` differential run; the other `explog.batch` rows remain
-inventory-only.
+`explog.batch:4` and `explog.batch:7` rows are covered by focused native
+oracle/e2e/lib evidence, not by a full `explog.batch` differential run; the
+other `explog.batch` rows remain inventory-only.
 
 `1 + 1` is also kept as focused native scaffold evidence because
 `ORIGINAL_REQUEST.md` explicitly names it as a fallback-disabled scaffold
 expression. It is not an upstream batch-manifest promotion and is not counted in
-the 54 `native-pass` batch rows above.
+the 55 `native-pass` batch rows above.
 
 ## Focused Native Oracle Cases
 
@@ -48,6 +48,8 @@ focused expressions with fallback disabled:
 - `(1 + 2i) + (3 + 4i)`
 - `(1 + 2i) * (3 + 4i)`
 - `(1 + 2i) / (3 + 4i)`
+- `i^2`
+- `(2i - 3)^(3.2i + 3)`
 - `1/3`
 - `1e10`
 - `1 + 1`
@@ -126,9 +128,12 @@ focused expressions with fallback disabled:
   precision-derived MPFR context instead of the default 53-bit context.
 - Fallback-disabled native complex evidence covers imaginary literals and
   selected exact arithmetic output shapes: addition, subtraction,
-  multiplication, division, `conj(3 + 4i)`, and `norm(3 + 4i)`. These cases are
-  compared against upstream qalc with exact UTF-8 output, including Unicode
-  minus signs in qalc-profile CLI output.
+  multiplication, division, `conj(3 + 4i)`, `norm(3 + 4i)`, exact `i^2`, and
+  the no-session `explog.batch:7` complex-power row
+  `(2i - 3)^(3.2i + 3)`. These cases are compared against upstream qalc with
+  exact UTF-8 output, including Unicode minus signs in qalc-profile CLI output.
+  Focused unit regressions keep exact integer powers of `i` out of the
+  approximate complex-power branch, including upstream `i^1000000 -> 1`.
 - Fallback-disabled native uncertainty evidence covers the first no-session
   `explog.batch` uncertainty power row: `(2+/-3)^3.2` now evaluates natively
   and prints `9.18958684±44.11001683` against upstream qalc. The qalc-profile
@@ -178,6 +183,8 @@ rtk cargo test --lib rational_modulo_and_remainder_match_qalc_operators -- --noc
 rtk cargo test --lib rational_integer_division_matches_qalc_operators -- --nocapture
 rtk cargo test --lib complex_conjugate_and_norm_parse_natively -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_subtraction_conjugate_and_norm -- --nocapture
+rtk cargo test --lib complex_powers_match_focused_qalc_output -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_complex_powers -- --nocapture
 rtk cargo test --lib uncertainty_power_matches_focused_qalc_display -- --nocapture
 rtk cargo test --lib ordinary_uncertainty_power_keeps_significant_uncertainty_display -- --nocapture
 rtk cargo test --lib qalc_profile_precise_uncertainty_is_explicit_evidence_mode -- --nocapture
@@ -225,8 +232,9 @@ Mutation evidence for this slice:
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
   remain incomplete beyond the promoted native precision-output and
   precision-context non-integer power evidence.
-- Complex powers and broad `explog.batch` complex cases remain incomplete beyond
-  the promoted exact arithmetic, `conj`, and `norm` evidence.
+- Broader complex powers and broad `explog.batch` complex cases remain
+  incomplete beyond the promoted exact arithmetic, `conj`, `norm`, `i^2`, and
+  `explog.batch:7` evidence.
 - Interval input syntax, options, intersections, open/closed bounds, and broad
   interval oracle rows remain incomplete. Qalc bracket expressions are not used
   as interval evidence because upstream default qalc treats them with vector-like
