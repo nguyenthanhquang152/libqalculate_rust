@@ -847,39 +847,69 @@ fn precision_context_applies_to_scalar_log_and_sqrt_functions() {
 
 #[test]
 fn precision_context_applies_to_real_float_arithmetic() {
-    for (expression, expected) in [
+    for (precision_digits, expression, expected) in [
         (
+            64,
+            "(2 ^ 0.5) + (3 ^ 0.5)",
+            "3.146264369941972342329135065715570445512477129187328701232486717",
+        ),
+        (
+            64,
+            "(3 ^ 0.5) - (2 ^ 0.5)",
+            "0.3178372451957822447257576172961742883731333784334325548791272415",
+        ),
+        (
+            64,
+            "(2 ^ 0.5) * (3 ^ 0.5)",
+            "2.449489742783178098197284074705891391965947480656670128432692567",
+        ),
+        (
+            64,
+            "(3 ^ 0.5) / (2 ^ 0.5)",
+            "1.224744871391589049098642037352945695982973740328335064216346284",
+        ),
+        (
+            64,
+            "(2 ^ 0.5) + 1/3",
+            "1.747546895706428382135022057543031411903005208710281406510013071",
+        ),
+        (
+            128,
             "(2 ^ 0.5) + (3 ^ 0.5)",
             "3.1462643699419723423291350657155704455124771291873287012324867174426654953709070759315337210848901484106399876463190000548947812",
         ),
         (
+            128,
             "(3 ^ 0.5) - (2 ^ 0.5)",
             "0.31783724519578224472575761729617428837313337843343255487912724146120053844669299823075865242960700294061229518449440600504510904",
         ),
         (
+            128,
             "(2 ^ 0.5) * (3 ^ 0.5)",
             "2.4494897427831780981972840747058913919659474806566701284326925672509603774573150265398594331046402348185946012266141891248588655",
         ),
         (
+            128,
             "(3 ^ 0.5) / (2 ^ 0.5)",
             "1.2247448713915890490986420373529456959829737403283350642163462836254801887286575132699297165523201174092973006133070945624294327",
         ),
         (
+            128,
             "(2 ^ 0.5) + 1/3",
             "1.7475468957064283821350220575430314119030052087102814065100130713240658117954403721837208676609749060683471795642456303582581694",
         ),
     ] {
-        let value = evaluate_expr_with_precision_digits(expression, 128)
+        let value = evaluate_expr_with_precision_digits(expression, precision_digits)
             .expect("precision-context arithmetic should evaluate natively");
 
         assert_eq!(
-            value.to_qalc_string_with_precision(128),
+            value.to_qalc_string_with_precision(precision_digits),
             expected,
-            "{expression} should match focused upstream precision output"
+            "{expression} should match focused upstream output at precision {precision_digits}"
         );
         assert!(
-            value.precision() >= 128,
-            "{expression} should preserve precision-context MPFR arithmetic"
+            value.precision() as usize >= precision_digits,
+            "{expression} should preserve precision-context MPFR arithmetic at precision {precision_digits}"
         );
     }
 }
@@ -909,16 +939,21 @@ fn precision_context_decimal_and_scientific_rows_stay_exact_without_f64_shortcut
 
 #[test]
 fn precision_context_real_float_comparisons_match_upstream_booleans() {
-    for (expression, expected) in [
-        ("(2 ^ 0.5) < (3 ^ 0.5)", Some(true)),
-        ("(2 ^ 0.5) = (2 ^ 0.5)", Some(true)),
-        ("(2 ^ 0.5) = (3 ^ 0.5)", Some(false)),
-        ("(2 ^ 0.5) + 1/3 > 1", Some(true)),
-        ("(2 ^ 0.5) < 1/3", Some(false)),
-    ] {
-        let actual = evaluate_relation_expr_with_precision_digits(expression, 128)
-            .expect("precision-context comparison should parse");
-        assert_eq!(actual, expected, "{expression}");
+    for precision_digits in [64, 128] {
+        for (expression, expected) in [
+            ("(2 ^ 0.5) < (3 ^ 0.5)", Some(true)),
+            ("(2 ^ 0.5) = (2 ^ 0.5)", Some(true)),
+            ("(2 ^ 0.5) = (3 ^ 0.5)", Some(false)),
+            ("(2 ^ 0.5) + 1/3 > 1", Some(true)),
+            ("(2 ^ 0.5) < 1/3", Some(false)),
+        ] {
+            let actual = evaluate_relation_expr_with_precision_digits(expression, precision_digits)
+                .expect("precision-context comparison should parse");
+            assert_eq!(
+                actual, expected,
+                "{expression} should match upstream at precision {precision_digits}"
+            );
+        }
     }
 }
 

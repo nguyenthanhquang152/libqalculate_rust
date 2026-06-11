@@ -149,20 +149,29 @@ Refs #12 precision-context rows:
 
 - `1/3` under `/set precision 128`
 - `2 ^ 0.5` under `/set precision 128`
-- `(2 ^ 0.5) + (3 ^ 0.5)` under `/set precision 128`
-- `(3 ^ 0.5) - (2 ^ 0.5)` under `/set precision 128`
-- `(2 ^ 0.5) * (3 ^ 0.5)` under `/set precision 128`
-- `(3 ^ 0.5) / (2 ^ 0.5)` under `/set precision 128`
-- `(2 ^ 0.5) + 1/3` under `/set precision 128`
+- `(2 ^ 0.5) + (3 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(3 ^ 0.5) - (2 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(2 ^ 0.5) * (3 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(3 ^ 0.5) / (2 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(2 ^ 0.5) + 1/3` under `/set precision 64` and
+  `/set precision 128`
 - `0.1 + 0.2` under `/set precision 64` and `/set precision 128`
 - `1.25e-20 + 2.5e-20` under `/set precision 64` and
   `/set precision 128`
 - `2.5e3 / 4` under `/set precision 64` and `/set precision 128`
-- `(2 ^ 0.5) < (3 ^ 0.5)` under `/set precision 128`
-- `(2 ^ 0.5) = (2 ^ 0.5)` under `/set precision 128`
-- `(2 ^ 0.5) = (3 ^ 0.5)` under `/set precision 128`
-- `(2 ^ 0.5) + 1/3 > 1` under `/set precision 128`
-- `(2 ^ 0.5) < 1/3` under `/set precision 128`
+- `(2 ^ 0.5) < (3 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(2 ^ 0.5) = (2 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(2 ^ 0.5) = (3 ^ 0.5)` under `/set precision 64` and
+  `/set precision 128`
+- `(2 ^ 0.5) + 1/3 > 1` under `/set precision 64` and
+  `/set precision 128`
+- `(2 ^ 0.5) < 1/3` under `/set precision 64` and `/set precision 128`
 
 ## Native Representation Invariants
 
@@ -195,6 +204,12 @@ Refs #12 precision-context rows:
   MPFR instead of converting through `f64` for semantic arithmetic. Focused
   unit tests assert 200-bit `ln(2)` and `2^0.5` retain MPFR-scale precision
   rather than a lifted 53-bit result.
+- Refs #12 finite MPFR arithmetic evidence covers add/sub/mul/div for the
+  promoted non-integer power rows under both `/set precision 64` and
+  `/set precision 128`, including the mixed exact/approx row
+  `(2 ^ 0.5) + 1/3`. The same precision pair is covered for focused approximate
+  comparison rows, so the native gate no longer has only single-precision
+  evidence for these operations.
 - The fallback-disabled native expression scaffold now exposes only the focused
   `ln(...)` and `sqrt(...)` function cases promoted by oracle evidence. Default
   evidence covers `ln(0) -> −∞`, `ln(2) -> 0.6931471806`,
