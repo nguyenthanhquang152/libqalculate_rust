@@ -2504,6 +2504,16 @@ impl Number {
         }
     }
 
+    fn from_real_value(value: NumberValue) -> Self {
+        Self {
+            precision: value.precision(),
+            approximate: value.approximate(),
+            value,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
     /// Creates a new interval `Number` with given lower and upper bounds.
     ///
     /// Reversed finite bounds are stored in lower/upper order, and equal bounds
@@ -2694,6 +2704,49 @@ impl Number {
     pub fn to_canonical_real_imag(&self) -> (NumberValue, NumberValue) {
         let (real, imag) = self.to_canonical_ref();
         (real.into_owned(), imag.into_owned())
+    }
+
+    fn lower_endpoint(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if !imag.is_real_zero() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        match real {
+            NumberValue::Interval { lower, .. } => Self::from_float(lower),
+            value => Self::from_real_value(value),
+        }
+    }
+
+    fn upper_endpoint(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if !imag.is_real_zero() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        match real {
+            NumberValue::Interval { upper, .. } => Self::from_float(upper),
+            value => Self::from_real_value(value),
+        }
+    }
+
+    fn midpoint(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if !imag.is_real_zero() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        match real {
+            NumberValue::Interval { lower, upper } => {
+                let prec = std::cmp::max(lower.prec(), upper.prec());
+                let mut value = rug::Float::with_val(prec, &lower.value + &upper.value);
+                value /= 2;
+                if let Some(integer) = value.to_integer() {
+                    return Self::from_rational(Rational {
+                        value: rug::Rational::from(integer),
+                    });
+                }
+                Self::from_float(Float { value })
+            }
+            value => Self::from_real_value(value),
+        }
     }
 
     /// Returns true if the number has an imaginary part or is itself marked imaginary.
@@ -3198,11 +3251,22 @@ impl Number {
             return None;
         }
         match real {
-            NumberValue::Interval { lower, upper } => Some(format!(
-                "interval({}, {})",
-                format_qalc_float(&lower.value, precision_digits),
-                format_qalc_float(&upper.value, precision_digits)
-            )),
+            NumberValue::Interval { lower, upper } => {
+                if upper.value <= 0 {
+                    let positive_lower = upper.value.clone().abs();
+                    let positive_upper = lower.value.clone().abs();
+                    return Some(format!(
+                        "-interval({}, {})",
+                        format_qalc_float(&positive_lower, precision_digits),
+                        format_qalc_float(&positive_upper, precision_digits)
+                    ));
+                }
+                Some(format!(
+                    "interval({}, {})",
+                    format_qalc_float(&lower.value, precision_digits),
+                    format_qalc_float(&upper.value, precision_digits)
+                ))
+            }
             _ => None,
         }
     }
@@ -4265,9 +4329,12 @@ fn strip_function_name<'a>(s: &'a str, name: &str) -> Option<&'a str> {
 
 const UNARY_FUNCTIONS: &[(&str, UnaryFunction)] = &[
     ("conj", UnaryFunction::Conjugate),
+    ("lowerEndpoint", UnaryFunction::LowerEndpoint),
     ("ln", UnaryFunction::NaturalLog),
+    ("midpoint", UnaryFunction::Midpoint),
     ("norm", UnaryFunction::Norm),
     ("sqrt", UnaryFunction::SquareRoot),
+    ("upperEndpoint", UnaryFunction::UpperEndpoint),
 ];
 
 fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
@@ -4279,27 +4346,36 @@ fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
 #[derive(Debug, Clone, Copy)]
 enum UnaryFunction {
     Conjugate,
+    LowerEndpoint,
     NaturalLog,
+    Midpoint,
     Norm,
     SquareRoot,
+    UpperEndpoint,
 }
 
 impl UnaryFunction {
     const fn name(self) -> &'static str {
         match self {
             Self::Conjugate => "conj",
+            Self::LowerEndpoint => "lowerEndpoint",
             Self::NaturalLog => "ln",
+            Self::Midpoint => "midpoint",
             Self::Norm => "norm",
             Self::SquareRoot => "sqrt",
+            Self::UpperEndpoint => "upperEndpoint",
         }
     }
 
     fn apply(self, arg: Number) -> Number {
         match self {
             Self::Conjugate => arg.conjugate(),
+            Self::LowerEndpoint => arg.lower_endpoint(),
             Self::NaturalLog => apply_real_unary_value(arg, NumberValue::ln),
+            Self::Midpoint => arg.midpoint(),
             Self::Norm => arg.norm(),
             Self::SquareRoot => apply_real_unary_value(arg, NumberValue::sqrt),
+            Self::UpperEndpoint => arg.upper_endpoint(),
         }
     }
 }

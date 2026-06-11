@@ -1165,7 +1165,7 @@ fn focused_epic2_interval_display_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 5] = [
+    let cases: [NativeOracleCase<'_>; 9] = [
         (
             "interval-function-normalizes-reversed-bounds",
             "interval(5;2)",
@@ -1191,7 +1191,89 @@ fn focused_epic2_interval_display_oracle_cases() {
             "interval(4;infinity)",
             &["/set interval display 2", "/set ic 2"],
         ),
+        (
+            "interval-function-negative-infinity-only-endpoint",
+            "interval(-infinity;-4)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-negative-finite-only-endpoint",
+            "interval(-3;-1)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-negative-infinity-only-endpoint-with-ic2",
+            "interval(-infinity;-4)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-function-negative-finite-only-endpoint-with-ic2",
+            "interval(-3;-1)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
     ];
+
+    assert_native_oracle_cases(&qalc, &defs, &cases);
+}
+
+#[test]
+fn focused_epic2_interval_endpoint_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_interval_endpoint_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [NativeOracleCase<'_>; 5] = [
+        (
+            "interval-lower-endpoint-finite",
+            "lowerEndpoint(interval(1;3))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-upper-endpoint-finite",
+            "upperEndpoint(interval(1;3))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-midpoint-finite",
+            "midpoint(interval(1;3))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-lower-endpoint-negative-infinity",
+            "lowerEndpoint(interval(-infinity;-4))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-upper-endpoint-positive-infinity",
+            "upperEndpoint(interval(4;infinity))",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+    ];
+
+    assert_native_oracle_cases(&qalc, &defs, &cases);
+}
+
+#[test]
+fn focused_epic2_interval_intersection_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic2_interval_intersection_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [NativeOracleCase<'_>; 1] = [(
+        "interval-intersect-disjoint-intervals",
+        "intersect(interval(1;2), interval(3;4))",
+        &["/set interval display 2", "/set ic 2"],
+    )];
 
     assert_native_oracle_cases(&qalc, &defs, &cases);
 }
@@ -1207,7 +1289,7 @@ fn focused_epic2_interval_arithmetic_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 11] = [
+    let cases: [NativeOracleCase<'_>; 16] = [
         (
             "interval-addition-closed-finite-endpoint-mode",
             "interval(1;2) + interval(3;4)",
@@ -1261,6 +1343,31 @@ fn focused_epic2_interval_arithmetic_oracle_cases() {
         (
             "interval-scalar-division-upper-infinity-endpoint-mode",
             "interval(4;infinity) / 2",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-division-positive-by-negative-closed-finite-endpoint-mode",
+            "interval(4;6) / interval(-3;-2)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-division-negative-by-positive-closed-finite-endpoint-mode",
+            "interval(-6;-4) / interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-division-negative-by-negative-closed-finite-endpoint-mode",
+            "interval(-6;-4) / interval(-3;-2)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-scalar-division-negative-infinity-positive-scalar-endpoint-mode",
+            "interval(-infinity;-4) / 2",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-scalar-division-negative-infinity-negative-scalar-endpoint-mode",
+            "interval(-infinity;-4) / -2",
             &["/set interval display 2", "/set ic 2"],
         ),
     ];
