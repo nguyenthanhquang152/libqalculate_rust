@@ -1021,6 +1021,13 @@ fn complex_power_helpers_keep_exact_integer_boundaries() {
     let zero_to_i = approximate_complex_power_number(&zero, &zero, &zero, &one);
     assert!(zero_to_i.is_nan());
 
+    let infinite_complex =
+        Number::from_real_imag_values(NumberValue::PlusInfinity, one.clone(), 53, false);
+    assert_eq!(
+        infinite_complex.pow(&Number::from_i32(0)).to_qalc_string(),
+        "1"
+    );
+
     let i = Number::from_real_imag_values(zero.clone(), one.clone(), 0, false);
     assert_eq!(
         exact_unit_imaginary_integer_power(&i, 1)
