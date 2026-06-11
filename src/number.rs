@@ -2580,20 +2580,37 @@ impl Number {
 
         let new_real_val = a.add(&d.negate());
         let new_imag_val = b.add(&c);
+        let precision = std::cmp::max(real.precision, imag.precision)
+            .max(new_real_val.precision())
+            .max(new_imag_val.precision());
+        let approximate = real.approximate
+            || imag.approximate
+            || new_real_val.approximate()
+            || new_imag_val.approximate();
+
+        if new_imag_val.is_real_zero() {
+            return Self {
+                value: new_real_val,
+                imaginary: None,
+                precision,
+                approximate,
+                is_imaginary: false,
+            };
+        }
 
         let new_imag_num = Number {
             value: new_imag_val,
             imaginary: None,
-            precision: imag.precision,
-            approximate: imag.approximate,
+            precision,
+            approximate,
             is_imaginary: true,
         };
 
         Self {
             value: new_real_val,
             imaginary: Some(Box::new(new_imag_num)),
-            precision: std::cmp::max(real.precision, imag.precision),
-            approximate: real.approximate || imag.approximate,
+            precision,
+            approximate,
             is_imaginary: false,
         }
     }

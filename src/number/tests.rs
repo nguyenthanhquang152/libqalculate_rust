@@ -1038,6 +1038,54 @@ fn simple_imaginary_literals_parse_natively() {
 }
 
 #[test]
+fn complex_zero_part_metadata_collapses_without_losing_exact_or_approx_state() {
+    let exact_real = Number::new_complex(Number::from_i32(3), Number::from_i32(0));
+    assert_eq!(exact_real.to_qalc_string(), "3");
+    assert!(!exact_real.is_complex());
+    assert!(exact_real.imaginary().is_none());
+    assert!(!exact_real.approximate());
+
+    let approx_real = Number::new_complex(Number::from_f64(3.0), Number::from_i32(0));
+    assert_eq!(approx_real.to_qalc_string(), "3.000000000");
+    assert!(!approx_real.is_complex());
+    assert!(approx_real.imaginary().is_none());
+    assert!(approx_real.approximate());
+
+    let pure_imaginary = Number::new_complex(Number::from_i32(0), Number::from_i32(2));
+    assert_eq!(pure_imaginary.to_qalc_string(), "2i");
+    assert!(pure_imaginary.is_complex());
+    assert!(!pure_imaginary.has_real_part());
+    assert!(pure_imaginary.imaginary().is_some());
+
+    let zero_sum = Number::new_complex(Number::from_i32(0), Number::from_i32(1)).add(
+        &Number::new_complex(Number::from_i32(0), Number::from_i32(-1)),
+    );
+    assert_eq!(zero_sum.to_qalc_string(), "0");
+    assert!(!zero_sum.is_complex());
+    assert!(zero_sum.imaginary().is_none());
+    assert!(!zero_sum.approximate());
+
+    let approx_zero_sum = Number::new_complex(Number::from_f64(0.0), Number::from_f64(1.0)).add(
+        &Number::new_complex(Number::from_f64(0.0), Number::from_f64(-1.0)),
+    );
+    assert_eq!(approx_zero_sum.to_qalc_string(), "0");
+    assert!(!approx_zero_sum.is_complex());
+    assert!(approx_zero_sum.imaginary().is_none());
+    assert!(approx_zero_sum.approximate());
+
+    let conjugated_real = Number::from_i32(3).conjugate();
+    assert_eq!(conjugated_real.to_qalc_string(), "3");
+    assert!(!conjugated_real.is_complex());
+    assert!(conjugated_real.imaginary().is_none());
+
+    let conjugated_imaginary =
+        Number::new_complex(Number::from_i32(0), Number::from_i32(1)).conjugate();
+    assert_eq!(conjugated_imaginary.to_qalc_string(), "-i");
+    assert!(conjugated_imaginary.is_complex());
+    assert!(!conjugated_imaginary.has_real_part());
+}
+
+#[test]
 fn complex_conjugate_and_norm_parse_natively() {
     assert_eq!(evaluate_expr("conj(3 + 4i)").unwrap().to_string(), "3 - 4i");
     assert_eq!(evaluate_expr("norm(3 + 4i)").unwrap().to_string(), "5");

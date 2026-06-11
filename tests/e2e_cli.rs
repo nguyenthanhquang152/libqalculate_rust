@@ -359,8 +359,18 @@ fn cli_runs_native_uncertainty_power() {
 fn cli_runs_native_complex_subtraction_conjugate_and_norm() {
     for (expression, expected) in [
         ("(1 + 2i) - (3 + 4i)", "−2 − 2i\n"),
+        ("i + (-i)", "0\n"),
+        ("(1 + i) + (-1 + i)", "2i\n"),
+        ("(1 + i) + (2 - i)", "3\n"),
+        ("(1 + i) * (1 - i)", "2\n"),
+        ("(1 + i) / (1 - i)", "i\n"),
         ("conj(3 + 4i)", "3 − 4i\n"),
+        ("conj(i)", "−i\n"),
+        ("conj(-i)", "i\n"),
+        ("conj(3)", "3\n"),
         ("norm(3 + 4i)", "5\n"),
+        ("norm(i)", "1\n"),
+        ("norm(-3i)", "3\n"),
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
         let mut cmd = qalc_rs();
