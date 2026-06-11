@@ -110,10 +110,16 @@ pub enum TokenKind {
     Semicolon,
     /// `.`.
     Dot,
+    /// `:`.
+    Colon,
+    /// `...`.
+    Ellipsis,
     /// Comment text after `#`, excluding the `#`.
     Comment(String),
     /// Leading `/` that marks a slash-prefixed session command.
     CommandPrefix,
+    /// Escaped unknown/function-argument name, such as `\x`.
+    EscapedIdentifier(String),
 }
 
 /// Coarse numeric literal category.
@@ -136,6 +142,10 @@ pub enum BasePrefix {
     Hexadecimal,
     /// `0b` or `0B`.
     Binary,
+    /// `0o` or `0O`.
+    Octal,
+    /// `0d` or `0D`.
+    Duodecimal,
 }
 
 /// Operators recognized by the lexer.
@@ -149,6 +159,8 @@ pub enum Operator {
     Multiply,
     /// Division.
     Divide,
+    /// Unit or expression conversion, written `to`, `->`, or `→`.
+    Conversion,
     /// Exponentiation.
     Power,
     /// Remainder or percent-like operator depending on parser context.
@@ -181,6 +193,10 @@ pub enum Operator {
     LogicalOr,
     /// Logical xor.
     LogicalXor,
+    /// Logical nand.
+    LogicalNand,
+    /// Logical nor.
+    LogicalNor,
     /// Logical not.
     LogicalNot,
     /// Bitwise and.
@@ -191,6 +207,32 @@ pub enum Operator {
     BitwiseXor,
     /// Bitwise not.
     BitwiseNot,
+    /// Parallel sum operator, written `||` or `∥`.
+    Parallel,
+    /// Set union.
+    SetUnion,
+    /// Set intersection.
+    SetIntersection,
+    /// Set difference.
+    SetDifference,
+    /// Set symmetric difference.
+    SetSymmetricDifference,
+    /// Set membership.
+    SetMembership,
+    /// Set non-membership.
+    SetNotMembership,
+    /// Set contains.
+    SetContains,
+    /// Set does not contain.
+    SetNotContains,
+    /// Proper subset.
+    ProperSubset,
+    /// Subset.
+    Subset,
+    /// Proper superset.
+    ProperSuperset,
+    /// Superset.
+    Superset,
     /// Variable assignment, written `:=` or `=:`.
     Assignment,
     /// Uncertainty plus/minus token, written `+/-` or `±`.
@@ -352,7 +394,11 @@ impl Lexer<'_> {
                 tokens.push(self.lex_number(start));
                 continue;
             }
-            if let Some(token) = self.lex_punctuation_or_symbol(start, ch) {
+            if ch == '\\' && self.escaped_identifier_follows() {
+                tokens.push(self.lex_escaped_identifier(start));
+                continue;
+            }
+            if let Some(token) = self.lex_punctuation_or_symbol(start, ch, tokens.last()) {
                 tokens.push(token);
                 continue;
             }
@@ -443,12 +489,38 @@ impl Lexer<'_> {
                 self.index,
             );
         }
+        if prefixed_number_starts(self.remaining(), "0o", is_octal_digit)
+            || prefixed_number_starts(self.remaining(), "0O", is_octal_digit)
+        {
+            self.consume_prefixed_digits(is_octal_digit);
+            return Token::new(
+                TokenKind::Number {
+                    text: self.input[start..self.index].to_string(),
+                    kind: NumberLiteralKind::BasePrefixed(BasePrefix::Octal),
+                },
+                start,
+                self.index,
+            );
+        }
+        if prefixed_number_starts(self.remaining(), "0d", is_duodecimal_digit)
+            || prefixed_number_starts(self.remaining(), "0D", is_duodecimal_digit)
+        {
+            self.consume_prefixed_digits(is_duodecimal_digit);
+            return Token::new(
+                TokenKind::Number {
+                    text: self.input[start..self.index].to_string(),
+                    kind: NumberLiteralKind::BasePrefixed(BasePrefix::Duodecimal),
+                },
+                start,
+                self.index,
+            );
+        }
 
         let mut saw_dot = false;
         let mut saw_exp = false;
 
         self.consume_grouped_digits();
-        if self.consume_spaces_before('.') {
+        if !self.remaining().starts_with("...") && self.consume_spaces_before('.') {
             saw_dot = true;
             self.bump_char();
             self.consume_grouped_digits();
@@ -486,10 +558,19 @@ impl Lexer<'_> {
         )
     }
 
-    fn lex_punctuation_or_symbol(&mut self, start: usize, ch: char) -> Option<Token> {
+    fn lex_punctuation_or_symbol(
+        &mut self,
+        start: usize,
+        ch: char,
+        previous: Option<&Token>,
+    ) -> Option<Token> {
         let rest = self.remaining();
         let (kind, width) = if rest.starts_with("+/-") {
             (TokenKind::Operator(Operator::Uncertainty), 3)
+        } else if rest.starts_with("...") {
+            (TokenKind::Ellipsis, 3)
+        } else if rest.starts_with("->") {
+            (TokenKind::Operator(Operator::Conversion), 2)
         } else if rest.starts_with("<<") {
             (TokenKind::Operator(Operator::ShiftLeft), 2)
         } else if rest.starts_with(">>") {
@@ -516,7 +597,7 @@ impl Lexer<'_> {
         } else if rest.starts_with("&&") {
             (TokenKind::Operator(Operator::LogicalAnd), 2)
         } else if rest.starts_with("||") {
-            (TokenKind::Operator(Operator::LogicalOr), 2)
+            (TokenKind::Operator(Operator::Parallel), 2)
         } else if rest.starts_with("^^") {
             (TokenKind::Operator(Operator::BitwiseXor), 2)
         } else if rest.starts_with("**") {
@@ -532,10 +613,14 @@ impl Lexer<'_> {
                 '\\' => (TokenKind::Operator(Operator::IntegerDivide), 1),
                 '^' => (TokenKind::Operator(Operator::Power), 1),
                 '%' => (TokenKind::Operator(Operator::Percent), 1),
+                '!' if is_prefix_operator_position(previous) => {
+                    (TokenKind::Operator(Operator::LogicalNot), 1)
+                }
                 '!' => (TokenKind::Operator(Operator::Factorial), 1),
                 '=' => (TokenKind::Operator(Operator::Equal), 1),
                 '<' => (TokenKind::Operator(Operator::Less), 1),
                 '>' => (TokenKind::Operator(Operator::Greater), 1),
+                '→' => (TokenKind::Operator(Operator::Conversion), ch.len_utf8()),
                 '≤' => (TokenKind::Operator(Operator::LessOrEqual), ch.len_utf8()),
                 '≥' => (TokenKind::Operator(Operator::GreaterOrEqual), ch.len_utf8()),
                 '±' => (TokenKind::Operator(Operator::Uncertainty), ch.len_utf8()),
@@ -544,6 +629,28 @@ impl Lexer<'_> {
                 '⊻' => (TokenKind::Operator(Operator::BitwiseXor), ch.len_utf8()),
                 '~' => (TokenKind::Operator(Operator::BitwiseNot), 1),
                 '¬' => (TokenKind::Operator(Operator::LogicalNot), ch.len_utf8()),
+                '∥' => (TokenKind::Operator(Operator::Parallel), ch.len_utf8()),
+                '∪' => (TokenKind::Operator(Operator::SetUnion), ch.len_utf8()),
+                '∩' => (
+                    TokenKind::Operator(Operator::SetIntersection),
+                    ch.len_utf8(),
+                ),
+                '∖' => (TokenKind::Operator(Operator::SetDifference), ch.len_utf8()),
+                '⊖' => (
+                    TokenKind::Operator(Operator::SetSymmetricDifference),
+                    ch.len_utf8(),
+                ),
+                '∈' => (TokenKind::Operator(Operator::SetMembership), ch.len_utf8()),
+                '∉' => (
+                    TokenKind::Operator(Operator::SetNotMembership),
+                    ch.len_utf8(),
+                ),
+                '∋' => (TokenKind::Operator(Operator::SetContains), ch.len_utf8()),
+                '∌' => (TokenKind::Operator(Operator::SetNotContains), ch.len_utf8()),
+                '⊊' => (TokenKind::Operator(Operator::ProperSubset), ch.len_utf8()),
+                '⊆' => (TokenKind::Operator(Operator::Subset), ch.len_utf8()),
+                '⊋' => (TokenKind::Operator(Operator::ProperSuperset), ch.len_utf8()),
+                '⊇' => (TokenKind::Operator(Operator::Superset), ch.len_utf8()),
                 '(' => (TokenKind::OpenParen, 1),
                 ')' => (TokenKind::CloseParen, 1),
                 '[' => (TokenKind::OpenBracket, 1),
@@ -551,6 +658,7 @@ impl Lexer<'_> {
                 ',' => (TokenKind::Comma, 1),
                 ';' => (TokenKind::Semicolon, 1),
                 '.' => (TokenKind::Dot, 1),
+                ':' => (TokenKind::Colon, 1),
                 _ => return None,
             }
         };
@@ -569,6 +677,24 @@ impl Lexer<'_> {
         } else {
             Token::new(TokenKind::Identifier(text.to_string()), start, self.index)
         }
+    }
+
+    fn escaped_identifier_follows(&self) -> bool {
+        self.remaining()
+            .strip_prefix('\\')
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(is_identifier_start)
+    }
+
+    fn lex_escaped_identifier(&mut self, start: usize) -> Token {
+        self.bump_char();
+        self.bump_char();
+        self.consume_while(is_identifier_continue);
+        Token::new(
+            TokenKind::EscapedIdentifier(self.input[start + 1..self.index].to_string()),
+            start,
+            self.index,
+        )
     }
 
     fn remaining(&self) -> &str {
@@ -646,6 +772,13 @@ fn classify_line(input: &str) -> LineKind {
     if trimmed.starts_with('/') {
         return LineKind::Command;
     }
+    let lower_trimmed = trimmed.to_ascii_lowercase();
+    if matches!(lower_trimmed.as_str(), "mc" | "ms" | "m+" | "m-")
+        || lower_trimmed == "partial fraction"
+        || lower_trimmed.starts_with("partial fraction ")
+    {
+        return LineKind::Command;
+    }
 
     let (first_word, rest) = match trimmed.find(char::is_whitespace) {
         Some(index) => (&trimmed[..index], trimmed[index..].trim()),
@@ -670,6 +803,9 @@ fn reject_nul(input: &str) -> Result<(), LexError> {
 
 fn starts_decimal_literal(input: &str, index: usize) -> bool {
     let rest = &input[index..];
+    if rest.starts_with("...") {
+        return false;
+    }
     let mut chars = rest.chars();
     if chars.next() != Some('.') {
         return false;
@@ -715,6 +851,29 @@ fn is_binary_digit(ch: char) -> bool {
     matches!(ch, '0' | '1')
 }
 
+fn is_octal_digit(ch: char) -> bool {
+    matches!(ch, '0'..='7')
+}
+
+fn is_duodecimal_digit(ch: char) -> bool {
+    ch.is_ascii_digit() || matches!(ch, 'E' | 'X' | 'A' | 'B' | 'e' | 'x' | 'a' | 'b')
+}
+
+fn is_prefix_operator_position(previous: Option<&Token>) -> bool {
+    previous.is_none_or(|token| {
+        matches!(
+            token.kind,
+            TokenKind::Operator(_)
+                | TokenKind::OpenParen
+                | TokenKind::OpenBracket
+                | TokenKind::Comma
+                | TokenKind::Semicolon
+                | TokenKind::Colon
+                | TokenKind::CommandPrefix
+        )
+    })
+}
+
 fn is_identifier_start(ch: char) -> bool {
     ch == '_' || ch.is_alphabetic() || is_unit_symbol(ch)
 }
@@ -733,6 +892,7 @@ fn is_unit_symbol(ch: char) -> bool {
                 | '÷'
                 | '⋅'
                 | '∕'
+                | '→'
                 | '≤'
                 | '≥'
                 | '≠'
@@ -740,6 +900,19 @@ fn is_unit_symbol(ch: char) -> bool {
                 | '∨'
                 | '⊻'
                 | '¬'
+                | '∥'
+                | '∪'
+                | '∩'
+                | '∖'
+                | '⊖'
+                | '∈'
+                | '∉'
+                | '∋'
+                | '∌'
+                | '⊊'
+                | '⊆'
+                | '⊋'
+                | '⊇'
                 | '('
                 | ')'
                 | '['
@@ -757,12 +930,15 @@ fn word_operator(word: &str) -> Option<Operator> {
         "minus" => Operator::Minus,
         "times" => Operator::Multiply,
         "per" => Operator::Divide,
+        "to" => Operator::Conversion,
         "rem" => Operator::Percent,
         "mod" => Operator::Modulo,
         "div" => Operator::IntegerDivide,
         "and" => Operator::LogicalAnd,
         "or" => Operator::LogicalOr,
         "xor" => Operator::LogicalXor,
+        "nand" => Operator::LogicalNand,
+        "nor" => Operator::LogicalNor,
         "not" => Operator::LogicalNot,
         "bitand" => Operator::BitwiseAnd,
         "bitor" => Operator::BitwiseOr,

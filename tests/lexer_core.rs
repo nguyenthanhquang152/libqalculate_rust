@@ -99,7 +99,7 @@ fn keeps_grouped_prefixed_base_literals_from_bitwise_fixtures() {
                 text: "0b0111 0001".into(),
                 kind: NumberLiteralKind::BasePrefixed(BasePrefix::Binary),
             },
-            TokenKind::Identifier("to".into()),
+            TokenKind::Operator(Operator::Conversion),
             TokenKind::Identifier("bin8".into()),
         ]
     );
@@ -117,10 +117,110 @@ fn keeps_grouped_prefixed_base_literals_from_bitwise_fixtures() {
                 text: "0b0111 0001".into(),
                 kind: NumberLiteralKind::BasePrefixed(BasePrefix::Binary),
             },
-            TokenKind::Identifier("to".into()),
+            TokenKind::Operator(Operator::Conversion),
             TokenKind::Identifier("bin8".into()),
         ]
     );
+}
+
+#[test]
+fn preserves_codex_reviewed_lexer_boundaries() {
+    assert!(kinds("5:30").contains(&TokenKind::Colon));
+    assert_eq!(
+        kinds("[1:4]"),
+        vec![
+            TokenKind::OpenBracket,
+            TokenKind::Number {
+                text: "1".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Colon,
+            TokenKind::Number {
+                text: "4".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::CloseBracket,
+        ]
+    );
+
+    assert_eq!(
+        kinds("0o10 + 0d10"),
+        vec![
+            TokenKind::Number {
+                text: "0o10".into(),
+                kind: NumberLiteralKind::BasePrefixed(BasePrefix::Octal),
+            },
+            TokenKind::Operator(Operator::Plus),
+            TokenKind::Number {
+                text: "0d10".into(),
+                kind: NumberLiteralKind::BasePrefixed(BasePrefix::Duodecimal),
+            },
+        ]
+    );
+
+    assert_eq!(
+        kinds(r"5\a + \x"),
+        vec![
+            TokenKind::Number {
+                text: "5".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::EscapedIdentifier("a".into()),
+            TokenKind::Operator(Operator::Plus),
+            TokenKind::EscapedIdentifier("x".into()),
+        ]
+    );
+
+    assert_eq!(
+        kinds("!(1 > 2)")[0],
+        TokenKind::Operator(Operator::LogicalNot)
+    );
+    assert_eq!(kinds("5!")[1], TokenKind::Operator(Operator::Factorial));
+
+    assert!(kinds("10 Ω || 6 Ω").contains(&TokenKind::Operator(Operator::Parallel)));
+    assert!(kinds("10 Ω ∥ 6 Ω").contains(&TokenKind::Operator(Operator::Parallel)));
+
+    assert_eq!(
+        kinds("1...4"),
+        vec![
+            TokenKind::Number {
+                text: "1".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Ellipsis,
+            TokenKind::Number {
+                text: "4".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+        ]
+    );
+
+    for (source, operator) in [
+        ("A ∪ B", Operator::SetUnion),
+        ("A ∩ B", Operator::SetIntersection),
+        ("A ∖ B", Operator::SetDifference),
+        ("A ⊖ B", Operator::SetSymmetricDifference),
+        ("A ∈ B", Operator::SetMembership),
+        ("A ∉ B", Operator::SetNotMembership),
+        ("A ∋ B", Operator::SetContains),
+        ("A ∌ B", Operator::SetNotContains),
+        ("A ⊊ B", Operator::ProperSubset),
+        ("A ⊆ B", Operator::Subset),
+        ("A ⊋ B", Operator::ProperSuperset),
+        ("A ⊇ B", Operator::Superset),
+    ] {
+        assert!(
+            kinds(source).contains(&TokenKind::Operator(operator)),
+            "{source}"
+        );
+    }
+
+    assert!(kinds("a NAND b").contains(&TokenKind::Operator(Operator::LogicalNand)));
+    assert!(kinds("a NOR b").contains(&TokenKind::Operator(Operator::LogicalNor)));
+
+    assert!(kinds("5 m -> ft").contains(&TokenKind::Operator(Operator::Conversion)));
+    assert!(kinds("5 m → ft").contains(&TokenKind::Operator(Operator::Conversion)));
+    assert!(kinds("5 m to ft").contains(&TokenKind::Operator(Operator::Conversion)));
 }
 
 #[test]
@@ -357,6 +457,11 @@ fn classifies_session_commands_without_discarding_content() {
     assert_eq!(expression.kind, LineKind::Expression);
 
     for source in ["exact", "help", "save definitions", "to hex", "clear"] {
+        let line = lex_line(source).expect("lex command line");
+        assert_eq!(line.kind, LineKind::Command, "{source}");
+    }
+
+    for source in ["partial fraction x", "MC", "MS", "M+", "M-"] {
         let line = lex_line(source).expect("lex command line");
         assert_eq!(line.kind, LineKind::Command, "{source}");
     }
