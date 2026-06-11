@@ -974,7 +974,7 @@ fn focused_epic2_float_precision_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 2] = [
+    let cases: [NativeOracleCase<'_>; 7] = [
         (
             "rational-output-precision-context",
             "1/3",
@@ -983,6 +983,31 @@ fn focused_epic2_float_precision_oracle_cases() {
         (
             "float-power-precision-context",
             "2 ^ 0.5",
+            &["/set precision 128"],
+        ),
+        (
+            "float-addition-precision-context",
+            "(2 ^ 0.5) + (3 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-subtraction-precision-context",
+            "(3 ^ 0.5) - (2 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-multiplication-precision-context",
+            "(2 ^ 0.5) * (3 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-division-precision-context",
+            "(3 ^ 0.5) / (2 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "mixed-rational-float-addition-precision-context",
+            "(2 ^ 0.5) + 1/3",
             &["/set precision 128"],
         ),
     ];

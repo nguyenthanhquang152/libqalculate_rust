@@ -198,6 +198,71 @@ fn cli_applies_precision_setting_for_native_float_power() {
 }
 
 #[test]
+fn cli_applies_precision_setting_for_native_real_float_arithmetic() {
+    for (expression, expected) in [
+        (
+            "(2 ^ 0.5) + (3 ^ 0.5)",
+            "3.1462643699419723423291350657155704455124771291873287012324867174426654953709070759315337210848901484106399876463190000548947812\n",
+        ),
+        (
+            "(3 ^ 0.5) - (2 ^ 0.5)",
+            "0.31783724519578224472575761729617428837313337843343255487912724146120053844669299823075865242960700294061229518449440600504510904\n",
+        ),
+        (
+            "(2 ^ 0.5) * (3 ^ 0.5)",
+            "2.4494897427831780981972840747058913919659474806566701284326925672509603774573150265398594331046402348185946012266141891248588655\n",
+        ),
+        (
+            "(3 ^ 0.5) / (2 ^ 0.5)",
+            "1.2247448713915890490986420373529456959829737403283350642163462836254801887286575132699297165523201174092973006133070945624294327\n",
+        ),
+        (
+            "(2 ^ 0.5) + 1/3",
+            "1.7475468957064283821350220575430314119030052087102814065100130713240658117954403721837208676609749060683471795642456303582581694\n",
+        ),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", "precision 128", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_rejects_native_real_float_arithmetic_without_precision_setting() {
+    for expression in [
+        "(2 ^ 0.5) + (3 ^ 0.5)",
+        "(3 ^ 0.5) - (2 ^ 0.5)",
+        "(2 ^ 0.5) * (3 ^ 0.5)",
+        "(3 ^ 0.5) / (2 ^ 0.5)",
+        "(2 ^ 0.5) + 1/3",
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.arg(expression)
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=disabled",
+            ))
+            .stderr(predicate::str::contains(format!(
+                "expression '{expression}' has no native Rust implementation"
+            )));
+    }
+}
+
+#[test]
 fn cli_applies_interval_display_setting_for_native_interval_function() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
