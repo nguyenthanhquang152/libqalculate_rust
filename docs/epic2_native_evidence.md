@@ -119,6 +119,11 @@ focused expressions with fallback disabled:
   `/set precision 128` and native `2 ^ 0.5` under `/set precision 128`;
   precision-enabled non-integer rational powers now evaluate with a
   precision-derived MPFR context instead of the default 53-bit context.
+- Fallback-disabled native complex evidence covers imaginary literals and
+  selected exact arithmetic output shapes: addition, subtraction,
+  multiplication, division, `conj(3 + 4i)`, and `norm(3 + 4i)`. These cases are
+  compared against upstream qalc with exact UTF-8 output, including Unicode
+  minus signs in qalc-profile CLI output.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -160,6 +165,9 @@ rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infin
 rtk cargo test --lib exact_integer_powers_remain_rational_and_parse_starstar -- --nocapture
 rtk cargo test --lib rational_modulo_and_remainder_match_qalc_operators -- --nocapture
 rtk cargo test --lib rational_integer_division_matches_qalc_operators -- --nocapture
+rtk cargo test --lib complex_conjugate_and_norm_parse_natively -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_complex_subtraction_conjugate_and_norm -- --nocapture
+rtk cargo test --test oracle focused_epic2_native_numeric_oracle_cases -- --nocapture
 rtk cargo test --test oracle differential_oracle_numberbase_batch -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_no_session_oracle_cases -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_session_oracle_cases -- --nocapture
@@ -194,7 +202,8 @@ rtk timeout 600 just coverage
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
   remain incomplete beyond the promoted native precision-output and
   precision-context non-integer power evidence.
-- Complex powers and broad `explog.batch` complex cases remain incomplete.
+- Complex powers and broad `explog.batch` complex cases remain incomplete beyond
+  the promoted exact arithmetic, `conj`, and `norm` evidence.
 - Interval input syntax, options, intersections, open/closed bounds, and broad
   interval oracle rows remain incomplete. Qalc bracket expressions are not used
   as interval evidence because upstream default qalc treats them with vector-like

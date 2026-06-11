@@ -851,12 +851,42 @@ fn simple_imaginary_literals_parse_natively() {
         "4 + 6i"
     );
     assert_eq!(
+        evaluate_expr("(1 + 2i) - (3 + 4i)").unwrap().to_string(),
+        "-2 - 2i"
+    );
+    assert_eq!(
         evaluate_expr("(1 + 2i) * (3 + 4i)").unwrap().to_string(),
         "-5 + 10i"
     );
     assert_eq!(
         evaluate_expr("(1 + 2i) / (3 + 4i)").unwrap().to_string(),
         "0.44 + 0.08i"
+    );
+}
+
+#[test]
+fn complex_conjugate_and_norm_parse_natively() {
+    assert_eq!(evaluate_expr("conj(3 + 4i)").unwrap().to_string(), "3 - 4i");
+    assert_eq!(evaluate_expr("norm(3 + 4i)").unwrap().to_string(), "5");
+}
+
+#[test]
+fn unary_function_parser_preserves_name_boundaries_and_errors() {
+    assert_eq!(
+        evaluate_expr("conj 3 + 4i").unwrap_err(),
+        "Expected '(' after conj"
+    );
+    assert_eq!(
+        evaluate_expr("norm 3 + 4i").unwrap_err(),
+        "Expected '(' after norm"
+    );
+    assert_eq!(
+        evaluate_expr("conj2(3 + 4i)").unwrap_err(),
+        "Unexpected character: c"
+    );
+    assert_eq!(
+        evaluate_expr("norm_value(3 + 4i)").unwrap_err(),
+        "Unexpected character: n"
     );
 }
 

@@ -3826,6 +3826,51 @@ fn strip_word_operator<'a>(s: &'a str, operator: &str, has_left_boundary: bool) 
     Some(remaining)
 }
 
+fn strip_function_name<'a>(s: &'a str, name: &str) -> Option<&'a str> {
+    let remaining = s.strip_prefix(name)?;
+    if remaining
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return None;
+    }
+    Some(remaining)
+}
+
+const UNARY_FUNCTIONS: &[(&str, UnaryFunction)] = &[
+    ("conj", UnaryFunction::Conjugate),
+    ("norm", UnaryFunction::Norm),
+];
+
+fn strip_unary_function(s: &str) -> Option<(UnaryFunction, &str)> {
+    UNARY_FUNCTIONS.iter().find_map(|(name, function)| {
+        strip_function_name(s, name).map(|remaining| (*function, remaining))
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum UnaryFunction {
+    Conjugate,
+    Norm,
+}
+
+impl UnaryFunction {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Conjugate => "conj",
+            Self::Norm => "norm",
+        }
+    }
+
+    fn apply(self, arg: Number) -> Number {
+        match self {
+            Self::Conjugate => arg.conjugate(),
+            Self::Norm => arg.norm(),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct EvalContext {
     min_float_precision_bits: u32,
@@ -3901,6 +3946,10 @@ fn evaluate_expr_with_context(s: &str, context: EvalContext) -> Result<Number, S
             tokens.push(Token::OpIntDiv);
             has_word_operator_left_boundary = false;
             rest = remaining.trim_start();
+        } else if let Some((function, remaining)) = strip_unary_function(rest) {
+            tokens.push(Token::UnaryFunction(function));
+            has_word_operator_left_boundary = false;
+            rest = remaining.trim_start();
         } else if let Some(remaining) = rest.strip_prefix('%') {
             tokens.push(Token::OpRem);
             has_word_operator_left_boundary = false;
@@ -3958,6 +4007,7 @@ enum Token {
     OpMod,
     OpIntDiv,
     OpPow,
+    UnaryFunction(UnaryFunction),
     LParen,
     RParen,
 }
@@ -3982,14 +4032,18 @@ impl ExprParser {
     }
 
     fn parse_primary(&mut self) -> Result<Number, String> {
-        match self.next_token() {
-            Some(Token::Literal(num)) => Ok(num.clone()),
+        match self.next_token().cloned() {
+            Some(Token::Literal(num)) => Ok(num),
             Some(Token::LParen) => {
                 let expr = self.parse_expr(0)?;
                 match self.next_token() {
                     Some(Token::RParen) => Ok(expr),
                     _ => Err("Expected matching ')'".to_string()),
                 }
+            }
+            Some(Token::UnaryFunction(function)) => {
+                let arg = self.parse_function_argument(function.name())?;
+                Ok(function.apply(arg))
             }
             Some(Token::OpAdd) => self.parse_expr(3),
             Some(Token::OpSub) => {
@@ -4014,6 +4068,18 @@ impl ExprParser {
                 "Expected literal or parenthesized expression, got {:?}",
                 t
             )),
+        }
+    }
+
+    fn parse_function_argument(&mut self, name: &str) -> Result<Number, String> {
+        match self.next_token() {
+            Some(Token::LParen) => {}
+            _ => return Err(format!("Expected '(' after {name}")),
+        }
+        let expr = self.parse_expr(0)?;
+        match self.next_token() {
+            Some(Token::RParen) => Ok(expr),
+            _ => Err(format!("Expected matching ')' after {name} argument")),
         }
     }
 
