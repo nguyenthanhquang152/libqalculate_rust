@@ -93,7 +93,10 @@ fn interval_function_parser_normalizes_reversed_bounds_for_qalc_display() {
 #[test]
 fn uncertainty_power_matches_focused_qalc_display() {
     let value = evaluate_expr("(2+/-3)^3.2").expect("uncertainty power should parse");
-    assert_eq!(value.to_qalc_string(), "9.18958684±44.11001683");
+    assert_eq!(
+        value.to_qalc_string_preserving_float_uncertainty_precision(10),
+        "9.18958684±44.11001683"
+    );
 }
 
 #[test]
@@ -103,7 +106,7 @@ fn ordinary_uncertainty_power_keeps_significant_uncertainty_display() {
 }
 
 #[test]
-fn qalc_profile_precise_uncertainty_keeps_single_fractional_side() {
+fn qalc_profile_precise_uncertainty_is_explicit_evidence_mode() {
     let fractional_value = NumberValue::Uncertainty {
         value: Box::new(NumberValue::Float(Float::from_f64(9.18958684, 128))),
         uncertainty: Box::new(NumberValue::Float(Float::from_f64(44.0, 128))),
@@ -116,31 +119,45 @@ fn qalc_profile_precise_uncertainty_keeps_single_fractional_side() {
     };
 
     assert_eq!(
-        format_qalc_value_with_precision(&fractional_value, 10),
+        format_qalc_value_with_uncertainty_format(
+            &fractional_value,
+            10,
+            QalcUncertaintyFormat::PreserveFloatPrecision
+        ),
         "9.18958684±44"
     );
     assert_eq!(
-        format_qalc_value_with_precision(&fractional_uncertainty, 10),
+        format_qalc_value_with_uncertainty_format(
+            &fractional_uncertainty,
+            10,
+            QalcUncertaintyFormat::PreserveFloatPrecision
+        ),
         "9±44.11001683"
+    );
+    assert_eq!(
+        format_qalc_value_with_uncertainty_format(
+            &fractional_value,
+            10,
+            QalcUncertaintyFormat::Significant
+        ),
+        "9±44"
+    );
+    assert_eq!(
+        format_qalc_value_with_uncertainty_format(
+            &fractional_uncertainty,
+            10,
+            QalcUncertaintyFormat::Significant
+        ),
+        "9±44"
     );
 }
 
 #[test]
 fn fixed_decimal_precision_helpers_distinguish_significant_fraction_digits() {
-    assert_eq!(
-        absolute_uncertainty_display_decimal_width(9.18958684, 44.11001683),
-        0
-    );
-    assert_eq!(absolute_uncertainty_display_decimal_width(2.0, 0.002), 4);
-    assert!(is_wide_absolute_float_uncertainty(9.18958684, 44.11001683));
-    assert!(!is_wide_absolute_float_uncertainty(10.0, 20.0));
-    assert!(!is_wide_absolute_float_uncertainty(
-        84.44850629,
-        67.55880503
-    ));
     assert!(fixed_decimal_has_fractional_precision("1.23456789"));
     assert!(!fixed_decimal_has_fractional_precision("2.000000000"));
     assert!(!fixed_decimal_has_fractional_precision("1E303"));
+    assert!(fixed_decimal_has_fractional_precision("1.200000000e20"));
     assert_eq!(
         trim_fixed_decimal_trailing_zeros("9.189586840".to_string()),
         "9.18958684"
@@ -152,6 +169,10 @@ fn fixed_decimal_precision_helpers_distinguish_significant_fraction_digits() {
     assert_eq!(
         trim_fixed_decimal_trailing_zeros("1E303".to_string()),
         "1E303"
+    );
+    assert_eq!(
+        trim_fixed_decimal_trailing_zeros("1.200000000e20".to_string()),
+        "1.2e20"
     );
 }
 

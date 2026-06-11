@@ -27,8 +27,11 @@ claim full `Number.cc` parity.
   25, 28, 32.
 - `explog.batch`: line 4.
 
-The oracle runner disables C++ fallback for these rows and verifies
-`fallback=native`.
+The focused and differential oracle commands listed below disable C++ fallback
+for the covered promoted rows and verify `fallback=native`. The promoted
+`explog.batch:4` row is covered by focused native oracle/e2e/lib evidence, not
+by a full `explog.batch` differential run; the other `explog.batch` rows remain
+inventory-only.
 
 `1 + 1` is also kept as focused native scaffold evidence because
 `ORIGINAL_REQUEST.md` explicitly names it as a fallback-disabled scaffold
@@ -130,8 +133,8 @@ focused expressions with fallback disabled:
   `explog.batch` uncertainty power row: `(2+/-3)^3.2` now evaluates natively
   and prints `9.18958684±44.11001683` against upstream qalc. The qalc-profile
   formatter keeps the existing significant-uncertainty output for ordinary
-  uncertainty arithmetic, while preserving MPFR fractional digits for this
-  float-valued uncertainty power case.
+  uncertainty arithmetic, while preserving MPFR fractional digits only for this
+  promoted float-valued uncertainty power case.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -176,10 +179,13 @@ rtk cargo test --lib rational_integer_division_matches_qalc_operators -- --nocap
 rtk cargo test --lib complex_conjugate_and_norm_parse_natively -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_complex_subtraction_conjugate_and_norm -- --nocapture
 rtk cargo test --lib uncertainty_power_matches_focused_qalc_display -- --nocapture
+rtk cargo test --lib ordinary_uncertainty_power_keeps_significant_uncertainty_display -- --nocapture
+rtk cargo test --lib qalc_profile_precise_uncertainty_is_explicit_evidence_mode -- --nocapture
+rtk cargo test --lib fixed_decimal_precision_helpers_distinguish_significant_fraction_digits -- --nocapture
+rtk cargo test --lib fallback_disabled_runs_native_scaffold_cases -- --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_uncertainty_power -- --nocapture
 rtk cargo test --test oracle focused_epic2_native_numeric_oracle_cases -- --nocapture
-rtk env PATH=/tmp/libqalculate-rust-tools/bin:$PATH cargo mutants --timeout 180 --jobs 2 --file src/number.rs --file src/ffi.rs -F 'format_qalc_value_with_precision|format_qalc_uncertainty|absolute_uncertainty_display_decimal_width|is_wide_absolute_float_uncertainty|fixed_decimal_has_fractional_precision|trim_fixed_decimal_trailing_zeros|native_numeric_evidence' -- --lib
-rtk env PATH=/tmp/libqalculate-rust-tools/bin:$PATH cargo mutants --timeout 180 --jobs 2 --file src/number.rs -F 'is_wide_absolute_float_uncertainty' -- --lib
+cargo mutants --timeout 180 --jobs 2 --file src/number.rs --file src/ffi.rs -F 'to_qalc_string_preserving_float_uncertainty_precision|format_qalc_value_with_uncertainty_format|format_qalc_uncertainty|fixed_decimal_has_fractional_precision|trim_fixed_decimal_trailing_zeros|mantissa_and_exponent|native_numeric_evidence' -- --lib
 rtk cargo test --test oracle differential_oracle_numberbase_batch -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_no_session_oracle_cases -- --nocapture
 rtk cargo test --test oracle focused_epic2_numberbase_session_oracle_cases -- --nocapture
@@ -211,10 +217,8 @@ rtk timeout 600 just coverage
 
 Mutation evidence for this slice:
 
-- Scoped formatter/native-gate run: 28 mutants tested, 26 caught, 1 unviable,
-  1 missed in the initial threshold boundary.
-- Focused threshold rerun after adding the boundary regression assertion:
-  7 mutants tested, 7 caught.
+- Scoped formatter/native-gate run after Codex and internal review fixes:
+  23 mutants tested, 22 caught, 1 unviable.
 
 ## Remaining Gaps
 

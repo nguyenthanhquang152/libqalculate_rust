@@ -2960,9 +2960,30 @@ impl Number {
     /// Formats this number for qalc-profile native evidence with a requested
     /// decimal digit count for precision-sensitive numeric output.
     pub(crate) fn to_qalc_string_with_precision(&self, precision_digits: usize) -> String {
+        self.to_qalc_string_with_uncertainty_format(
+            precision_digits,
+            QalcUncertaintyFormat::Significant,
+        )
+    }
+
+    pub(crate) fn to_qalc_string_preserving_float_uncertainty_precision(
+        &self,
+        precision_digits: usize,
+    ) -> String {
+        self.to_qalc_string_with_uncertainty_format(
+            precision_digits,
+            QalcUncertaintyFormat::PreserveFloatPrecision,
+        )
+    }
+
+    fn to_qalc_string_with_uncertainty_format(
+        &self,
+        precision_digits: usize,
+        uncertainty_format: QalcUncertaintyFormat,
+    ) -> String {
         let (real, imag) = self.to_canonical_real_imag();
         if imag.is_real_zero() {
-            format_qalc_value_with_precision(&real, precision_digits)
+            format_qalc_value_with_uncertainty_format(&real, precision_digits, uncertainty_format)
         } else if real.is_real_zero() {
             if imag.is_real_one() {
                 "i".to_string()
@@ -2971,20 +2992,40 @@ impl Number {
             } else {
                 format!(
                     "{}i",
-                    format_qalc_value_with_precision(&imag, precision_digits)
+                    format_qalc_value_with_uncertainty_format(
+                        &imag,
+                        precision_digits,
+                        uncertainty_format
+                    )
                 )
             }
         } else if is_value_negative(&imag) {
             format!(
                 "{} - {}i",
-                format_qalc_value_with_precision(&real, precision_digits),
-                format_qalc_value_with_precision(&imag.negate(), precision_digits)
+                format_qalc_value_with_uncertainty_format(
+                    &real,
+                    precision_digits,
+                    uncertainty_format
+                ),
+                format_qalc_value_with_uncertainty_format(
+                    &imag.negate(),
+                    precision_digits,
+                    uncertainty_format
+                )
             )
         } else {
             format!(
                 "{} + {}i",
-                format_qalc_value_with_precision(&real, precision_digits),
-                format_qalc_value_with_precision(&imag, precision_digits)
+                format_qalc_value_with_uncertainty_format(
+                    &real,
+                    precision_digits,
+                    uncertainty_format
+                ),
+                format_qalc_value_with_uncertainty_format(
+                    &imag,
+                    precision_digits,
+                    uncertainty_format
+                )
             )
         }
     }
@@ -3161,7 +3202,17 @@ fn rounded_uncertainty_and_width(unc_abs: f64) -> (f64, usize) {
     (rounded_unc, std::cmp::max(0, 1 - e) as usize)
 }
 
-fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize) -> String {
+#[derive(Clone, Copy)]
+enum QalcUncertaintyFormat {
+    Significant,
+    PreserveFloatPrecision,
+}
+
+fn format_qalc_value_with_uncertainty_format(
+    value: &NumberValue,
+    precision_digits: usize,
+    uncertainty_format: QalcUncertaintyFormat,
+) -> String {
     match value {
         NumberValue::Rational(rational) => {
             if let Some(scientific) = qalc_large_integer_scientific_string(rational) {
@@ -3181,9 +3232,19 @@ fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize
             is_relative,
         } => {
             if uncertainty.is_real_zero() {
-                format_qalc_value_with_precision(value, precision_digits)
+                format_qalc_value_with_uncertainty_format(
+                    value,
+                    precision_digits,
+                    uncertainty_format,
+                )
             } else {
-                format_qalc_uncertainty(value, uncertainty, *is_relative, precision_digits)
+                format_qalc_uncertainty(
+                    value,
+                    uncertainty,
+                    *is_relative,
+                    precision_digits,
+                    uncertainty_format,
+                )
             }
         }
         NumberValue::Interval { lower, upper } => format!(
@@ -3206,20 +3267,18 @@ fn format_qalc_uncertainty(
     uncertainty: &NumberValue,
     is_relative: bool,
     precision_digits: usize,
+    uncertainty_format: QalcUncertaintyFormat,
 ) -> String {
     if is_relative {
         return value.to_string_with_uncertainty(uncertainty, true);
     }
 
-    if let (NumberValue::Float(value_float), NumberValue::Float(uncertainty_float)) =
-        (value, uncertainty)
-    {
-        let display_width = absolute_uncertainty_display_decimal_width(
-            value_float.value(),
-            uncertainty_float.value(),
-        );
-        if display_width == 0
-            && is_wide_absolute_float_uncertainty(value_float.value(), uncertainty_float.value())
+    if matches!(
+        uncertainty_format,
+        QalcUncertaintyFormat::PreserveFloatPrecision
+    ) {
+        if let (NumberValue::Float(value_float), NumberValue::Float(uncertainty_float)) =
+            (value, uncertainty)
         {
             let precise_value = format_qalc_float(&value_float.value, precision_digits);
             let precise_uncertainty = format_qalc_float(&uncertainty_float.value, precision_digits);
@@ -3236,37 +3295,38 @@ fn format_qalc_uncertainty(
     value.to_string_with_uncertainty(uncertainty, false)
 }
 
-fn absolute_uncertainty_display_decimal_width(value: f64, uncertainty: f64) -> usize {
-    let (_, width) = rounded_uncertainty_and_width(uncertainty);
-    uncertainty_display_decimal_width(value, uncertainty, width)
-}
-
-fn is_wide_absolute_float_uncertainty(value: f64, uncertainty: f64) -> bool {
-    if uncertainty == 0.0 {
-        return false;
-    }
-    let value_abs = value.abs();
-    if value_abs == 0.0 {
-        return true;
-    }
-    uncertainty.abs() >= value_abs * 4.0
-}
-
 fn fixed_decimal_has_fractional_precision(value: &str) -> bool {
-    value
+    mantissa_and_exponent(value)
+        .0
         .split_once('.')
         .is_some_and(|(_, fraction)| fraction.chars().any(|ch| ch != '0'))
 }
 
 fn trim_fixed_decimal_trailing_zeros(value: String) -> String {
-    let Some((integer, fraction)) = value.split_once('.') else {
+    let (mantissa, exponent) = mantissa_and_exponent(&value);
+    let Some((integer, fraction)) = mantissa.split_once('.') else {
         return value;
     };
     let trimmed = fraction.trim_end_matches('0');
-    if trimmed.is_empty() {
+    let trimmed_mantissa = if trimmed.is_empty() {
         integer.to_string()
     } else {
         format!("{integer}.{trimmed}")
+    };
+    if exponent.is_empty() {
+        trimmed_mantissa
+    } else {
+        format!("{trimmed_mantissa}{exponent}")
+    }
+}
+
+fn mantissa_and_exponent(value: &str) -> (&str, &str) {
+    if let Some(index) = value.find('e') {
+        (&value[..index], &value[index..])
+    } else if let Some(index) = value.find('E') {
+        (&value[..index], &value[index..])
+    } else {
+        (value, "")
     }
 }
 

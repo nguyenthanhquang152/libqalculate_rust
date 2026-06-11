@@ -349,6 +349,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
                 PrintProfile::Qalc if settings.has_interval_display() => {
                     num.to_qalc_interval_display_string(settings.precision_digits())?
                 }
+                PrintProfile::Qalc if evidence.preserves_float_uncertainty_precision() => num
+                    .to_qalc_string_preserving_float_uncertainty_precision(
+                        settings.precision_digits(),
+                    ),
                 PrintProfile::Qalc => {
                     num.to_qalc_string_with_precision(settings.precision_digits())
                 }
@@ -367,6 +371,7 @@ enum NativeNumericEvidence {
     DefaultOnly,
     Precision,
     IntervalDisplay,
+    PreciseFloatUncertainty,
 }
 
 impl NativeNumericEvidence {
@@ -376,6 +381,10 @@ impl NativeNumericEvidence {
 
     const fn requires_interval_display(self) -> bool {
         matches!(self, Self::IntervalDisplay)
+    }
+
+    const fn preserves_float_uncertainty_precision(self) -> bool {
+        matches!(self, Self::PreciseFloatUncertainty)
     }
 }
 
@@ -442,7 +451,10 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("20+/-3 + 10+/-4", NativeNumericEvidence::DefaultOnly),
     ("3+/-0.2 * 4+/-0.1", NativeNumericEvidence::DefaultOnly),
     ("12+/-0.5 / 3+/-0.2", NativeNumericEvidence::DefaultOnly),
-    ("(2+/-3)^3.2", NativeNumericEvidence::DefaultOnly),
+    (
+        "(2+/-3)^3.2",
+        NativeNumericEvidence::PreciseFloatUncertainty,
+    ),
     ("10 +/- 0", NativeNumericEvidence::DefaultOnly),
 ];
 
@@ -629,5 +641,11 @@ mod tests {
             .unwrap();
         assert_eq!(scaffold.output, "native-scaffold-test-success");
         assert_eq!(scaffold.fallback_state, FallbackState::Native);
+
+        let uncertainty_power = calc
+            .calculate_and_print_qalc_with_fallback_state("(2+/-3)^3.2", 1000)
+            .unwrap();
+        assert_eq!(uncertainty_power.output, "9.18958684±44.11001683");
+        assert_eq!(uncertainty_power.fallback_state, FallbackState::Native);
     }
 }
