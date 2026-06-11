@@ -1702,6 +1702,30 @@ fn uncertainty_constructor_and_extraction_functions_match_qalc_slice() {
         "5"
     );
     assert_eq!(
+        evaluate_expr("errorPart(2+/-0.002;0)")
+            .unwrap()
+            .to_qalc_string(),
+        "0.002000000000"
+    );
+    assert_eq!(
+        evaluate_expr("errorPart(2+/-0.002;1)")
+            .unwrap()
+            .to_qalc_string(),
+        "0.001000000000"
+    );
+    assert_eq!(
+        evaluate_expr("errorPart(100+/-5%;0)")
+            .unwrap()
+            .to_qalc_string(),
+        "5"
+    );
+    assert_eq!(
+        evaluate_expr("errorPart(100+/-5%;1)")
+            .unwrap()
+            .to_qalc_string(),
+        "0.05000000000"
+    );
+    assert_eq!(
         evaluate_expr("valuePart(2+/-0.002)")
             .unwrap()
             .to_qalc_string(),

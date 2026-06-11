@@ -2791,11 +2791,24 @@ impl Number {
     }
 
     fn error_part(&self) -> Self {
+        self.error_part_with_relative(false)
+    }
+
+    fn error_part_with_relative(&self, relative: bool) -> Self {
         let (real, imag) = self.to_canonical_real_imag();
         if !imag.is_real_zero() {
             return Self::from_real_value(NumberValue::NaN);
         }
         match real {
+            NumberValue::Uncertainty {
+                value, uncertainty, ..
+            } if relative => {
+                if value.is_real_zero() {
+                    Self::from_real_value(NumberValue::NaN)
+                } else {
+                    Self::from_uncertainty_error_value(uncertainty.div(&value.abs()))
+                }
+            }
             NumberValue::Uncertainty { uncertainty, .. } => {
                 Self::from_uncertainty_error_value(*uncertainty)
             }
@@ -4035,6 +4048,35 @@ fn parse_uncertainty_function_expression(s: &str) -> Result<Option<Number>, Stri
     Ok(Some(Number::new_uncertainty(value, uncertainty, false)))
 }
 
+fn parse_error_part_function_expression(s: &str) -> Result<Option<Number>, String> {
+    let trimmed = s.trim();
+    let Some(rest) = strip_function_name(trimmed, "errorPart") else {
+        return Ok(None);
+    };
+    let rest = rest.trim_start();
+    let Some(inner) = rest
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return Err(format!("Expected errorPart(value; relative): {trimmed}"));
+    };
+
+    let args = split_semicolon_arguments(inner);
+    if !(1..=2).contains(&args.len()) {
+        return Err(format!("Failed to parse errorPart arguments: {trimmed}"));
+    }
+
+    let value = evaluate_expr(args[0])?;
+    let relative = if let Some(relative) = args.get(1) {
+        parse_boolean_argument(relative)
+            .ok_or_else(|| format!("Invalid errorPart relative flag: {relative}"))?
+    } else {
+        false
+    };
+
+    Ok(Some(value.error_part_with_relative(relative)))
+}
+
 fn split_semicolon_arguments(inner: &str) -> Vec<&str> {
     inner.split(';').map(str::trim).collect()
 }
@@ -4166,6 +4208,10 @@ fn next_literal(s: &str) -> Option<(&str, &str)> {
     }
 
     if let Some((lit, remaining)) = next_uncertainty_function_literal(s) {
+        return Some((lit, remaining));
+    }
+
+    if let Some((lit, remaining)) = next_error_part_function_literal(s) {
         return Some((lit, remaining));
     }
 
@@ -4311,6 +4357,11 @@ fn next_uncertainty_function_literal(s: &str) -> Option<(&str, &str)> {
     next_function_literal_after_name(s, after_name)
 }
 
+fn next_error_part_function_literal(s: &str) -> Option<(&str, &str)> {
+    let after_name = strip_function_name(s, "errorPart")?;
+    next_function_literal_after_name(s, after_name)
+}
+
 fn next_function_literal_after_name<'a>(
     s: &'a str,
     after_name: &str,
@@ -4346,6 +4397,11 @@ impl std::str::FromStr for Number {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
+
+        if let Some(error_part) = parse_error_part_function_expression(s)? {
+            return Ok(error_part);
+        }
+
         let split_parts = if s.contains("+/-") {
             let mut parts = s.split("+/-");
             let v = parts.next().unwrap().trim();
