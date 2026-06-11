@@ -308,8 +308,10 @@ fn fallback_disabled_by_env() -> bool {
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
     let settings = crate::session::NativeSessionSettings::from_raw(settings)?;
 
-    if let Some(output) = crate::numberbase::native_output(expr, settings) {
-        return Some(output);
+    if !settings.has_interval_display() {
+        if let Some(output) = crate::numberbase::native_output(expr, settings) {
+            return Some(output);
+        }
     }
 
     if !settings.is_numeric_scaffold_compatible() {
@@ -317,11 +319,20 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     }
 
     if expr == "native-scaffold-test" {
+        if settings.has_interval_display() {
+            return None;
+        }
         return Some("native-scaffold-test-success".to_string());
     }
 
     let evidence = native_numeric_evidence(expr)?;
     if settings.has_precision() && !evidence.supports_precision() {
+        return None;
+    }
+    if evidence.requires_interval_display() && !settings.has_interval_display() {
+        return None;
+    }
+    if settings.has_interval_display() && !evidence.requires_interval_display() {
         return None;
     }
 
@@ -335,6 +346,9 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         Ok(num) if !num.is_nan() => {
             let output = match profile {
                 PrintProfile::Api => num.to_string(),
+                PrintProfile::Qalc if settings.has_interval_display() => {
+                    num.to_qalc_interval_display_string(settings.precision_digits())?
+                }
                 PrintProfile::Qalc => {
                     num.to_qalc_string_with_precision(settings.precision_digits())
                 }
@@ -352,11 +366,16 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
 enum NativeNumericEvidence {
     DefaultOnly,
     Precision,
+    IntervalDisplay,
 }
 
 impl NativeNumericEvidence {
     const fn supports_precision(self) -> bool {
         matches!(self, Self::Precision)
+    }
+
+    const fn requires_interval_display(self) -> bool {
+        matches!(self, Self::IntervalDisplay)
     }
 }
 
@@ -364,6 +383,7 @@ fn native_numeric_evidence(expr: &str) -> Option<NativeNumericEvidence> {
     let trimmed = expr.trim();
     let evidence = match trimmed {
         "1/3" | "2 ^ 0.5" => NativeNumericEvidence::Precision,
+        "interval(5;2)" => NativeNumericEvidence::IntervalDisplay,
         "0"
         | "-0"
         | "123456789"
