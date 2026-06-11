@@ -312,9 +312,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return Some(output);
     }
 
-    if !settings.is_numeric_scaffold_compatible()
-        || (settings.has_precision() && !is_precision_vetted_native_numeric_expr(expr))
-    {
+    if !settings.is_numeric_scaffold_compatible() {
         return None;
     }
 
@@ -322,11 +320,18 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return Some("native-scaffold-test-success".to_string());
     }
 
-    if !is_vetted_native_numeric_expr(expr) {
+    let evidence = native_numeric_evidence(expr)?;
+    if settings.has_precision() && !evidence.supports_precision() {
         return None;
     }
 
-    match crate::number::evaluate_expr(expr) {
+    let evaluated = if settings.has_precision() {
+        crate::number::evaluate_expr_with_precision_digits(expr, settings.precision_digits())
+    } else {
+        crate::number::evaluate_expr(expr)
+    };
+
+    match evaluated {
         Ok(num) if !num.is_nan() => {
             let output = match profile {
                 PrintProfile::Api => num.to_string(),
@@ -343,74 +348,82 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     }
 }
 
-fn is_vetted_native_numeric_expr(expr: &str) -> bool {
-    let trimmed = expr.trim();
-    matches!(
-        trimmed,
-        "0" | "-0"
-            | "123456789"
-            | "-123"
-            | "-123456789"
-            | "-0."
-            | "0."
-            | "0.0"
-            | "0.01"
-            | ".123"
-            | "-."
-            | "."
-            | "12345.67890"
-            | "1e0"
-            | "-1e0"
-            | "1e3"
-            | "1E3"
-            | "1e-3"
-            | "1e10"
-            | "1e303"
-            | "6%2"
-            | "7 rem 2"
-            | "-8%3"
-            | "3 %% 2"
-            | "3 %% -2"
-            | "3 mod -2"
-            | "5//2"
-            | "5\\2"
-            | "5 div 2"
-            | "5 ^ 2"
-            | "2 ^ -3"
-            | "2 ^ 0.5"
-            | "(-2) ^ -3"
-            | "(1/2) ^ -3"
-            | "5 ** 3"
-            | "4 ** 3 ** 2"
-            | "1 + 1"
-            | "1 + 2"
-            | "5--2"
-            | "5---2"
-            | "-5-2"
-            | "2*3"
-            | "6/2"
-            | "1/2"
-            | "1/3"
-            | "i"
-            | "5i"
-            | "(1 + 2i) + (3 + 4i)"
-            | "(1 + 2i) * (3 + 4i)"
-            | "(1 + 2i) / (3 + 4i)"
-            | "2+/-0.002"
-            | "100+/-5%"
-            | "100+/-5 + 200+/-10%"
-            | "100+/-5% + 200+/-10%"
-            | "100+/-5% * 2"
-            | "20+/-3 + 10+/-4"
-            | "3+/-0.2 * 4+/-0.1"
-            | "12+/-0.5 / 3+/-0.2"
-            | "10 +/- 0"
-    )
+#[derive(Clone, Copy)]
+enum NativeNumericEvidence {
+    DefaultOnly,
+    Precision,
 }
 
-fn is_precision_vetted_native_numeric_expr(expr: &str) -> bool {
+impl NativeNumericEvidence {
+    const fn supports_precision(self) -> bool {
+        matches!(self, Self::Precision)
+    }
+}
+
+fn native_numeric_evidence(expr: &str) -> Option<NativeNumericEvidence> {
     let trimmed = expr.trim();
-    matches!(trimmed, "1/3")
+    let evidence = match trimmed {
+        "1/3" | "2 ^ 0.5" => NativeNumericEvidence::Precision,
+        "0"
+        | "-0"
+        | "123456789"
+        | "-123"
+        | "-123456789"
+        | "-0."
+        | "0."
+        | "0.0"
+        | "0.01"
+        | ".123"
+        | "-."
+        | "."
+        | "12345.67890"
+        | "1e0"
+        | "-1e0"
+        | "1e3"
+        | "1E3"
+        | "1e-3"
+        | "1e10"
+        | "1e303"
+        | "6%2"
+        | "7 rem 2"
+        | "-8%3"
+        | "3 %% 2"
+        | "3 %% -2"
+        | "3 mod -2"
+        | "5//2"
+        | "5\\2"
+        | "5 div 2"
+        | "5 ^ 2"
+        | "2 ^ -3"
+        | "(-2) ^ -3"
+        | "(1/2) ^ -3"
+        | "5 ** 3"
+        | "4 ** 3 ** 2"
+        | "1 + 1"
+        | "1 + 2"
+        | "5--2"
+        | "5---2"
+        | "-5-2"
+        | "2*3"
+        | "6/2"
+        | "1/2"
+        | "i"
+        | "5i"
+        | "(1 + 2i) + (3 + 4i)"
+        | "(1 + 2i) * (3 + 4i)"
+        | "(1 + 2i) / (3 + 4i)"
+        | "2+/-0.002"
+        | "100+/-5%"
+        | "100+/-5 + 200+/-10%"
+        | "100+/-5% + 200+/-10%"
+        | "100+/-5% * 2"
+        | "20+/-3 + 10+/-4"
+        | "3+/-0.2 * 4+/-0.1"
+        | "12+/-0.5 / 3+/-0.2"
+        | "10 +/- 0" => NativeNumericEvidence::DefaultOnly,
+        _ => return None,
+    };
+    Some(evidence)
 }
 
 /// Custom error type for `Calculator` evaluations.

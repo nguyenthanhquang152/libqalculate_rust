@@ -1618,6 +1618,26 @@ impl NumberValue {
         }
     }
 
+    fn rational_noninteger_pow_with_precision_floor(
+        &self,
+        other: &Self,
+        min_precision_bits: u32,
+    ) -> Option<Self> {
+        let (NumberValue::Rational(base), NumberValue::Rational(exponent)) = (self, other) else {
+            return None;
+        };
+        if exponent.value.denom() == &1 {
+            return None;
+        }
+
+        let prec = min_precision_bits.max(53);
+        let base = rug::Float::with_val(prec, &base.value);
+        let exponent = rug::Float::with_val(prec, &exponent.value);
+        Some(NumberValue::Float(Float {
+            value: rug::Float::with_val(prec, base.pow(exponent)),
+        }))
+    }
+
     /// Natural logarithm of the value.
     pub fn ln(&self) -> Self {
         match self {
@@ -2938,7 +2958,7 @@ impl Number {
     }
 
     /// Formats this number for qalc-profile native evidence with a requested
-    /// decimal digit count for nonterminating exact-rational output.
+    /// decimal digit count for precision-sensitive numeric output.
     pub(crate) fn to_qalc_string_with_precision(&self, precision_digits: usize) -> String {
         let (real, imag) = self.to_canonical_real_imag();
         if imag.is_real_zero() {
@@ -2985,11 +3005,16 @@ impl Number {
         let (c, d) = other.to_canonical_real_imag();
         if b.is_real_zero() && d.is_real_zero() {
             let r = a.pow(&c);
+            let precision = std::cmp::max(
+                std::cmp::max(self.precision, other.precision),
+                r.precision(),
+            );
+            let approximate = self.approximate || other.approximate || r.approximate();
             Number {
                 value: r,
                 imaginary: None,
-                precision: std::cmp::max(self.precision, other.precision),
-                approximate: self.approximate || other.approximate,
+                precision,
+                approximate,
                 is_imaginary: false,
             }
         } else {
@@ -3003,6 +3028,33 @@ impl Number {
                 approximate: true,
                 is_imaginary: false,
             }
+        }
+    }
+
+    fn pow_with_context(&self, other: &Self, context: EvalContext) -> Self {
+        let (a, b) = self.to_canonical_real_imag();
+        let (c, d) = other.to_canonical_real_imag();
+        if b.is_real_zero() && d.is_real_zero() {
+            let r = a
+                .rational_noninteger_pow_with_precision_floor(
+                    &c,
+                    context.min_float_precision_bits(),
+                )
+                .unwrap_or_else(|| a.pow(&c));
+            let precision = std::cmp::max(
+                std::cmp::max(self.precision, other.precision),
+                r.precision(),
+            );
+            let approximate = self.approximate || other.approximate || r.approximate();
+            Number {
+                value: r,
+                imaginary: None,
+                precision,
+                approximate,
+                is_imaginary: false,
+            }
+        } else {
+            self.pow(other)
         }
     }
 }
@@ -3774,8 +3826,40 @@ fn strip_word_operator<'a>(s: &'a str, operator: &str, has_left_boundary: bool) 
     Some(remaining)
 }
 
+#[derive(Clone, Copy)]
+struct EvalContext {
+    min_float_precision_bits: u32,
+}
+
+impl EvalContext {
+    const DEFAULT: Self = Self {
+        min_float_precision_bits: 53,
+    };
+
+    fn from_precision_digits(precision_digits: usize) -> Self {
+        Self {
+            min_float_precision_bits: qalc_decimal_precision_bits(precision_digits),
+        }
+    }
+
+    const fn min_float_precision_bits(self) -> u32 {
+        self.min_float_precision_bits
+    }
+}
+
 /// Evaluates a basic mathematical expression containing numbers, arithmetic operators, parentheses, and uncertainty.
 pub fn evaluate_expr(s: &str) -> Result<Number, String> {
+    evaluate_expr_with_context(s, EvalContext::DEFAULT)
+}
+
+pub(crate) fn evaluate_expr_with_precision_digits(
+    s: &str,
+    precision_digits: usize,
+) -> Result<Number, String> {
+    evaluate_expr_with_context(s, EvalContext::from_precision_digits(precision_digits))
+}
+
+fn evaluate_expr_with_context(s: &str, context: EvalContext) -> Result<Number, String> {
     let mut tokens = Vec::new();
     let mut rest = s.trim();
     let mut has_word_operator_left_boundary = false;
@@ -3847,7 +3931,11 @@ pub fn evaluate_expr(s: &str) -> Result<Number, String> {
         }
     }
 
-    let mut parser = ExprParser { tokens, pos: 0 };
+    let mut parser = ExprParser {
+        tokens,
+        pos: 0,
+        context,
+    };
     let result = parser.parse_expr(0)?;
     if parser.pos == parser.tokens.len() {
         Ok(result)
@@ -3877,6 +3965,7 @@ enum Token {
 struct ExprParser {
     tokens: Vec<Token>,
     pos: usize,
+    context: EvalContext,
 }
 
 impl ExprParser {
@@ -3961,7 +4050,7 @@ impl ExprParser {
                 Token::OpRem => lhs.rem(&rhs),
                 Token::OpMod => lhs.modulo(&rhs),
                 Token::OpIntDiv => lhs.int_div(&rhs),
-                Token::OpPow => lhs.pow(&rhs),
+                Token::OpPow => lhs.pow_with_context(&rhs, self.context),
                 _ => unreachable!(),
             };
         }
