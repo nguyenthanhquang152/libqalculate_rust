@@ -338,7 +338,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     if evidence.requires_precision() && !settings.has_precision() {
         return None;
     }
-    if settings.has_interval_calculation() && !evidence.requires_interval_calculation() {
+    if settings.has_interval_calculation() && !evidence.allows_interval_calculation() {
         return None;
     }
     if evidence.requires_interval_display() && !settings.has_interval_display() {
@@ -436,6 +436,10 @@ impl NativeNumericEvidence {
         matches!(self, Self::IntervalArithmetic)
     }
 
+    const fn allows_interval_calculation(self) -> bool {
+        matches!(self, Self::IntervalDisplay | Self::IntervalArithmetic)
+    }
+
     const fn preserves_float_uncertainty_precision(self) -> bool {
         matches!(self, Self::PreciseFloatUncertainty)
     }
@@ -467,6 +471,14 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("(2 ^ 0.5) + 1/3", NativeNumericEvidence::PrecisionRequired),
     ("interval(5;2)", NativeNumericEvidence::IntervalDisplay),
     (
+        "interval(-infinity;5)",
+        NativeNumericEvidence::IntervalDisplay,
+    ),
+    (
+        "interval(4;infinity)",
+        NativeNumericEvidence::IntervalDisplay,
+    ),
+    (
         "interval(1;2) + interval(3;4)",
         NativeNumericEvidence::IntervalArithmetic,
     ),
@@ -480,6 +492,34 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ),
     (
         "interval(4;6) / interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(-infinity;5) + interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(-infinity;5) - interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(-infinity;5) * interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(4;infinity) + interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(4;infinity) - interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(4;infinity) * interval(2;3)",
+        NativeNumericEvidence::IntervalArithmetic,
+    ),
+    (
+        "interval(4;infinity) / 2",
         NativeNumericEvidence::IntervalArithmetic,
     ),
     ("ln(0)", NativeNumericEvidence::DefaultOnly),

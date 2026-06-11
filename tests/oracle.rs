@@ -1083,11 +1083,33 @@ fn focused_epic2_interval_display_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 1] = [(
-        "interval-function-normalizes-reversed-bounds",
-        "interval(5;2)",
-        &["/set interval display 2"],
-    )];
+    let cases: [NativeOracleCase<'_>; 5] = [
+        (
+            "interval-function-normalizes-reversed-bounds",
+            "interval(5;2)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-lower-infinity-endpoint",
+            "interval(-infinity;5)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-upper-infinity-endpoint",
+            "interval(4;infinity)",
+            &["/set interval display 2"],
+        ),
+        (
+            "interval-function-lower-infinity-endpoint-with-ic2",
+            "interval(-infinity;5)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-function-upper-infinity-endpoint-with-ic2",
+            "interval(4;infinity)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+    ];
 
     assert_native_oracle_cases(&qalc, &defs, &cases);
 }
@@ -1103,7 +1125,7 @@ fn focused_epic2_interval_arithmetic_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 4] = [
+    let cases: [NativeOracleCase<'_>; 11] = [
         (
             "interval-addition-closed-finite-endpoint-mode",
             "interval(1;2) + interval(3;4)",
@@ -1124,6 +1146,41 @@ fn focused_epic2_interval_arithmetic_oracle_cases() {
             "interval(4;6) / interval(2;3)",
             &["/set interval display 2", "/set ic 2"],
         ),
+        (
+            "interval-addition-lower-infinity-endpoint-mode",
+            "interval(-infinity;5) + interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-subtraction-lower-infinity-endpoint-mode",
+            "interval(-infinity;5) - interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-multiplication-lower-infinity-endpoint-mode",
+            "interval(-infinity;5) * interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-addition-upper-infinity-endpoint-mode",
+            "interval(4;infinity) + interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-subtraction-upper-infinity-endpoint-mode",
+            "interval(4;infinity) - interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-multiplication-upper-infinity-endpoint-mode",
+            "interval(4;infinity) * interval(2;3)",
+            &["/set interval display 2", "/set ic 2"],
+        ),
+        (
+            "interval-scalar-division-upper-infinity-endpoint-mode",
+            "interval(4;infinity) / 2",
+            &["/set interval display 2", "/set ic 2"],
+        ),
     ];
 
     assert_native_oracle_cases(&qalc, &defs, &cases);
@@ -1141,6 +1198,7 @@ fn focused_epic2_interval_arithmetic_requires_ic2_guard() {
 
     let defs = defs_dir();
     let expression = "interval(-2;3) * interval(-4;5)";
+    let infinity_expression = "interval(4;infinity) + interval(2;3)";
     let display_only = [SessionCommand {
         raw: "/set interval display 2".to_string(),
     }];
@@ -1168,6 +1226,19 @@ fn focused_epic2_interval_arithmetic_requires_ic2_guard() {
         fallback_state,
         FallbackState::Disabled.label(),
         "Rust must not claim native interval arithmetic without /set ic 2"
+    );
+
+    let rust_infinity_display_only =
+        run_rust_expression(infinity_expression, &display_only, &defs, true, true);
+    let infinity_fallback_state = oracle_fallback_gate::fallback_state_label(
+        rust_infinity_display_only.fallback_state,
+        false,
+    );
+
+    assert_eq!(
+        infinity_fallback_state,
+        FallbackState::Disabled.label(),
+        "Rust must not claim native infinity interval arithmetic without /set ic 2"
     );
 }
 
