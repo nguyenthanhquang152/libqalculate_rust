@@ -4349,6 +4349,68 @@ impl EvalContext {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EqualityOperator {
+    Equal,
+    NotEqual,
+}
+
+fn split_top_level_equality(s: &str) -> Option<(&str, EqualityOperator, &str)> {
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+
+    for (idx, ch) in s.char_indices() {
+        match ch {
+            '(' if bracket_depth == 0 => paren_depth += 1,
+            ')' if bracket_depth == 0 => paren_depth = paren_depth.saturating_sub(1),
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '!' if paren_depth == 0 && bracket_depth == 0 => {
+                if let Some(rhs) = s[idx..].strip_prefix("!=") {
+                    return Some((&s[..idx], EqualityOperator::NotEqual, rhs));
+                }
+            }
+            '≠' if paren_depth == 0 && bracket_depth == 0 => {
+                let rhs_start = idx + ch.len_utf8();
+                return Some((&s[..idx], EqualityOperator::NotEqual, &s[rhs_start..]));
+            }
+            '=' if paren_depth == 0 && bracket_depth == 0 => {
+                if s[..idx]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|previous| matches!(previous, '<' | '>' | '!'))
+                {
+                    continue;
+                }
+
+                let rhs = s[idx..].strip_prefix("==").unwrap_or(&s[idx + 1..]);
+                return Some((&s[..idx], EqualityOperator::Equal, rhs));
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+pub(crate) fn evaluate_equality_expr(s: &str) -> Result<Option<bool>, String> {
+    let Some((lhs, operator, rhs)) = split_top_level_equality(s) else {
+        return Ok(None);
+    };
+
+    let lhs = lhs.trim();
+    let rhs = rhs.trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return Err("Expected operands around equality operator".to_string());
+    }
+
+    let equal = evaluate_expr(lhs)? == evaluate_expr(rhs)?;
+    Ok(Some(match operator {
+        EqualityOperator::Equal => equal,
+        EqualityOperator::NotEqual => !equal,
+    }))
+}
+
 /// Evaluates a basic mathematical expression containing numbers, arithmetic operators, parentheses, and uncertainty.
 pub fn evaluate_expr(s: &str) -> Result<Number, String> {
     evaluate_expr_with_context(s, EvalContext::DEFAULT)
