@@ -1640,14 +1640,25 @@ impl NumberValue {
 
     /// Natural logarithm of the value.
     pub fn ln(&self) -> Self {
+        self.ln_with_precision_floor(53)
+    }
+
+    fn ln_with_precision_floor(&self, min_precision_bits: u32) -> Self {
         match self {
             NumberValue::Rational(r) => {
-                let value = rug::Float::with_val(53, &r.value).ln();
-                NumberValue::Float(Float { value })
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).ln();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
             }
-            NumberValue::Float(f) => NumberValue::Float(Float {
-                value: f.value.clone().ln(),
-            }),
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).ln();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
             NumberValue::Interval { lower, upper } => NumberValue::Interval {
                 lower: Float {
                     value: lower.value.clone().ln(),
@@ -1661,7 +1672,7 @@ impl NumberValue {
                 uncertainty,
                 is_relative,
             } => {
-                let val = value.ln();
+                let val = value.ln_with_precision_floor(min_precision_bits);
                 let unc = if uncertainty.is_real_zero() {
                     NumberValue::Rational(Rational::from_i32(0))
                 } else {
@@ -1674,9 +1685,11 @@ impl NumberValue {
                 }
             }
             _ => {
-                let f = to_float_val(self);
+                let f =
+                    to_float_val_rnd(self, min_precision_bits.max(53), rug::float::Round::Nearest);
+                let prec = min_precision_bits.max(f.prec());
                 NumberValue::Float(Float {
-                    value: f.value.clone().ln(),
+                    value: rug::Float::with_val(prec, f.value.clone().ln()),
                 })
             }
         }
@@ -1731,6 +1744,10 @@ impl NumberValue {
     }
     /// Returns the square root of the number value.
     pub fn sqrt(&self) -> Self {
+        self.sqrt_with_precision_floor(53)
+    }
+
+    fn sqrt_with_precision_floor(&self, min_precision_bits: u32) -> Self {
         match self {
             NumberValue::Rational(r) => {
                 if r.is_negative() {
@@ -1743,9 +1760,10 @@ impl NumberValue {
                             value: rug::Rational::from((n_sqrt, d_sqrt)),
                         })
                     } else {
-                        let f_val = rug::Float::with_val(53, &r.value);
+                        let prec = min_precision_bits.max(53);
+                        let f_val = rug::Float::with_val(prec, &r.value);
                         NumberValue::Float(Float {
-                            value: f_val.sqrt(),
+                            value: rug::Float::with_val(prec, f_val.sqrt()),
                         })
                     }
                 }
@@ -1754,8 +1772,10 @@ impl NumberValue {
                 if f.value.is_sign_negative() && !f.value.is_zero() {
                     NumberValue::NaN
                 } else {
+                    let prec = min_precision_bits.max(f.prec());
+                    let value = rug::Float::with_val(prec, &f.value).sqrt();
                     NumberValue::Float(Float {
-                        value: f.value.clone().sqrt(),
+                        value: rug::Float::with_val(prec, value),
                     })
                 }
             }
@@ -1785,7 +1805,7 @@ impl NumberValue {
                 uncertainty,
                 is_relative,
             } => {
-                let val_sqrt = value.sqrt();
+                let val_sqrt = value.sqrt_with_precision_floor(min_precision_bits);
                 if val_sqrt.is_nan() {
                     NumberValue::NaN
                 } else {
@@ -4499,15 +4519,19 @@ impl UnaryFunction {
         }
     }
 
-    fn apply(self, arg: Number) -> Number {
+    fn apply(self, arg: Number, context: EvalContext) -> Number {
         match self {
             Self::Conjugate => arg.conjugate(),
             Self::ErrorPart => arg.error_part(),
             Self::LowerEndpoint => arg.lower_endpoint(),
-            Self::NaturalLog => apply_real_unary_value(arg, NumberValue::ln),
+            Self::NaturalLog => apply_real_unary_value(arg, |value| {
+                value.ln_with_precision_floor(context.min_float_precision_bits())
+            }),
             Self::Midpoint => arg.midpoint(),
             Self::Norm => arg.norm(),
-            Self::SquareRoot => apply_real_unary_value(arg, NumberValue::sqrt),
+            Self::SquareRoot => apply_real_unary_value(arg, |value| {
+                value.sqrt_with_precision_floor(context.min_float_precision_bits())
+            }),
             Self::UpperEndpoint => arg.upper_endpoint(),
             Self::ValuePart => arg.value_part(),
         }
@@ -4819,7 +4843,7 @@ impl ExprParser {
             }
             Some(Token::UnaryFunction(function)) => {
                 let arg = self.parse_function_argument(function.name())?;
-                Ok(function.apply(arg))
+                Ok(function.apply(arg, self.context))
             }
             Some(Token::OpAdd) => self.parse_expr(3),
             Some(Token::OpSub) => {

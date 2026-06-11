@@ -1112,7 +1112,7 @@ fn focused_epic2_float_precision_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 18] = [
+    let cases: [NativeOracleCase<'_>; 28] = [
         (
             "rational-output-precision-context",
             "1/3",
@@ -1121,6 +1121,52 @@ fn focused_epic2_float_precision_oracle_cases() {
         (
             "float-power-precision-context",
             "2 ^ 0.5",
+            &["/set precision 128"],
+        ),
+        ("float-ln-two-precision-64", "ln(2)", &["/set precision 64"]),
+        (
+            "float-sqrt-two-precision-64",
+            "sqrt(2)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-sqrt-exact-square-precision-64",
+            "sqrt(4)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-ln-zero-precision-64",
+            "ln(0)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-ln-plus-sqrt-precision-64",
+            "ln(2) + sqrt(2)",
+            &["/set precision 64"],
+        ),
+        (
+            "float-ln-two-precision-128",
+            "ln(2)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-sqrt-two-precision-128",
+            "sqrt(2)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-sqrt-exact-square-precision-128",
+            "sqrt(4)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-ln-zero-precision-128",
+            "ln(0)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-ln-plus-sqrt-precision-128",
+            "ln(2) + sqrt(2)",
             &["/set precision 128"],
         ),
         (
