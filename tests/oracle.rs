@@ -919,6 +919,14 @@ fn focused_epic2_native_numeric_oracle_cases() {
         ("float-positive-infinity-multiplication", "infinity * 2"),
         ("float-negative-infinity-multiplication", "infinity * -2"),
         ("float-division-by-positive-infinity", "1 / infinity"),
+        ("float-positive-infinity-division", "infinity / 2"),
+        ("float-positive-infinity-negative-division", "infinity / -2"),
+        ("float-negative-infinity-division", "-infinity / 2"),
+        (
+            "float-negative-infinity-negative-division",
+            "-infinity / -2",
+        ),
+        ("float-division-by-negative-infinity", "1 / -infinity"),
         ("nonterminating-rational-qalc-format", "1/3"),
         ("fixed-power-of-ten-qalc-format", "1e10"),
         ("original-scaffold-addition", "1 + 1"),
@@ -1050,7 +1058,7 @@ fn focused_epic2_float_precision_oracle_cases() {
     };
 
     let defs = defs_dir();
-    let cases: [NativeOracleCase<'_>; 7] = [
+    let cases: [NativeOracleCase<'_>; 18] = [
         (
             "rational-output-precision-context",
             "1/3",
@@ -1084,6 +1092,61 @@ fn focused_epic2_float_precision_oracle_cases() {
         (
             "mixed-rational-float-addition-precision-context",
             "(2 ^ 0.5) + 1/3",
+            &["/set precision 128"],
+        ),
+        (
+            "decimal-addition-precision-64",
+            "0.1 + 0.2",
+            &["/set precision 64"],
+        ),
+        (
+            "decimal-addition-precision-128",
+            "0.1 + 0.2",
+            &["/set precision 128"],
+        ),
+        (
+            "scientific-addition-precision-64",
+            "1.25e-20 + 2.5e-20",
+            &["/set precision 64"],
+        ),
+        (
+            "scientific-addition-precision-128",
+            "1.25e-20 + 2.5e-20",
+            &["/set precision 128"],
+        ),
+        (
+            "scientific-division-precision-64",
+            "2.5e3 / 4",
+            &["/set precision 64"],
+        ),
+        (
+            "scientific-division-precision-128",
+            "2.5e3 / 4",
+            &["/set precision 128"],
+        ),
+        (
+            "float-less-than-precision-context",
+            "(2 ^ 0.5) < (3 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-equality-true-precision-context",
+            "(2 ^ 0.5) = (2 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "float-equality-false-precision-context",
+            "(2 ^ 0.5) = (3 ^ 0.5)",
+            &["/set precision 128"],
+        ),
+        (
+            "mixed-rational-float-greater-than-precision-context",
+            "(2 ^ 0.5) + 1/3 > 1",
+            &["/set precision 128"],
+        ),
+        (
+            "mixed-rational-float-less-than-false-precision-context",
+            "(2 ^ 0.5) < 1/3",
             &["/set precision 128"],
         ),
     ];

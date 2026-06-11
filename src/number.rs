@@ -4402,6 +4402,20 @@ fn split_top_level_relation(s: &str) -> Option<(&str, RelationOperator, &str)> {
 /// `Ok(None)` means the relation should stay symbolic/unknown for the native
 /// evidence gate, matching upstream behavior for non-equal complex ordering.
 pub(crate) fn evaluate_relation_expr(s: &str) -> Result<Option<bool>, String> {
+    evaluate_relation_expr_with_context(s, EvalContext::DEFAULT)
+}
+
+pub(crate) fn evaluate_relation_expr_with_precision_digits(
+    s: &str,
+    precision_digits: usize,
+) -> Result<Option<bool>, String> {
+    evaluate_relation_expr_with_context(s, EvalContext::from_precision_digits(precision_digits))
+}
+
+fn evaluate_relation_expr_with_context(
+    s: &str,
+    context: EvalContext,
+) -> Result<Option<bool>, String> {
     let Some((lhs, operator, rhs)) = split_top_level_relation(s) else {
         return Ok(None);
     };
@@ -4412,8 +4426,8 @@ pub(crate) fn evaluate_relation_expr(s: &str) -> Result<Option<bool>, String> {
         return Err("Expected operands around relation operator".to_string());
     }
 
-    let lhs = evaluate_expr(lhs)?;
-    let rhs = evaluate_expr(rhs)?;
+    let lhs = evaluate_expr_with_context(lhs, context)?;
+    let rhs = evaluate_expr_with_context(rhs, context)?;
     let equal = lhs == rhs;
     let value = match operator {
         RelationOperator::Equal => Some(equal),

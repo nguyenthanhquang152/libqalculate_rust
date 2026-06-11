@@ -831,6 +831,44 @@ fn precision_context_applies_to_real_float_arithmetic() {
 }
 
 #[test]
+fn precision_context_decimal_and_scientific_rows_stay_exact_without_f64_shortcuts() {
+    for precision_digits in [64, 128] {
+        for (expression, expected) in [
+            ("0.1 + 0.2", "0.3"),
+            ("1.25e-20 + 2.5e-20", "0.0000000000000000000375"),
+            ("2.5e3 / 4", "625"),
+        ] {
+            let value = evaluate_expr_with_precision_digits(expression, precision_digits)
+                .expect("precision-context decimal/scientific row should evaluate");
+            assert_eq!(
+                value.to_qalc_string_with_precision(precision_digits),
+                expected,
+                "{expression} should match qalc output at precision {precision_digits}"
+            );
+            assert!(
+                !value.is_nan(),
+                "{expression} should not collapse through an f64 NaN shortcut"
+            );
+        }
+    }
+}
+
+#[test]
+fn precision_context_real_float_comparisons_match_upstream_booleans() {
+    for (expression, expected) in [
+        ("(2 ^ 0.5) < (3 ^ 0.5)", Some(true)),
+        ("(2 ^ 0.5) = (2 ^ 0.5)", Some(true)),
+        ("(2 ^ 0.5) = (3 ^ 0.5)", Some(false)),
+        ("(2 ^ 0.5) + 1/3 > 1", Some(true)),
+        ("(2 ^ 0.5) < 1/3", Some(false)),
+    ] {
+        let actual = evaluate_relation_expr_with_precision_digits(expression, 128)
+            .expect("precision-context comparison should parse");
+        assert_eq!(actual, expected, "{expression}");
+    }
+}
+
+#[test]
 fn float_ln_preserves_operand_precision_without_f64_roundtrip() {
     let input = NumberValue::Float(Float {
         value: rug::Float::with_val(200, 2),
