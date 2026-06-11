@@ -394,6 +394,12 @@ const NATIVE_BOOLEAN_EVIDENCE: &[&str] = &[
     "(1 + i) != (1 - i)",
     "(1 + i) ≠ (1 - i)",
     "(1 + i) != (1 + i)",
+    "(1 + i) < (1 + i)",
+    "(1 + i) <= (1 + i)",
+    "(1 + i) > (1 + i)",
+    "(1 + i) >= (1 + i)",
+    "(1 + i) ≤ (1 + i)",
+    "(1 + i) ≥ (1 + i)",
 ];
 
 fn native_boolean_evidence(expr: &str) -> Option<String> {
@@ -402,7 +408,7 @@ fn native_boolean_evidence(expr: &str) -> Option<String> {
         return None;
     }
 
-    crate::number::evaluate_equality_expr(trimmed)
+    crate::number::evaluate_relation_expr(trimmed)
         .ok()
         .flatten()
         .map(|value| value.to_string())

@@ -4350,12 +4350,29 @@ impl EvalContext {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EqualityOperator {
+enum RelationOperator {
     Equal,
     NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
 }
 
-fn split_top_level_equality(s: &str) -> Option<(&str, EqualityOperator, &str)> {
+const RELATION_OPERATORS: &[(&str, RelationOperator)] = &[
+    ("!=", RelationOperator::NotEqual),
+    ("==", RelationOperator::Equal),
+    ("<=", RelationOperator::LessEqual),
+    (">=", RelationOperator::GreaterEqual),
+    ("≠", RelationOperator::NotEqual),
+    ("≤", RelationOperator::LessEqual),
+    ("≥", RelationOperator::GreaterEqual),
+    ("<", RelationOperator::Less),
+    (">", RelationOperator::Greater),
+    ("=", RelationOperator::Equal),
+];
+
+fn split_top_level_relation(s: &str) -> Option<(&str, RelationOperator, &str)> {
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
 
@@ -4365,26 +4382,13 @@ fn split_top_level_equality(s: &str) -> Option<(&str, EqualityOperator, &str)> {
             ')' if bracket_depth == 0 => paren_depth = paren_depth.saturating_sub(1),
             '[' => bracket_depth += 1,
             ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '!' if paren_depth == 0 && bracket_depth == 0 => {
-                if let Some(rhs) = s[idx..].strip_prefix("!=") {
-                    return Some((&s[..idx], EqualityOperator::NotEqual, rhs));
+            _ if paren_depth == 0 && bracket_depth == 0 => {
+                let rest = &s[idx..];
+                for (token, operator) in RELATION_OPERATORS {
+                    if let Some(rhs) = rest.strip_prefix(token) {
+                        return Some((&s[..idx], *operator, rhs));
+                    }
                 }
-            }
-            '≠' if paren_depth == 0 && bracket_depth == 0 => {
-                let rhs_start = idx + ch.len_utf8();
-                return Some((&s[..idx], EqualityOperator::NotEqual, &s[rhs_start..]));
-            }
-            '=' if paren_depth == 0 && bracket_depth == 0 => {
-                if s[..idx]
-                    .chars()
-                    .next_back()
-                    .is_some_and(|previous| matches!(previous, '<' | '>' | '!'))
-                {
-                    continue;
-                }
-
-                let rhs = s[idx..].strip_prefix("==").unwrap_or(&s[idx + 1..]);
-                return Some((&s[..idx], EqualityOperator::Equal, rhs));
             }
             _ => {}
         }
@@ -4393,22 +4397,51 @@ fn split_top_level_equality(s: &str) -> Option<(&str, EqualityOperator, &str)> {
     None
 }
 
-pub(crate) fn evaluate_equality_expr(s: &str) -> Result<Option<bool>, String> {
-    let Some((lhs, operator, rhs)) = split_top_level_equality(s) else {
+/// Evaluates a top-level boolean relation.
+///
+/// `Ok(None)` means the relation should stay symbolic/unknown for the native
+/// evidence gate, matching upstream behavior for non-equal complex ordering.
+pub(crate) fn evaluate_relation_expr(s: &str) -> Result<Option<bool>, String> {
+    let Some((lhs, operator, rhs)) = split_top_level_relation(s) else {
         return Ok(None);
     };
 
     let lhs = lhs.trim();
     let rhs = rhs.trim();
     if lhs.is_empty() || rhs.is_empty() {
-        return Err("Expected operands around equality operator".to_string());
+        return Err("Expected operands around relation operator".to_string());
     }
 
-    let equal = evaluate_expr(lhs)? == evaluate_expr(rhs)?;
-    Ok(Some(match operator {
-        EqualityOperator::Equal => equal,
-        EqualityOperator::NotEqual => !equal,
-    }))
+    let lhs = evaluate_expr(lhs)?;
+    let rhs = evaluate_expr(rhs)?;
+    let equal = lhs == rhs;
+    let value = match operator {
+        RelationOperator::Equal => Some(equal),
+        RelationOperator::NotEqual => Some(!equal),
+        RelationOperator::Less if equal => Some(false),
+        RelationOperator::LessEqual if equal => Some(true),
+        RelationOperator::Greater if equal => Some(false),
+        RelationOperator::GreaterEqual if equal => Some(true),
+        RelationOperator::Less => lhs
+            .partial_cmp(&rhs)
+            .map(|ordering| matches!(ordering, std::cmp::Ordering::Less)),
+        RelationOperator::LessEqual => lhs.partial_cmp(&rhs).map(|ordering| {
+            matches!(
+                ordering,
+                std::cmp::Ordering::Less | std::cmp::Ordering::Equal
+            )
+        }),
+        RelationOperator::Greater => lhs
+            .partial_cmp(&rhs)
+            .map(|ordering| matches!(ordering, std::cmp::Ordering::Greater)),
+        RelationOperator::GreaterEqual => lhs.partial_cmp(&rhs).map(|ordering| {
+            matches!(
+                ordering,
+                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal
+            )
+        }),
+    };
+    Ok(value)
 }
 
 /// Evaluates a basic mathematical expression containing numbers, arithmetic operators, parentheses, and uncertainty.
