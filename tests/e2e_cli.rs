@@ -198,6 +198,49 @@ fn cli_applies_precision_setting_for_native_float_power() {
 }
 
 #[test]
+fn cli_applies_precision_setting_for_native_log_and_sqrt_functions() {
+    for (precision, expression, expected) in [
+        (
+            "64",
+            "ln(2)",
+            "0.6931471805599453094172321214581765680755001343602552541206800095\n",
+        ),
+        (
+            "64",
+            "sqrt(2)",
+            "1.414213562373095048801688724209698078569671875376948073176679738\n",
+        ),
+        ("64", "sqrt(4)", "2\n"),
+        ("64", "ln(0)", "−∞\n"),
+        (
+            "128",
+            "ln(2)",
+            "0.69314718055994530941723212145817656807550013436025525412068000949339362196969471560586332699641868754200148102057068573368552024\n",
+        ),
+        (
+            "128",
+            "sqrt(2)",
+            "1.4142135623730950488016887242096980785696718753769480731766797379907324784621070388503875343276415727350138462309122970249248361\n",
+        ),
+        ("128", "sqrt(4)", "2\n"),
+        ("128", "ln(0)", "−∞\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", &format!("precision {precision}"), "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
 fn cli_applies_precision_setting_for_native_real_float_arithmetic() {
     for (expression, expected) in [
         (
@@ -292,6 +335,7 @@ fn cli_rejects_native_real_float_arithmetic_without_precision_setting() {
         "(2 ^ 0.5) * (3 ^ 0.5)",
         "(3 ^ 0.5) / (2 ^ 0.5)",
         "(2 ^ 0.5) + 1/3",
+        "ln(2) + sqrt(2)",
     ] {
         let invalid_defs = tempdir().expect("temp dir should be created");
         let mut cmd = qalc_rs();

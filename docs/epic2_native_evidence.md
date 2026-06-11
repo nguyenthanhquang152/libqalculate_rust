@@ -192,11 +192,14 @@ Refs #12 precision-context rows:
   unit tests assert 200-bit `ln(2)` and `2^0.5` retain MPFR-scale precision
   rather than a lifted 53-bit result.
 - The fallback-disabled native expression scaffold now exposes only the focused
-  `ln(...)` and `sqrt(...)` function cases promoted by oracle evidence. Current
+  `ln(...)` and `sqrt(...)` function cases promoted by oracle evidence. Default
   evidence covers `ln(0) -> −∞`, `ln(2) -> 0.6931471806`,
   `ln(5+/-0.3) -> 1.609±0.060`, `sqrt(2) -> 1.414213562`, and exact-square
-  `sqrt(4) -> 2`; broader special functions, negative-domain behavior, and
-  symbolic simplifications remain outside the native gate.
+  `sqrt(4) -> 2`. Refs #12 precision-context evidence now also covers scalar
+  function rows under `/set precision 64` and `/set precision 128`:
+  `ln(0)`, `ln(2)`, `sqrt(2)`, `sqrt(4)`, and `ln(2) + sqrt(2)`; broader
+  special functions, negative-domain behavior, symbolic simplifications, and
+  full MPFR option parity remain outside the native gate.
 - Fallback-disabled native Refs #12 special-value evidence covers alphabetic
   infinity literals and selected arithmetic: `infinity -> +∞`,
   `-infinity -> −∞`, `infinity + 1 -> +∞`, `-infinity - 1 -> −∞`,
@@ -394,6 +397,7 @@ rtk cargo test --lib test_arbitrary_precision_rationals_do_not_fall_back_to_i128
 rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
 rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
 rtk cargo test --lib precision_context_applies_to_noninteger_rational_power -- --nocapture
+rtk cargo test --lib precision_context_applies_to_scalar_log_and_sqrt_functions -- --nocapture
 rtk cargo test --lib precision_context_applies_to_real_float_arithmetic -- --nocapture
 rtk cargo test --lib precision_context_decimal_and_scientific_rows_stay_exact_without_f64_shortcuts -- --nocapture
 rtk cargo test --lib precision_context_real_float_comparisons_match_upstream_booleans -- --nocapture
@@ -402,7 +406,9 @@ rtk cargo test --lib qalc_profile_formats_infinities_with_upstream_signs -- --no
 rtk cargo test --lib special_value_literals_parse_in_expressions_with_name_boundaries -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_rational_output -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_float_power -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_log_and_sqrt_functions -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_arithmetic -- --nocapture
+rtk cargo test --test e2e_cli cli_rejects_native_real_float_arithmetic_without_precision_setting -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_decimal_scientific_float_arithmetic -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_real_float_comparisons -- --exact --nocapture
 rtk cargo test --test e2e_cli cli_runs_native_float_log_and_sqrt_functions -- --nocapture

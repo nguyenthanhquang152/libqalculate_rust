@@ -792,6 +792,60 @@ fn precision_context_applies_to_noninteger_rational_power() {
 }
 
 #[test]
+fn precision_context_applies_to_scalar_log_and_sqrt_functions() {
+    for (precision_digits, expression, expected) in [
+        (
+            64,
+            "ln(2)",
+            "0.6931471805599453094172321214581765680755001343602552541206800095",
+        ),
+        (
+            64,
+            "sqrt(2)",
+            "1.414213562373095048801688724209698078569671875376948073176679738",
+        ),
+        (64, "sqrt(4)", "2"),
+        (64, "ln(0)", "-∞"),
+        (
+            64,
+            "ln(2) + sqrt(2)",
+            "2.107360742933040358218920845667874646645172009737203327297359747",
+        ),
+        (
+            128,
+            "ln(2)",
+            "0.69314718055994530941723212145817656807550013436025525412068000949339362196969471560586332699641868754200148102057068573368552024",
+        ),
+        (
+            128,
+            "sqrt(2)",
+            "1.4142135623730950488016887242096980785696718753769480731766797379907324784621070388503875343276415727350138462309122970249248361",
+        ),
+        (128, "sqrt(4)", "2"),
+        (128, "ln(0)", "-∞"),
+        (
+            128,
+            "ln(2) + sqrt(2)",
+            "2.1073607429330403582189208456678746466451720097372033272973597474841261004318017544562508613240602602770153272514829827586103563",
+        ),
+    ] {
+        let value = evaluate_expr_with_precision_digits(expression, precision_digits)
+            .expect("precision-context scalar function should evaluate natively");
+        assert_eq!(
+            value.to_qalc_string_with_precision(precision_digits),
+            expected,
+            "{expression} should match qalc output at precision {precision_digits}"
+        );
+        assert!(
+            value.precision() >= 0
+                && (matches!(expression, "sqrt(4)" | "ln(0)")
+                    || value.precision() as usize >= precision_digits),
+            "{expression} should keep precision context when result is approximate"
+        );
+    }
+}
+
+#[test]
 fn precision_context_applies_to_real_float_arithmetic() {
     for (expression, expected) in [
         (
