@@ -50,6 +50,10 @@ focused expressions with fallback disabled:
 - `(1 + 2i) / (3 + 4i)`
 - `i^2`
 - `(2i - 3)^(3.2i + 3)`
+- `ln(0)`
+- `ln(2)`
+- `sqrt(2)`
+- `sqrt(4)`
 - `1/3`
 - `1e10`
 - `1 + 1`
@@ -98,10 +102,16 @@ focused expressions with fallback disabled:
   `4 ** 3 ** 2` are promoted to fallback-disabled native evidence; focused
   oracle probes also cover `2 ^ -3`, `(-2) ^ -3`, `(1/2) ^ -3`, and the
   default-precision non-integer float result for `2 ^ 0.5`.
-- Native float `ln` and non-integer float `pow` arithmetic now stay in MPFR
-  instead of converting through `f64` for semantic arithmetic. Focused unit
-  tests assert 200-bit `ln(2)` and `2^0.5` retain MPFR-scale precision rather
-  than a lifted 53-bit result.
+- Native float `ln`, `sqrt`, and non-integer float `pow` arithmetic now stay in
+  MPFR instead of converting through `f64` for semantic arithmetic. Focused
+  unit tests assert 200-bit `ln(2)` and `2^0.5` retain MPFR-scale precision
+  rather than a lifted 53-bit result.
+- The fallback-disabled native expression scaffold now exposes only the focused
+  `ln(...)` and `sqrt(...)` function cases promoted by oracle evidence. Current
+  evidence covers `ln(0) -> −∞`, `ln(2) -> 0.6931471806`, `sqrt(2) ->
+  1.414213562`, and exact-square `sqrt(4) -> 2`; broader special functions,
+  negative-domain behavior, and symbolic simplifications remain outside the
+  native gate.
 - Exact rational remainder and modulo now match upstream qalc for the promoted
   operator rows. `%` and `rem` use quotient truncation toward zero, while `%%`
   and `mod` use floor-division semantics, including negative operands and
@@ -173,8 +183,11 @@ rtk cargo test --lib test_arbitrary_precision_rationals_do_not_fall_back_to_i128
 rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
 rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
 rtk cargo test --lib precision_context_applies_to_noninteger_rational_power -- --nocapture
+rtk cargo test --lib native_log_and_sqrt_functions_match_qalc_profile -- --nocapture
+rtk cargo test --lib qalc_profile_formats_infinities_with_upstream_signs -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_rational_output -- --nocapture
 rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_float_power -- --nocapture
+rtk cargo test --test e2e_cli cli_runs_native_float_log_and_sqrt_functions -- --nocapture
 rtk cargo test --test oracle focused_epic2_float_precision_oracle_cases -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
 rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
@@ -231,7 +244,7 @@ Mutation evidence for this slice:
 
 - Full MPFR option parity and broader arbitrary-precision float oracle coverage
   remain incomplete beyond the promoted native precision-output and
-  precision-context non-integer power evidence.
+  precision-context non-integer power, `ln`, and `sqrt` evidence.
 - Broader complex powers and broad `explog.batch` complex cases remain
   incomplete beyond the promoted exact arithmetic, `conj`, `norm`, `i^2`, and
   `explog.batch:7` evidence.
@@ -242,7 +255,7 @@ Mutation evidence for this slice:
 - Remaining uncertainty function examples from `explog.batch`, complex interval
   calculation mode, ASCII/Unicode print-option toggles, and
   session-setting-dependent behavior remain incomplete.
-- Division-by-zero-style power output such as `0 ^ -1 -> 1 / 0` remains outside
-  the fallback-disabled native subset.
+- Division-by-zero-style output such as `1 / 0` and `0 ^ -1 -> 1 / 0` remains
+  outside the fallback-disabled native subset.
 - `Calculator` expression evaluation remains fallback-first outside the vetted
   fallback-disabled native numeric subset.

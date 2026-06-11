@@ -739,6 +739,44 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
 }
 
 #[test]
+fn native_log_and_sqrt_functions_match_qalc_profile() {
+    for (expression, expected) in [
+        ("ln(0)", "-∞"),
+        ("ln(2)", "0.6931471806"),
+        ("sqrt(2)", "1.414213562"),
+        ("sqrt(4)", "2"),
+    ] {
+        assert_eq!(
+            evaluate_expr(expression).unwrap().to_qalc_string(),
+            expected,
+            "{expression} should match qalc-profile output"
+        );
+    }
+}
+
+#[test]
+fn qalc_profile_formats_infinities_with_upstream_signs() {
+    for (value, expected) in [
+        (NumberValue::PlusInfinity, "+∞"),
+        (NumberValue::MinusInfinity, "-∞"),
+        (NumberValue::Float(Float::from_f64(f64::INFINITY, 53)), "+∞"),
+        (
+            NumberValue::Float(Float::from_f64(f64::NEG_INFINITY, 53)),
+            "-∞",
+        ),
+    ] {
+        let number = Number {
+            precision: value.precision(),
+            approximate: value.approximate(),
+            value,
+            imaginary: None,
+            is_imaginary: false,
+        };
+        assert_eq!(number.to_qalc_string(), expected);
+    }
+}
+
+#[test]
 fn precision_context_applies_to_noninteger_rational_power() {
     let value = evaluate_expr_with_precision_digits("2 ^ 0.5", 128)
         .expect("precision-context power should evaluate natively");
