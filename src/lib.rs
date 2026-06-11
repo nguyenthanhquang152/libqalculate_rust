@@ -11,6 +11,9 @@ pub mod batch;
 /// Expression tree model for the Rust `MathStructure` port.
 pub mod ast;
 
+/// Parser and lexer modules for the Rust port.
+pub mod parser;
+
 /// FFI bindings to C++ Calculator.
 ///
 /// This is the **only** module that uses `#![allow(unsafe_code)]` to override

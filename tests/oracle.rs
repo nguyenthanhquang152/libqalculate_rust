@@ -35,6 +35,9 @@ use std::process::Command;
 
 use libqalculate_rust::batch::{batch_case_ids, is_session_command, read_batch_cases};
 use libqalculate_rust::ffi::FallbackState;
+use libqalculate_rust::parser::lexer::{
+    lex_expression, lex_line, BasePrefix, LineKind, NumberLiteralKind, Operator, TokenKind,
+};
 
 #[path = "oracle/fallback_gate.rs"]
 mod oracle_fallback_gate;
@@ -613,6 +616,72 @@ fn upstream_batch_inventory_is_available_for_oracle_tests() {
 
     let cases = read_batch_cases(path).expect("upstream parser.batch should be available");
     assert!(cases.iter().any(|case| case.expression == "123456789"));
+}
+
+#[test]
+fn focused_issue17_lexer_oracle_fixture_cases() {
+    let parser_path = Path::new("../libqalculate/tests/parser.batch");
+    let strings_path = Path::new("../libqalculate/tests/strings.batch");
+    let bitwise_path = Path::new("../libqalculate/tests/bitwise.batch");
+    let operators_path = Path::new("../libqalculate/tests/operators.batch");
+
+    for path in [parser_path, strings_path, bitwise_path, operators_path] {
+        if !path.exists() {
+            eprintln!(
+                "skipping focused_issue17_lexer_oracle_fixture_cases; {} is unavailable",
+                path.display()
+            );
+            return;
+        }
+    }
+
+    let parser = std::fs::read_to_string(parser_path).expect("read parser.batch");
+    assert!(parser.contains("123 456 789"));
+    assert_eq!(
+        lex_expression("123 456 789")
+            .expect("lex parser.batch grouped number")
+            .into_iter()
+            .map(|token| token.kind)
+            .collect::<Vec<_>>(),
+        vec![TokenKind::Number {
+            text: "123 456 789".into(),
+            kind: NumberLiteralKind::Integer,
+        }]
+    );
+
+    let strings = std::fs::read_to_string(strings_path).expect("read strings.batch");
+    assert!(strings.contains("/set unicode 1"));
+    let slash_command = lex_line("/set unicode 1").expect("lex strings.batch slash command");
+    assert_eq!(slash_command.kind, LineKind::Command);
+    assert_eq!(slash_command.tokens[0].kind, TokenKind::CommandPrefix);
+
+    let bitwise = std::fs::read_to_string(bitwise_path).expect("read bitwise.batch");
+    assert!(bitwise.contains("0b1011 0010 ⊻ 0b0111 0001"));
+    assert_eq!(
+        lex_expression("0b1011 0010 ⊻ 0b0111 0001")
+            .expect("lex bitwise.batch binary xor")
+            .into_iter()
+            .map(|token| token.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            TokenKind::Number {
+                text: "0b1011 0010".into(),
+                kind: NumberLiteralKind::BasePrefixed(BasePrefix::Binary),
+            },
+            TokenKind::Operator(Operator::BitwiseXor),
+            TokenKind::Number {
+                text: "0b0111 0001".into(),
+                kind: NumberLiteralKind::BasePrefixed(BasePrefix::Binary),
+            },
+        ]
+    );
+
+    let operators = std::fs::read_to_string(operators_path).expect("read operators.batch");
+    assert!(operators.contains("5//2"));
+    assert!(lex_expression("5//2")
+        .expect("lex operators.batch integer division")
+        .iter()
+        .any(|token| token.kind == TokenKind::Operator(Operator::IntegerDivide)));
 }
 
 #[test]

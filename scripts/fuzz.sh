@@ -14,4 +14,8 @@ if ! cargo fuzz --version >/dev/null 2>&1; then
   exit 127
 fi
 
-cargo +nightly fuzz run batch_parser -- -runs="${FUZZ_RUNS:-10000}"
+FUZZ_TOOLCHAIN=${FUZZ_TOOLCHAIN:-nightly}
+
+for target in batch_parser lexer; do
+  cargo +"$FUZZ_TOOLCHAIN" fuzz run "$target" -- -runs="${FUZZ_RUNS:-10000}"
+done

@@ -1,4 +1,5 @@
 use libqalculate_rust::batch::{parse_batch_cases, render_batch_cases, BatchCase};
+use libqalculate_rust::parser::lexer::lex_line;
 use proptest::prelude::*;
 
 fn safe_line() -> impl Strategy<Value = String> {
@@ -14,5 +15,10 @@ proptest! {
         let rendered = render_batch_cases(&cases);
         let parsed = parse_batch_cases(&rendered).expect("rendered batch text must parse");
         prop_assert_eq!(parsed, cases);
+    }
+
+    #[test]
+    fn lexer_arbitrary_utf8_input_returns_or_errors_without_panicking(input in ".*") {
+        let _ = lex_line(&input);
     }
 }
