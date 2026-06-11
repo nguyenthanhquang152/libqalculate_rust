@@ -976,6 +976,10 @@ fn complex_powers_match_focused_qalc_output() {
     assert_eq!(large_i_power.to_qalc_string(), "1");
     assert!(!large_i_power.approximate());
 
+    let beyond_i32_i_power = evaluate_expr("i^2147483648").unwrap();
+    assert_eq!(beyond_i32_i_power.to_qalc_string(), "1");
+    assert!(!beyond_i32_i_power.approximate());
+
     let one_plus_i_squared = evaluate_expr("(1 + i)^2").unwrap();
     assert_eq!(one_plus_i_squared.to_qalc_string(), "2i");
     assert!(!one_plus_i_squared.approximate());
@@ -1002,10 +1006,17 @@ fn complex_powers_match_focused_qalc_output() {
 fn complex_power_helpers_keep_exact_integer_boundaries() {
     let zero = NumberValue::Rational(Rational::from_i32(0));
     let one = NumberValue::Rational(Rational::from_i32(1));
+    let negative_one = NumberValue::Rational(Rational::from_i32(-1));
     let half = NumberValue::Rational(Rational::new(1, 2));
+    let beyond_i32 = NumberValue::Rational("2147483648".parse::<Rational>().unwrap());
 
     assert_eq!(exact_i32_integer_exponent(&one), Some(1));
+    assert_eq!(exact_i32_integer_exponent(&beyond_i32), None);
     assert_eq!(exact_i32_integer_exponent(&half), None);
+    assert_eq!(exact_integer_exponent_mod_4(&one), Some(1));
+    assert_eq!(exact_integer_exponent_mod_4(&negative_one), Some(3));
+    assert_eq!(exact_integer_exponent_mod_4(&beyond_i32), Some(0));
+    assert_eq!(exact_integer_exponent_mod_4(&half), None);
 
     let zero_to_i = approximate_complex_power_number(&zero, &zero, &zero, &one);
     assert!(zero_to_i.is_nan());

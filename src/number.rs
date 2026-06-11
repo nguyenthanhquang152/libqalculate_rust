@@ -2187,21 +2187,30 @@ fn exact_i32_integer_exponent(value: &NumberValue) -> Option<i32> {
     }
 }
 
-fn exact_unit_imaginary_integer_power(base: &Number, exponent: i32) -> Option<Number> {
+fn exact_integer_exponent_mod_4(value: &NumberValue) -> Option<u32> {
+    match value {
+        NumberValue::Rational(rational) if rational.value.denom() == &1 => {
+            Some(rational.value.numer().mod_u(4))
+        }
+        _ => None,
+    }
+}
+
+fn exact_unit_imaginary_integer_power(base: &Number, exponent_mod_4: u32) -> Option<Number> {
     let (real, imag) = base.to_canonical_real_imag();
     if !real.is_real_zero() || real.approximate() || imag.approximate() {
         return None;
     }
 
-    let unit_power = if imag.is_real_one() {
-        1_i64
+    let unit_power_mod_4 = if imag.is_real_one() {
+        1_u32
     } else if imag.negate().is_real_one() {
-        3_i64
+        3_u32
     } else {
         return None;
     };
 
-    match (unit_power * i64::from(exponent)).rem_euclid(4) {
+    match (unit_power_mod_4 * exponent_mod_4) % 4 {
         0 => Some(Number::from_i32(1)),
         1 => Some(Number::from_real_imag_values(
             NumberValue::Rational(Rational::from_i32(0)),
@@ -2235,7 +2244,7 @@ fn exact_complex_integer_pow_is_bounded(base: &Number, exponent_magnitude: u32) 
 }
 
 fn exact_complex_integer_power(base: &Number, exponent: i32) -> Option<Number> {
-    if let Some(result) = exact_unit_imaginary_integer_power(base, exponent) {
+    if let Some(result) = exact_unit_imaginary_integer_power(base, exponent.rem_euclid(4) as u32) {
         return Some(result);
     }
 
@@ -3204,11 +3213,17 @@ impl Number {
             }
         } else {
             if d.is_real_zero() {
+                let precision = self.precision.max(a.precision()).max(b.precision());
+                let approximate = self.approximate || a.approximate() || b.approximate();
+                let base =
+                    Number::from_real_imag_values(a.clone(), b.clone(), precision, approximate);
+                if let Some(exponent_mod_4) = exact_integer_exponent_mod_4(&c) {
+                    if let Some(result) = exact_unit_imaginary_integer_power(&base, exponent_mod_4)
+                    {
+                        return result;
+                    }
+                }
                 if let Some(exponent) = exact_i32_integer_exponent(&c) {
-                    let precision = self.precision.max(a.precision()).max(b.precision());
-                    let approximate = self.approximate || a.approximate() || b.approximate();
-                    let base =
-                        Number::from_real_imag_values(a.clone(), b.clone(), precision, approximate);
                     if let Some(result) = exact_complex_integer_power(&base, exponent) {
                         return result;
                     }
