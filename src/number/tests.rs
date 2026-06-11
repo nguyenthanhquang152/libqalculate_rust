@@ -616,6 +616,12 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
         "0.3333333333"
     );
     assert_eq!(
+        evaluate_expr("1/3")
+            .unwrap()
+            .to_qalc_string_with_precision(128),
+        "0.33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333"
+    );
+    assert_eq!(
         evaluate_expr("1e10").unwrap().to_qalc_string(),
         "10000000000"
     );

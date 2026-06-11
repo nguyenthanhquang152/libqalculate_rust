@@ -2910,28 +2910,37 @@ impl Number {
 
     /// Formats this number with the qalc-compatible defaults used by the oracle harness.
     pub fn to_qalc_string(&self) -> String {
+        self.to_qalc_string_with_precision(10)
+    }
+
+    /// Formats this number for qalc-profile native evidence with a requested
+    /// decimal digit count for nonterminating exact-rational output.
+    pub(crate) fn to_qalc_string_with_precision(&self, precision_digits: usize) -> String {
         let (real, imag) = self.to_canonical_real_imag();
         if imag.is_real_zero() {
-            format_qalc_value(&real)
+            format_qalc_value_with_precision(&real, precision_digits)
         } else if real.is_real_zero() {
             if imag.is_real_one() {
                 "i".to_string()
             } else if imag.negate().is_real_one() {
                 "-i".to_string()
             } else {
-                format!("{}i", format_qalc_value(&imag))
+                format!(
+                    "{}i",
+                    format_qalc_value_with_precision(&imag, precision_digits)
+                )
             }
         } else if is_value_negative(&imag) {
             format!(
                 "{} - {}i",
-                format_qalc_value(&real),
-                format_qalc_value(&imag.negate())
+                format_qalc_value_with_precision(&real, precision_digits),
+                format_qalc_value_with_precision(&imag.negate(), precision_digits)
             )
         } else {
             format!(
                 "{} + {}i",
-                format_qalc_value(&real),
-                format_qalc_value(&imag)
+                format_qalc_value_with_precision(&real, precision_digits),
+                format_qalc_value_with_precision(&imag, precision_digits)
             )
         }
     }
@@ -3057,7 +3066,7 @@ fn rounded_uncertainty_and_width(unc_abs: f64) -> (f64, usize) {
     (rounded_unc, std::cmp::max(0, 1 - e) as usize)
 }
 
-fn format_qalc_value(value: &NumberValue) -> String {
+fn format_qalc_value_with_precision(value: &NumberValue, precision_digits: usize) -> String {
     match value {
         NumberValue::Rational(rational) => {
             if let Some(scientific) = qalc_large_integer_scientific_string(rational) {
@@ -3065,8 +3074,9 @@ fn format_qalc_value(value: &NumberValue) -> String {
             } else if let Some(decimal) = rational.terminating_decimal_string() {
                 decimal
             } else {
-                let output =
-                    rug::Float::with_val(128, &rational.value).to_string_radix(10, Some(10));
+                let binary_precision = qalc_decimal_precision_bits(precision_digits);
+                let output = rug::Float::with_val(binary_precision, &rational.value)
+                    .to_string_radix(10, Some(precision_digits));
                 fixed_decimal_from_scientific(&output).unwrap_or(output)
             }
         }
@@ -3076,7 +3086,7 @@ fn format_qalc_value(value: &NumberValue) -> String {
             is_relative,
         } => {
             if uncertainty.is_real_zero() {
-                format_qalc_value(value)
+                format_qalc_value_with_precision(value, precision_digits)
             } else {
                 value.to_string_with_uncertainty(uncertainty, *is_relative)
             }
@@ -3088,6 +3098,15 @@ fn format_qalc_value(value: &NumberValue) -> String {
         ),
         _ => value.to_string(),
     }
+}
+
+fn qalc_decimal_precision_bits(precision_digits: usize) -> u32 {
+    let bits = precision_digits
+        .max(1)
+        .saturating_mul(4)
+        .saturating_add(16)
+        .max(128);
+    u32::try_from(bits).unwrap_or(u32::MAX)
 }
 
 fn format_qalc_float_bound(value: &rug::Float) -> String {

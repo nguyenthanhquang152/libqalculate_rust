@@ -327,7 +327,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | 3 | Expression parsing | 5 | `unstarted` | No direct `parse()` / `parseNumber()` wrapper yet |
 | 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI; fallback-disabled mode can route a small oracle-proven native numeric expression subset through `number::evaluate_expr()` and tracked variants report fallback state for oracle evidence |
 | 5 | Conversion | 6 | `unstarted` | No direct `convert()` / `convertToBaseUnits()` wrapper yet |
-| 6 | Settings / options | 15+ | `unstarted` | No public settings/options wrapper yet; qalc-style fallback uses fixed bridge defaults |
+| 6 | Settings / options | 15+ | `unstarted` | No public settings/options wrapper yet; fallback-disabled CLI evidence accepts a narrow qalc setting subset (`input base`, `unicode`, `precision`) |
 | 7 | Messages | 4 | `unstarted` | No `message()` / `nextMessage()` wrapper yet |
 | 8 | Plot support | 3 | `unstarted` | No gnuplot wrapper yet |
 
@@ -363,7 +363,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | 7 | Conversion | 5 | `scaffold` | Bounded `num()`/`den()` accessors remain `i128`; internal exact rationals can exceed that range and display through `rug` strings |
 | 8 | Interval operations | 4 | `scaffold` | Native interval storage, comparison categories, and selected outward-rounded arithmetic are covered by unit/property tests; qalc-compatible interval input syntax and fallback-disabled oracle coverage remain incomplete |
 | 9 | Uncertainty | 3 | `scaffold` | Native absolute/relative uncertainty representation, parsing, formatting, and selected propagation are covered by unit/property tests; fallback-disabled oracle coverage remains incomplete |
-| 10 | Precision | 4 | `scaffold` | `rug::Float` precision is tracked, but the full upstream precision-setting API is not ported |
+| 10 | Precision | 4 | `scaffold` | `rug::Float` precision is tracked, and fallback-disabled qalc output honors `/set precision N` for the promoted exact-rational numeric evidence; the full upstream precision-setting API is not ported |
 | 11 | Format / print | 3 | `scaffold` | Display exists for current Rust variants; upstream base/localized formatting and full print options are not ported |
 
 ### 6.4 ExpressionItem (`ExpressionItem.h`)

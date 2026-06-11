@@ -162,6 +162,24 @@ fn cli_applies_limited_set_for_native_numberbase_evidence() {
 }
 
 #[test]
+fn cli_applies_precision_setting_for_native_rational_output() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "precision 128", "--", "1/3"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout(
+            "0.33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333\n",
+        )
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
 fn cli_rejects_unknown_arguments() {
     let mut cmd = qalc_rs();
     cmd.arg("--definitely-unknown")

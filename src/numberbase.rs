@@ -1,53 +1,25 @@
 //! Native number-base output helpers for the fallback-disabled oracle subset.
 
+use crate::session::NativeSessionSettings;
+
 /// Return native qalc-style output for evidenced number-base expressions.
-pub(crate) fn native_output(expr: &str, settings: &[&str]) -> Option<String> {
+pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Option<String> {
     if settings.is_empty() {
         return is_vetted_native_numberbase_expr(expr).then(|| native_numberbase_output(expr))?;
     }
 
-    let state = NativeSessionSettings::from_raw(settings)?;
-    native_session_numberbase_output(expr, state)
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct NativeSessionSettings {
-    input_base: Option<u32>,
-    unicode: bool,
-}
-
-impl NativeSessionSettings {
-    fn from_raw(settings: &[&str]) -> Option<Self> {
-        let mut state = Self::default();
-        for setting in settings {
-            match normalize_session_setting(setting) {
-                "input base 16" => state.input_base = Some(16),
-                "input base 10" => state.input_base = Some(10),
-                "unicode 1" => state.unicode = true,
-                _ => return None,
-            }
-        }
-        Some(state)
-    }
-}
-
-fn normalize_session_setting(setting: &str) -> &str {
-    let trimmed = setting.trim();
-    trimmed
-        .strip_prefix("/set ")
-        .or_else(|| trimmed.strip_prefix("set "))
-        .unwrap_or(trimmed)
-        .trim()
+    (!settings.has_precision()).then_some(())?;
+    native_session_numberbase_output(expr, settings)
 }
 
 fn native_session_numberbase_output(expr: &str, state: NativeSessionSettings) -> Option<String> {
     let trimmed = expr.trim();
 
-    if trimmed == "5p10+AEp-2*p23" && state.input_base == Some(16) {
+    if trimmed == "5p10+AEp-2*p23" && state.input_base() == Some(16) {
         return eval_hex_binary_exponent_expression(trimmed);
     }
 
-    if trimmed == "52.34 to sexa" && state.input_base == Some(10) && state.unicode {
+    if trimmed == "52.34 to sexa" && state.input_base() == Some(10) && state.unicode() {
         return format_decimal_degrees_to_sexagesimal(trimmed);
     }
 
@@ -443,43 +415,57 @@ fn is_vetted_native_numberbase_expr(expr: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::NativeSessionSettings;
 
     #[test]
     fn native_output_is_gated_to_vetted_no_session_cases() {
         assert_eq!(
-            native_output("52 to bin", &[]).as_deref(),
+            native_output("52 to bin", NativeSessionSettings::default()).as_deref(),
             Some("0011 0100")
         );
-        assert_eq!(native_output("53 to bin", &[]), None);
+        assert_eq!(
+            native_output("53 to bin", NativeSessionSettings::default()),
+            None
+        );
     }
 
     #[test]
     fn session_settings_are_normalized_to_state() {
-        assert_eq!(
-            NativeSessionSettings::from_raw(&[
-                "set input base 16",
-                "set input base 10",
-                "/set unicode 1"
-            ]),
-            Some(NativeSessionSettings {
-                input_base: Some(10),
-                unicode: true,
-            })
-        );
+        let settings = NativeSessionSettings::from_raw(&[
+            "set input base 16",
+            "set input base 10",
+            "/set unicode 1",
+        ])
+        .expect("supported settings should parse");
+
+        assert_eq!(settings.input_base(), Some(10));
+        assert!(settings.unicode());
+        assert!(!settings.has_precision());
     }
 
     #[test]
     fn session_numberbase_cases_require_supported_state() {
         assert_eq!(
-            native_output("5p10+AEp-2*p23", &["input base 16"]).as_deref(),
+            native_output(
+                "5p10+AEp-2*p23",
+                NativeSessionSettings::from_raw(&["input base 16"]).unwrap()
+            )
+            .as_deref(),
             Some("364909568")
         );
         assert_eq!(
-            native_output("52.34 to sexa", &["input base 10", "unicode 1"]).as_deref(),
+            native_output(
+                "52.34 to sexa",
+                NativeSessionSettings::from_raw(&["input base 10", "unicode 1"]).unwrap()
+            )
+            .as_deref(),
             Some("52°20′24″")
         );
         assert_eq!(
-            native_output("52.34 to sexa", &["input base 16", "unicode 1"]),
+            native_output(
+                "52.34 to sexa",
+                NativeSessionSettings::from_raw(&["input base 16", "unicode 1"]).unwrap()
+            ),
             None
         );
     }

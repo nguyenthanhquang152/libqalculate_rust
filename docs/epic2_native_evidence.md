@@ -104,6 +104,13 @@ focused expressions with fallback disabled:
   after accumulated input-base/Unicode settings. Other numberbase-looking
   expressions and broader session-setting combinations remain outside the
   fallback-disabled native gate until promoted with oracle evidence.
+- Fallback-disabled native qalc-profile output now parses a typed
+  `/set precision N` session setting for the promoted numeric evidence path.
+  Nonterminating exact rationals are converted with enough MPFR guard precision
+  to emit the requested decimal digits. The native evidence gate accepts
+  precision values from 1 through 4096 digits to avoid unbounded CLI-requested
+  allocation. Focused upstream oracle evidence covers `1/3` under
+  `/set precision 128`.
 - Interval construction now follows upstream `Number::setInterval` in
   `../libqalculate/libqalculate/Number.cc`: finite reversed endpoints are
   accepted and stored in lower/upper order, and equal finite endpoints collapse
@@ -136,6 +143,8 @@ rtk cargo test --test number_behavior rational_from_str_exposes_lossless_arbitra
 rtk cargo test --lib test_arbitrary_precision_rationals_do_not_fall_back_to_i128_surface -- --nocapture
 rtk cargo test --lib test_new_rational_arithmetic_and_comparisons -- --nocapture
 rtk cargo test --lib qalc_profile_formats_nonterminating_and_large_rationals_like_upstream -- --nocapture
+rtk cargo test --test e2e_cli cli_applies_precision_setting_for_native_rational_output -- --nocapture
+rtk cargo test --test oracle focused_epic2_float_precision_oracle_cases -- --nocapture
 rtk cargo test --lib scientific_literals_with_impractical_exponents_are_rejected -- --nocapture
 rtk cargo test --lib exact_large_rational_compare_does_not_collapse_to_f64_infinity -- --nocapture
 rtk cargo test --lib exact_integer_powers_remain_rational_and_parse_starstar -- --nocapture
@@ -172,8 +181,8 @@ rtk timeout 600 just coverage
 
 ## Remaining Gaps
 
-- Full arbitrary-precision float semantics, precision context, and MPFR option
-  parity remain incomplete.
+- Full MPFR option parity and broader arbitrary-precision float oracle coverage
+  remain incomplete beyond the promoted native precision-output evidence.
 - Complex powers and broad `explog.batch` complex cases remain incomplete.
 - Interval input syntax, options, intersections, open/closed bounds, and broad
   interval oracle rows remain incomplete. Qalc bracket expressions are not used

@@ -306,11 +306,13 @@ fn fallback_disabled_by_env() -> bool {
 }
 
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
+    let settings = crate::session::NativeSessionSettings::from_raw(settings)?;
+
     if let Some(output) = crate::numberbase::native_output(expr, settings) {
         return Some(output);
     }
 
-    if !settings.is_empty() {
+    if !settings.is_numeric_scaffold_compatible() {
         return None;
     }
 
@@ -326,7 +328,9 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         Ok(num) if !num.is_nan() => {
             let output = match profile {
                 PrintProfile::Api => num.to_string(),
-                PrintProfile::Qalc => num.to_qalc_string(),
+                PrintProfile::Qalc => {
+                    num.to_qalc_string_with_precision(settings.precision_digits())
+                }
             };
             Some(match profile {
                 PrintProfile::Api => output,

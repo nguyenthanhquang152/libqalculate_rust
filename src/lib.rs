@@ -16,6 +16,7 @@ pub mod batch;
 pub mod ffi;
 
 mod numberbase;
+mod session;
 
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
