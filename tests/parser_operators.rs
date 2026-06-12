@@ -76,6 +76,27 @@ fn parses_prefix_postfix_and_implicit_multiplication() {
 }
 
 #[test]
+fn preserves_adaptive_implicit_multiplication_spacing() {
+    let tight = parse_expression("1/5x").expect("parse tight implicit product");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = tight
+    else {
+        panic!("expected division root, got {tight:?}");
+    };
+    assert_eq!(number_text(&numerator), "1");
+    let denominator_factors = children(&denominator);
+    assert_eq!(number_text(&denominator_factors[0]), "5");
+    assert_eq!(symbol_name(&denominator_factors[1]), "x");
+
+    let spaced = parse_expression("1/5 x").expect("parse spaced implicit product");
+    let factors = children(&spaced);
+    assert!(matches!(factors[0], Expression::Division { .. }));
+    assert_eq!(symbol_name(&factors[1]), "x");
+}
+
+#[test]
 fn parses_remainder_modulo_integer_division_and_percent_nodes() {
     let rem = parse_expression("6%2").expect("parse remainder");
     let Expression::Remainder { lhs, rhs } = rem else {
@@ -254,6 +275,12 @@ fn parses_base_prefixed_literals_visible_to_operator_parser() {
         number_text(&large_hex),
         "340282366920938463463374607431768211456"
     );
+
+    let grouped_integer = parse_expression("123 456").expect("parse grouped integer");
+    assert_eq!(number_text(&grouped_integer), "123456");
+
+    let grouped_decimal = parse_expression("0 . 001").expect("parse grouped decimal");
+    assert_eq!(number_text(&grouped_decimal), "0.001");
 }
 
 #[test]

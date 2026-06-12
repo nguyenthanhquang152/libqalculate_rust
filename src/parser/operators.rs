@@ -201,8 +201,7 @@ impl Parser {
                 continue;
             }
 
-            if self.peek().is_some_and(token_starts_primary) {
-                let (precedence, associativity) = infix_binding_power(InfixOperator::Multiply);
+            if let Some((precedence, associativity)) = self.peek_implicit_multiplication() {
                 if precedence < minimum_precedence {
                     break;
                 }
@@ -370,6 +369,26 @@ impl Parser {
         ParseError::new(ParseErrorKind::UnexpectedToken, token.span)
     }
 
+    fn peek_implicit_multiplication(&self) -> Option<(u8, Associativity)> {
+        let token = self.peek()?;
+        if !token_starts_primary(token) {
+            return None;
+        }
+
+        let is_adjacent = self
+            .tokens
+            .get(self.position.checked_sub(1)?)
+            .is_some_and(|previous| previous.span.end() == token.span.start());
+        Some((
+            if is_adjacent {
+                tight_implicit_multiplication_precedence()
+            } else {
+                infix_binding_power(InfixOperator::Multiply).0
+            },
+            Associativity::Left,
+        ))
+    }
+
     fn percent_starts_remainder_rhs(&self) -> bool {
         let next_index = self.position + 1;
         let Some(next) = self.tokens.get(next_index) else {
@@ -432,7 +451,11 @@ fn parse_number_literal(text: &str, kind: NumberLiteralKind) -> Result<Number, S
         NumberLiteralKind::BasePrefixed(prefix) => parse_base_prefixed_number(text, prefix)
             .ok_or_else(|| format!("invalid base literal: {text}")),
         NumberLiteralKind::Integer | NumberLiteralKind::Decimal | NumberLiteralKind::Scientific => {
-            Number::from_str(text)
+            let compact: String = text
+                .chars()
+                .filter(|ch| !ch.is_ascii_whitespace())
+                .collect();
+            Number::from_str(&compact)
         }
     }
 }
@@ -482,6 +505,10 @@ fn postfix_precedence() -> u8 {
 }
 
 fn prefix_precedence() -> u8 {
+    12
+}
+
+fn tight_implicit_multiplication_precedence() -> u8 {
     11
 }
 
