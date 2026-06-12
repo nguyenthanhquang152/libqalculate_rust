@@ -16,6 +16,6 @@ fi
 
 FUZZ_TOOLCHAIN=${FUZZ_TOOLCHAIN:-nightly}
 
-for target in batch_parser lexer; do
+for target in batch_parser lexer operator_parser; do
   cargo +"$FUZZ_TOOLCHAIN" fuzz run "$target" -- -runs="${FUZZ_RUNS:-10000}"
 done

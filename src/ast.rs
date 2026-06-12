@@ -29,6 +29,20 @@ pub enum StructureKind {
     Negate,
     /// Power node with base then exponent.
     Power,
+    /// Remainder operation node.
+    Remainder,
+    /// Modulo operation node.
+    Modulo,
+    /// Integer division operation node.
+    IntegerDivision,
+    /// Bitwise left-shift operation node.
+    ShiftLeft,
+    /// Bitwise right-shift operation node.
+    ShiftRight,
+    /// Factorial operation node.
+    Factorial,
+    /// Percent operation node.
+    Percent,
     /// Numeric value node.
     Number,
     /// Unit reference node.
@@ -428,6 +442,45 @@ pub enum Expression {
         /// Exponent expression.
         exponent: Box<Expression>,
     },
+    /// Remainder operation with left then right child.
+    Remainder {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Modulo operation with left then right child.
+    Modulo {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Integer division operation with left then right child.
+    IntegerDivision {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Bitwise left shift with left then right child.
+    ShiftLeft {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Bitwise right shift with left then right child.
+    ShiftRight {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Factorial operation with one child.
+    Factorial(Box<Expression>),
+    /// Percent operation with one child.
+    Percent(Box<Expression>),
     /// Numeric value.
     Number(Number),
     /// Unit reference and optional formatted prefix.
@@ -506,6 +559,13 @@ impl Expression {
             Self::Addition(_) => StructureKind::Addition,
             Self::Negate(_) => StructureKind::Negate,
             Self::Power { .. } => StructureKind::Power,
+            Self::Remainder { .. } => StructureKind::Remainder,
+            Self::Modulo { .. } => StructureKind::Modulo,
+            Self::IntegerDivision { .. } => StructureKind::IntegerDivision,
+            Self::ShiftLeft { .. } => StructureKind::ShiftLeft,
+            Self::ShiftRight { .. } => StructureKind::ShiftRight,
+            Self::Factorial(_) => StructureKind::Factorial,
+            Self::Percent(_) => StructureKind::Percent,
             Self::Number(_) => StructureKind::Number,
             Self::Unit { .. } => StructureKind::Unit,
             Self::Symbolic(_) => StructureKind::Symbolic,
@@ -559,6 +619,23 @@ impl Expression {
                 OperatorArity::Exact(2),
                 Associativity::Right,
                 PrecedenceClass::Power,
+            )),
+            Self::Remainder { .. } | Self::Modulo { .. } | Self::IntegerDivision { .. } => {
+                Some(OperatorMetadata::new(
+                    OperatorArity::Exact(2),
+                    Associativity::Left,
+                    PrecedenceClass::Multiplicative,
+                ))
+            }
+            Self::ShiftLeft { .. } | Self::ShiftRight { .. } => Some(OperatorMetadata::new(
+                OperatorArity::Exact(2),
+                Associativity::Left,
+                PrecedenceClass::BitwiseAnd,
+            )),
+            Self::Factorial(_) | Self::Percent(_) => Some(OperatorMetadata::new(
+                OperatorArity::Exact(1),
+                Associativity::None,
+                PrecedenceClass::Primary,
             )),
             Self::FunctionCall { .. } => Some(OperatorMetadata::new(
                 OperatorArity::Any,
@@ -636,8 +713,14 @@ impl Expression {
             Self::Vector(children) => children.len(),
             Self::FunctionCall { args, .. } => args.len(),
             Self::Inverse(_) | Self::Negate(_) | Self::BitwiseNot(_) | Self::LogicalNot(_) => 1,
+            Self::Factorial(_) | Self::Percent(_) => 1,
             Self::Division { .. }
             | Self::Power { .. }
+            | Self::Remainder { .. }
+            | Self::Modulo { .. }
+            | Self::IntegerDivision { .. }
+            | Self::ShiftLeft { .. }
+            | Self::ShiftRight { .. }
             | Self::LogicalXor { .. }
             | Self::Comparison { .. } => 2,
             Self::Number(_)
@@ -664,6 +747,8 @@ impl Expression {
             Self::FunctionCall { args, .. } => args.get(index),
             Self::Inverse(child)
             | Self::Negate(child)
+            | Self::Factorial(child)
+            | Self::Percent(child)
             | Self::BitwiseNot(child)
             | Self::LogicalNot(child) => (index == 0).then_some(child.as_ref()),
             Self::Division {
@@ -677,6 +762,15 @@ impl Expression {
             Self::Power { base, exponent } => match index {
                 0 => Some(base.as_ref()),
                 1 => Some(exponent.as_ref()),
+                _ => None,
+            },
+            Self::Remainder { lhs, rhs }
+            | Self::Modulo { lhs, rhs }
+            | Self::IntegerDivision { lhs, rhs }
+            | Self::ShiftLeft { lhs, rhs }
+            | Self::ShiftRight { lhs, rhs } => match index {
+                0 => Some(lhs.as_ref()),
+                1 => Some(rhs.as_ref()),
                 _ => None,
             },
             Self::LogicalXor { lhs, rhs } => match index {
