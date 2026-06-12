@@ -635,7 +635,7 @@ impl Lexer<'_> {
                 '|' | '∨' => (TokenKind::Operator(Operator::BitwiseOr), ch.len_utf8()),
                 '⊻' => (TokenKind::Operator(Operator::BitwiseXor), ch.len_utf8()),
                 '~' => (TokenKind::Operator(Operator::BitwiseNot), 1),
-                '¬' => (TokenKind::Operator(Operator::LogicalNot), ch.len_utf8()),
+                '¬' => (TokenKind::Operator(Operator::BitwiseNot), ch.len_utf8()),
                 '∥' => (TokenKind::Operator(Operator::Parallel), ch.len_utf8()),
                 '∪' => (TokenKind::Operator(Operator::SetUnion), ch.len_utf8()),
                 '∩' => (
@@ -998,7 +998,7 @@ fn word_operator(word: &str) -> Option<Operator> {
         "div" => Operator::IntegerDivide,
         "and" => Operator::LogicalAnd,
         "or" => Operator::LogicalOr,
-        "xor" => Operator::LogicalXor,
+        "xor" => Operator::BitwiseXor,
         "nand" => Operator::LogicalNand,
         "nor" => Operator::LogicalNor,
         "not" => Operator::LogicalNot,

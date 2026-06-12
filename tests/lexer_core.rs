@@ -359,10 +359,21 @@ fn tokenizes_unicode_ascii_and_word_operator_aliases() {
             TokenKind::Identifier("a".into()),
             TokenKind::Operator(Operator::LogicalAnd),
             TokenKind::Identifier("b".into()),
-            TokenKind::Operator(Operator::LogicalXor),
+            TokenKind::Operator(Operator::BitwiseXor),
             TokenKind::Identifier("c".into()),
             TokenKind::Operator(Operator::BitwiseXor),
             TokenKind::Identifier("d".into()),
+        ]
+    );
+
+    assert_eq!(
+        kinds("¬1"),
+        vec![
+            TokenKind::Operator(Operator::BitwiseNot),
+            TokenKind::Number {
+                text: "1".into(),
+                kind: NumberLiteralKind::Integer,
+            },
         ]
     );
 }

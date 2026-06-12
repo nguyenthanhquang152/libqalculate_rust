@@ -14,7 +14,12 @@
 use crate::number::Number;
 use std::ops::Index;
 
-/// Stable kind tag matching the expression categories used by upstream `MathStructure`.
+/// Stable kind tag for Rust expression categories used by the staged port.
+///
+/// Most variants mirror upstream `MathStructure::StructureType`. Parser-stage
+/// operator variants such as remainder, shifts, factorial, and percent are
+/// Rust-side placeholders for upstream function-backed forms until function
+/// definitions and evaluation are ported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructureKind {
     /// Multiplication node with ordered factors.
@@ -120,6 +125,8 @@ pub enum PrecedenceClass {
     Multiplicative,
     /// Addition and negation.
     Additive,
+    /// Bitwise shifts.
+    Shift,
     /// Comparison operators.
     Comparison,
     /// Bitwise and.
@@ -630,7 +637,7 @@ impl Expression {
             Self::ShiftLeft { .. } | Self::ShiftRight { .. } => Some(OperatorMetadata::new(
                 OperatorArity::Exact(2),
                 Associativity::Left,
-                PrecedenceClass::BitwiseAnd,
+                PrecedenceClass::Shift,
             )),
             Self::Factorial(_) | Self::Percent(_) => Some(OperatorMetadata::new(
                 OperatorArity::Exact(1),

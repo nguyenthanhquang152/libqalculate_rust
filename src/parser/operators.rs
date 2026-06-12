@@ -12,7 +12,7 @@
 
 use crate::{
     ast::{ComparisonOperator, Expression, NaryChildren, Symbol},
-    number::{Number, Rational},
+    number::Number,
     parser::lexer::{
         lex_expression, BasePrefix, LexErrorKind, NumberLiteralKind, Operator, Span, Token,
         TokenKind,
@@ -113,7 +113,6 @@ enum InfixOperator {
     BitwiseXor,
     BitwiseOr,
     LogicalAnd,
-    LogicalXor,
     LogicalOr,
     LogicalNand,
     LogicalNor,
@@ -169,11 +168,7 @@ impl Parser {
             }
 
             if let TokenKind::Operator(Operator::Percent) = token.kind {
-                if self
-                    .tokens
-                    .get(self.position + 1)
-                    .is_some_and(token_starts_primary)
-                {
+                if self.percent_starts_remainder_rhs() {
                     let (precedence, associativity) = infix_binding_power(InfixOperator::Remainder);
                     if precedence < minimum_precedence {
                         break;
@@ -342,7 +337,6 @@ impl Parser {
             Operator::BitwiseXor => InfixOperator::BitwiseXor,
             Operator::BitwiseOr => InfixOperator::BitwiseOr,
             Operator::LogicalAnd => InfixOperator::LogicalAnd,
-            Operator::LogicalXor => InfixOperator::LogicalXor,
             Operator::LogicalOr => InfixOperator::LogicalOr,
             Operator::LogicalNand => InfixOperator::LogicalNand,
             Operator::LogicalNor => InfixOperator::LogicalNor,
@@ -375,6 +369,62 @@ impl Parser {
     fn unexpected_token(&self, token: &Token) -> ParseError {
         ParseError::new(ParseErrorKind::UnexpectedToken, token.span)
     }
+
+    fn percent_starts_remainder_rhs(&self) -> bool {
+        let next_index = self.position + 1;
+        let Some(next) = self.tokens.get(next_index) else {
+            return false;
+        };
+
+        if token_starts_primary(next) {
+            return true;
+        }
+
+        if !matches!(
+            next.kind,
+            TokenKind::Operator(Operator::Plus | Operator::Minus)
+        ) {
+            return false;
+        }
+
+        let primary_index = next_index + 1;
+        let Some(primary) = self.tokens.get(primary_index) else {
+            return false;
+        };
+        if !token_starts_primary(primary) {
+            return false;
+        }
+
+        !self
+            .primary_end_index(primary_index)
+            .and_then(|end| self.tokens.get(end + 1))
+            .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
+    }
+
+    fn primary_end_index(&self, index: usize) -> Option<usize> {
+        match self.tokens.get(index)?.kind {
+            TokenKind::Number { .. }
+            | TokenKind::Identifier(_)
+            | TokenKind::EscapedIdentifier(_) => Some(index),
+            TokenKind::OpenParen => {
+                let mut depth = 1usize;
+                for (offset, token) in self.tokens[index + 1..].iter().enumerate() {
+                    match token.kind {
+                        TokenKind::OpenParen => depth += 1,
+                        TokenKind::CloseParen => {
+                            depth -= 1;
+                            if depth == 0 {
+                                return Some(index + 1 + offset);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
 }
 
 fn parse_number_literal(text: &str, kind: NumberLiteralKind) -> Result<Number, String> {
@@ -400,7 +450,7 @@ fn parse_base_prefixed_number(text: &str, prefix: BasePrefix) -> Option<Number> 
         BasePrefix::Duodecimal => 12,
     };
 
-    let mut value = 0_i128;
+    let mut value = rug::Integer::from(0);
     for ch in digits.chars() {
         let digit = match prefix {
             BasePrefix::Duodecimal => duodecimal_digit(ch).or_else(|| ch.to_digit(radix))?,
@@ -411,10 +461,10 @@ fn parse_base_prefixed_number(text: &str, prefix: BasePrefix) -> Option<Number> 
         if digit >= radix {
             return None;
         }
-        value = value.checked_mul(i128::from(radix))?;
-        value = value.checked_add(i128::from(digit))?;
+        value *= radix;
+        value += digit;
     }
-    Some(Number::from_rational(Rational::new(value, 1)))
+    Number::from_str(&value.to_string()).ok()
 }
 
 fn duodecimal_digit(ch: char) -> Option<u32> {
@@ -437,21 +487,19 @@ fn prefix_precedence() -> u8 {
 
 fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
     match operator {
-        InfixOperator::LogicalOr | InfixOperator::LogicalNor => (1, Associativity::Left),
-        InfixOperator::LogicalXor => (2, Associativity::Left),
-        InfixOperator::LogicalAnd | InfixOperator::LogicalNand => (3, Associativity::Left),
+        InfixOperator::LogicalAnd | InfixOperator::LogicalNand => (1, Associativity::Left),
+        InfixOperator::LogicalOr | InfixOperator::LogicalNor => (2, Associativity::Left),
         InfixOperator::BitwiseOr => (4, Associativity::Left),
         InfixOperator::BitwiseXor => (5, Associativity::Left),
-        InfixOperator::BitwiseAnd | InfixOperator::ShiftLeft | InfixOperator::ShiftRight => {
-            (6, Associativity::Left)
-        }
+        InfixOperator::BitwiseAnd => (6, Associativity::Left),
         InfixOperator::Comparison(_) => (7, Associativity::Left),
-        InfixOperator::Add | InfixOperator::Subtract => (8, Associativity::Left),
+        InfixOperator::ShiftLeft | InfixOperator::ShiftRight => (8, Associativity::Left),
+        InfixOperator::Add | InfixOperator::Subtract => (9, Associativity::Left),
         InfixOperator::Multiply
         | InfixOperator::Divide
         | InfixOperator::Remainder
         | InfixOperator::Modulo
-        | InfixOperator::IntegerDivision => (9, Associativity::Left),
+        | InfixOperator::IntegerDivision => (10, Associativity::Left),
         InfixOperator::Power => (12, Associativity::Right),
     }
 }
@@ -502,10 +550,6 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
         InfixOperator::BitwiseXor => merge_nary(NaryOperator::BitwiseXor, lhs, rhs),
         InfixOperator::BitwiseOr => merge_nary(NaryOperator::BitwiseOr, lhs, rhs),
         InfixOperator::LogicalAnd => merge_nary(NaryOperator::LogicalAnd, lhs, rhs),
-        InfixOperator::LogicalXor => Expression::LogicalXor {
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        },
         InfixOperator::LogicalOr => merge_nary(NaryOperator::LogicalOr, lhs, rhs),
         InfixOperator::LogicalNand => {
             Expression::LogicalNot(Box::new(merge_nary(NaryOperator::LogicalAnd, lhs, rhs)))

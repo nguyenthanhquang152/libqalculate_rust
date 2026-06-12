@@ -84,6 +84,20 @@ fn parses_remainder_modulo_integer_division_and_percent_nodes() {
     assert_eq!(number_text(&lhs), "6");
     assert_eq!(number_text(&rhs), "2");
 
+    let signed_rem = parse_expression("6%-2").expect("parse signed remainder");
+    let Expression::Remainder { lhs, rhs } = signed_rem else {
+        panic!("expected signed remainder node, got {signed_rem:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    assert!(matches!(rhs.as_ref(), Expression::Negate(_)));
+
+    let positive_rem = parse_expression("6%+2").expect("parse positive remainder");
+    let Expression::Remainder { lhs, rhs } = positive_rem else {
+        panic!("expected positive remainder node, got {positive_rem:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    assert_eq!(number_text(&rhs), "2");
+
     let modulo = parse_expression("3 mod -2").expect("parse modulo");
     let Expression::Modulo { lhs, rhs } = modulo else {
         panic!("expected modulo node, got {modulo:?}");
@@ -102,6 +116,30 @@ fn parses_remainder_modulo_integer_division_and_percent_nodes() {
     let terms = children(&percentage);
     assert_eq!(number_text(&terms[0]), "100");
     assert!(matches!(terms[1], Expression::Percent(_)));
+
+    let percentage_difference = parse_expression("10%-6%").expect("parse percentage subtraction");
+    let terms = children(&percentage_difference);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    assert!(matches!(rhs.as_ref(), Expression::Percent(_)));
+
+    let grouped_percentage_difference =
+        parse_expression("10%-((6))%").expect("parse grouped percentage subtraction");
+    let terms = children(&grouped_percentage_difference);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(rhs) = &terms[1] else {
+        panic!("expected grouped subtraction term, got {:?}", terms[1]);
+    };
+    assert!(matches!(rhs.as_ref(), Expression::Percent(_)));
+
+    let grouped_remainder = parse_expression("6%-((2))").expect("parse grouped signed remainder");
+    let Expression::Remainder { lhs, rhs } = grouped_remainder else {
+        panic!("expected grouped signed remainder, got {grouped_remainder:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    assert!(matches!(rhs.as_ref(), Expression::Negate(_)));
 }
 
 #[test]
@@ -114,15 +152,25 @@ fn parses_comparison_logical_and_bitwise_precedence() {
     assert!(matches!(lhs.as_ref(), Expression::Addition(_)));
     assert!(matches!(rhs.as_ref(), Expression::Multiplication(_)));
 
-    let logical = parse_expression("not a and b xor c or d").expect("parse logical");
-    let or_terms = children(&logical);
-    assert_eq!(or_terms.len(), 2);
-    let Expression::LogicalXor { lhs, rhs } = &or_terms[0] else {
-        panic!("expected logical xor under or, got {:?}", or_terms[0]);
+    let logical = parse_expression("not a or b and c").expect("parse logical");
+    let and_terms = children(&logical);
+    assert_eq!(and_terms.len(), 2);
+    let or_terms = children(&and_terms[0]);
+    assert!(matches!(or_terms[0], Expression::LogicalNot(_)));
+    assert_eq!(symbol_name(&or_terms[1]), "b");
+    assert_eq!(symbol_name(&and_terms[1]), "c");
+
+    let bitwise_xor_word =
+        parse_expression("0b1011 0010 xor 0b0111 0001").expect("parse word xor as bitwise xor");
+    let xor_terms = children(&bitwise_xor_word);
+    assert_eq!(number_text(&xor_terms[0]), "178");
+    assert_eq!(number_text(&xor_terms[1]), "113");
+
+    let bitwise_not_unicode = parse_expression("¬1").expect("parse unicode bitwise not");
+    let Expression::BitwiseNot(not_operand) = bitwise_not_unicode else {
+        panic!("expected bitwise-not root, got {bitwise_not_unicode:?}");
     };
-    assert!(matches!(lhs.as_ref(), Expression::LogicalAnd(_)));
-    assert_eq!(symbol_name(rhs), "c");
-    assert_eq!(symbol_name(&or_terms[1]), "d");
+    assert_eq!(number_text(&not_operand), "1");
 
     let bitwise =
         parse_expression("0b0101 | 0b1001 ^^ 0b0111 & 0b0011").expect("parse bitwise precedence");
@@ -136,6 +184,19 @@ fn parses_comparison_logical_and_bitwise_precedence() {
     };
     assert!(matches!(lhs.as_ref(), Expression::ShiftLeft { .. }));
     assert_eq!(number_text(&rhs), "2");
+
+    let shift_vs_comparison = parse_expression("1 << 2 < 3").expect("parse shift comparison");
+    let Expression::Comparison { op, lhs, rhs } = shift_vs_comparison else {
+        panic!("expected comparison root, got {shift_vs_comparison:?}");
+    };
+    assert_eq!(op, ComparisonOperator::Less);
+    assert!(matches!(lhs.as_ref(), Expression::ShiftLeft { .. }));
+    assert_eq!(number_text(&rhs), "3");
+
+    let shift_vs_bitwise = parse_expression("1 & 2 << 3").expect("parse bitwise shift precedence");
+    let bitwise_terms = children(&shift_vs_bitwise);
+    assert_eq!(number_text(&bitwise_terms[0]), "1");
+    assert!(matches!(bitwise_terms[1], Expression::ShiftLeft { .. }));
 }
 
 #[test]
@@ -187,9 +248,12 @@ fn parses_base_prefixed_literals_visible_to_operator_parser() {
     assert_eq!(number_text(&terms[0]), "10");
     assert_eq!(number_text(&terms[1]), "11");
 
-    let overflowing_hex = parse_expression("0xffffffffffffffffffffffffffffffffffffffff")
-        .expect_err("overflowing prefixed literal is invalid");
-    assert_eq!(overflowing_hex.kind(), ParseErrorKind::InvalidNumber);
+    let large_hex = parse_expression("0x100000000000000000000000000000000")
+        .expect("parse base-prefixed integer larger than i128");
+    assert_eq!(
+        number_text(&large_hex),
+        "340282366920938463463374607431768211456"
+    );
 }
 
 #[test]
@@ -217,6 +281,7 @@ fn parses_reduced_operator_fixture_rows_without_evaluating() {
         "~ -812",
         "0b0101 | 0b1001",
         "0b1011 0010 ∧ 0b0111 0001",
+        "0b1011 0010 xor 0b0111 0001",
         "0b1011 0010 ⊻ 0b0111 0001",
         "10% + 5%",
         "10%-6%",
