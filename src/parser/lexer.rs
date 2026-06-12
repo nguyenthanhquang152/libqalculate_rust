@@ -336,6 +336,7 @@ struct Lexer<'a> {
     input: &'a str,
     index: usize,
     mode: LexerMode,
+    bracket_depth: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,6 +351,7 @@ impl Lexer<'_> {
             input,
             index: 0,
             mode: LexerMode::Expression,
+            bracket_depth: 0,
         }
     }
 
@@ -358,6 +360,7 @@ impl Lexer<'_> {
             input,
             index: 0,
             mode: LexerMode::Command,
+            bracket_depth: 0,
         }
     }
 
@@ -399,11 +402,12 @@ impl Lexer<'_> {
                 continue;
             }
             if let Some(token) = self.lex_punctuation_or_symbol(start, ch, tokens.last()) {
+                self.track_delimiter_depth(&token.kind);
                 tokens.push(token);
                 continue;
             }
             if is_identifier_start(ch) {
-                tokens.push(self.lex_word_or_identifier(start));
+                tokens.push(self.lex_word_or_identifier(start, &tokens));
                 continue;
             }
 
@@ -463,10 +467,11 @@ impl Lexer<'_> {
     }
 
     fn lex_number(&mut self, start: usize) -> Token {
+        let allow_grouping_spaces = self.bracket_depth == 0;
         if prefixed_number_starts(self.remaining(), "0x", is_hex_digit)
             || prefixed_number_starts(self.remaining(), "0X", is_hex_digit)
         {
-            self.consume_prefixed_digits(is_hex_digit);
+            self.consume_prefixed_digits(is_hex_digit, allow_grouping_spaces);
             return Token::new(
                 TokenKind::Number {
                     text: self.input[start..self.index].to_string(),
@@ -479,7 +484,7 @@ impl Lexer<'_> {
         if prefixed_number_starts(self.remaining(), "0b", is_binary_digit)
             || prefixed_number_starts(self.remaining(), "0B", is_binary_digit)
         {
-            self.consume_prefixed_digits(is_binary_digit);
+            self.consume_prefixed_digits(is_binary_digit, allow_grouping_spaces);
             return Token::new(
                 TokenKind::Number {
                     text: self.input[start..self.index].to_string(),
@@ -492,7 +497,7 @@ impl Lexer<'_> {
         if prefixed_number_starts(self.remaining(), "0o", is_octal_digit)
             || prefixed_number_starts(self.remaining(), "0O", is_octal_digit)
         {
-            self.consume_prefixed_digits(is_octal_digit);
+            self.consume_prefixed_digits(is_octal_digit, allow_grouping_spaces);
             return Token::new(
                 TokenKind::Number {
                     text: self.input[start..self.index].to_string(),
@@ -505,7 +510,7 @@ impl Lexer<'_> {
         if prefixed_number_starts(self.remaining(), "0d", is_duodecimal_digit)
             || prefixed_number_starts(self.remaining(), "0D", is_duodecimal_digit)
         {
-            self.consume_prefixed_digits(is_duodecimal_digit);
+            self.consume_prefixed_digits(is_duodecimal_digit, allow_grouping_spaces);
             return Token::new(
                 TokenKind::Number {
                     text: self.input[start..self.index].to_string(),
@@ -519,11 +524,13 @@ impl Lexer<'_> {
         let mut saw_dot = false;
         let mut saw_exp = false;
 
-        self.consume_grouped_digits();
-        if !self.remaining().starts_with("...") && self.consume_spaces_before('.') {
+        self.consume_grouped_digits(allow_grouping_spaces);
+        if !self.remaining().starts_with("...")
+            && self.consume_spaces_before('.', allow_grouping_spaces)
+        {
             saw_dot = true;
             self.bump_char();
-            self.consume_grouped_digits();
+            self.consume_grouped_digits(allow_grouping_spaces);
         }
         if matches!(self.peek_char().map(|(_, ch)| ch), Some('e' | 'E')) {
             let save = self.index;
@@ -532,7 +539,7 @@ impl Lexer<'_> {
                 self.bump_char();
             }
             let before_digits = self.index;
-            self.consume_grouped_digits();
+            self.consume_grouped_digits(allow_grouping_spaces);
             if self.index > before_digits {
                 saw_exp = true;
             } else {
@@ -667,15 +674,37 @@ impl Lexer<'_> {
         Some(Token::new(kind, start, self.index))
     }
 
-    fn lex_word_or_identifier(&mut self, start: usize) -> Token {
+    fn lex_word_or_identifier(&mut self, start: usize, tokens: &[Token]) -> Token {
         self.bump_char();
         self.consume_while(is_identifier_continue);
         let text = &self.input[start..self.index];
         let lower = text.to_ascii_lowercase();
-        if let Some(operator) = word_operator(&lower) {
+        let operator = if !self.is_command_name_position(tokens)
+            && has_word_operator_boundaries(self.input, start, self.index)
+        {
+            word_operator(&lower)
+        } else {
+            None
+        };
+
+        if let Some(operator) = operator {
             Token::new(TokenKind::Operator(operator), start, self.index)
         } else {
             Token::new(TokenKind::Identifier(text.to_string()), start, self.index)
+        }
+    }
+
+    fn is_command_name_position(&self, tokens: &[Token]) -> bool {
+        self.mode == LexerMode::Command
+            && (tokens.is_empty()
+                || (tokens.len() == 1 && matches!(&tokens[0].kind, TokenKind::CommandPrefix)))
+    }
+
+    fn track_delimiter_depth(&mut self, kind: &TokenKind) {
+        match kind {
+            TokenKind::OpenBracket => self.bracket_depth += 1,
+            TokenKind::CloseBracket => self.bracket_depth = self.bracket_depth.saturating_sub(1),
+            _ => {}
         }
     }
 
@@ -724,8 +753,12 @@ impl Lexer<'_> {
         }
     }
 
-    fn consume_grouped_digits(&mut self) {
+    fn consume_grouped_digits(&mut self, allow_grouping_spaces: bool) {
         self.consume_while(|ch| ch.is_ascii_digit());
+
+        if !allow_grouping_spaces {
+            return;
+        }
 
         loop {
             let before_spaces = self.index;
@@ -739,7 +772,11 @@ impl Lexer<'_> {
         }
     }
 
-    fn consume_spaces_before(&mut self, expected: char) -> bool {
+    fn consume_spaces_before(&mut self, expected: char, allow_spaces: bool) -> bool {
+        if !allow_spaces {
+            return self.peek_is(expected);
+        }
+
         let before_spaces = self.index;
         self.consume_while(|ch| ch == ' ');
         if self.peek_is(expected) {
@@ -750,9 +787,13 @@ impl Lexer<'_> {
         }
     }
 
-    fn consume_prefixed_digits(&mut self, is_digit: fn(char) -> bool) {
+    fn consume_prefixed_digits(&mut self, is_digit: fn(char) -> bool, allow_grouping_spaces: bool) {
         self.index += 2;
         self.consume_while(is_digit);
+
+        if !allow_grouping_spaces {
+            return;
+        }
 
         loop {
             let before_spaces = self.index;
@@ -770,6 +811,9 @@ impl Lexer<'_> {
 fn classify_line(input: &str) -> LineKind {
     let trimmed = input.trim_start();
     if trimmed.starts_with('/') {
+        return LineKind::Command;
+    }
+    if trimmed.starts_with("->") || trimmed.starts_with("→") {
         return LineKind::Command;
     }
     let lower_trimmed = trimmed.to_ascii_lowercase();
@@ -874,12 +918,30 @@ fn is_prefix_operator_position(previous: Option<&Token>) -> bool {
     })
 }
 
+fn has_word_operator_boundaries(input: &str, start: usize, end: usize) -> bool {
+    has_word_operator_left_boundary(input, start) && has_word_operator_right_boundary(input, end)
+}
+
+fn has_word_operator_left_boundary(input: &str, start: usize) -> bool {
+    input[..start]
+        .chars()
+        .next_back()
+        .is_none_or(|ch| ch.is_whitespace() || matches!(ch, '(' | '[' | ',' | ';' | ':'))
+}
+
+fn has_word_operator_right_boundary(input: &str, end: usize) -> bool {
+    input[end..]
+        .chars()
+        .next()
+        .is_none_or(|ch| ch.is_whitespace() || matches!(ch, ')' | ']' | ',' | ';' | ':'))
+}
+
 fn is_identifier_start(ch: char) -> bool {
-    ch == '_' || ch.is_alphabetic() || is_unit_symbol(ch)
+    ch == '_' || ch == '?' || ch == '$' || ch.is_alphabetic() || is_unit_symbol(ch)
 }
 
 fn is_identifier_continue(ch: char) -> bool {
-    ch == '_' || ch == '\'' || ch.is_alphanumeric() || is_unit_symbol(ch)
+    ch == '_' || ch == '\'' || ch == '?' || ch == '$' || ch.is_alphanumeric() || is_unit_symbol(ch)
 }
 
 fn is_unit_symbol(ch: char) -> bool {

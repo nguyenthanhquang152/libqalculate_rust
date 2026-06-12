@@ -224,6 +224,93 @@ fn preserves_codex_reviewed_lexer_boundaries() {
 }
 
 #[test]
+fn preserves_command_and_vector_boundaries_from_followup_review() {
+    let to_command = lex_line("to hex").expect("lex to command");
+    assert_eq!(to_command.kind, LineKind::Command);
+    assert_eq!(
+        to_command.tokens[0].kind,
+        TokenKind::Identifier("to".into())
+    );
+
+    let slash_to_command = lex_line("/to m/s").expect("lex slash to command");
+    assert_eq!(slash_to_command.kind, LineKind::Command);
+    assert_eq!(slash_to_command.tokens[0].kind, TokenKind::CommandPrefix);
+    assert_eq!(
+        slash_to_command.tokens[1].kind,
+        TokenKind::Identifier("to".into())
+    );
+
+    for source in ["-> m/s", "→ m/s"] {
+        let line = lex_line(source).expect("lex arrow conversion command");
+        assert_eq!(line.kind, LineKind::Command, "{source}");
+    }
+
+    assert_eq!(
+        kinds("[1 2 3]"),
+        vec![
+            TokenKind::OpenBracket,
+            TokenKind::Number {
+                text: "1".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Number {
+                text: "2".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Number {
+                text: "3".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::CloseBracket,
+        ]
+    );
+
+    assert_eq!(
+        kinds("7rem 2"),
+        vec![
+            TokenKind::Number {
+                text: "7".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Identifier("rem".into()),
+            TokenKind::Number {
+                text: "2".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+        ]
+    );
+    assert_eq!(
+        kinds("3mod -2"),
+        vec![
+            TokenKind::Number {
+                text: "3".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Identifier("mod".into()),
+            TokenKind::Operator(Operator::Minus),
+            TokenKind::Number {
+                text: "2".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+        ]
+    );
+    assert_eq!(
+        kinds("5div 2"),
+        vec![
+            TokenKind::Number {
+                text: "5".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Identifier("div".into()),
+            TokenKind::Number {
+                text: "2".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+        ]
+    );
+}
+
+#[test]
 fn tokenizes_unicode_ascii_and_word_operator_aliases() {
     assert_eq!(
         kinds("1 ± 2 <= 3 ≥ 4 != 5 × 6 ÷ 7"),
@@ -396,6 +483,32 @@ fn tokenizes_strings_comments_grouping_and_unit_like_names() {
                 kind: NumberLiteralKind::Integer,
             },
             TokenKind::Identifier("µA".into()),
+        ]
+    );
+
+    assert_eq!(
+        kinds("6 561 ft to ?m"),
+        vec![
+            TokenKind::Number {
+                text: "6 561".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Identifier("ft".into()),
+            TokenKind::Operator(Operator::Conversion),
+            TokenKind::Identifier("?m".into()),
+        ]
+    );
+
+    assert_eq!(
+        kinds("1 $ to EUR"),
+        vec![
+            TokenKind::Number {
+                text: "1".into(),
+                kind: NumberLiteralKind::Integer,
+            },
+            TokenKind::Identifier("$".into()),
+            TokenKind::Operator(Operator::Conversion),
+            TokenKind::Identifier("EUR".into()),
         ]
     );
 }
