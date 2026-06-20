@@ -1019,3 +1019,143 @@ fn bare_function_tail_participates_in_percent_subtraction() {
     assert_eq!(function.id(), "sqrt");
     assert_eq!(number_text(&args[0]), "4");
 }
+
+#[test]
+fn parallel_sum_after_comparison_tail_keeps_parallel_precedence() {
+    let expr =
+        parse_expression("x = 1 Ω || 2 Ω").expect("comparison RHS parallel unit expression parses");
+    let Expression::Comparison {
+        op: ComparisonOperator::Equal,
+        lhs,
+        rhs,
+    } = expr
+    else {
+        panic!("expected comparison root, got {expr:?}");
+    };
+    assert_eq!(symbol_name(&lhs), "x");
+    let Expression::Parallel {
+        lhs: parallel_lhs,
+        rhs: parallel_rhs,
+    } = rhs.as_ref()
+    else {
+        panic!("expected comparison rhs to be Parallel, got {rhs:?}");
+    };
+    let left_terms = children(parallel_lhs);
+    assert_eq!(number_text(&left_terms[0]), "1");
+    assert_eq!(symbol_name(&left_terms[1]), "Ω");
+    let right_terms = children(parallel_rhs);
+    assert_eq!(number_text(&right_terms[0]), "2");
+    assert_eq!(symbol_name(&right_terms[1]), "Ω");
+}
+
+#[test]
+fn postfix_function_binds_inside_logical_and_bitwise_prefix_operands() {
+    let logical = parse_expression("not 2 sin").expect("logical prefix with postfix function");
+    let Expression::LogicalNot(logical_operand) = logical else {
+        panic!("expected LogicalNot root, got {logical:?}");
+    };
+    let Expression::FunctionCall { function, args } = logical_operand.as_ref() else {
+        panic!("expected LogicalNot operand to be FunctionCall, got {logical_operand:?}");
+    };
+    assert_eq!(function.id(), "sin");
+    assert_eq!(number_text(&args[0]), "2");
+
+    let bitwise = parse_expression("~2 sin").expect("bitwise prefix with postfix function");
+    let Expression::BitwiseNot(bitwise_operand) = bitwise else {
+        panic!("expected BitwiseNot root, got {bitwise:?}");
+    };
+    let Expression::FunctionCall { function, args } = bitwise_operand.as_ref() else {
+        panic!("expected BitwiseNot operand to be FunctionCall, got {bitwise_operand:?}");
+    };
+    assert_eq!(function.id(), "sin");
+    assert_eq!(number_text(&args[0]), "2");
+}
+
+#[test]
+fn adaptive_unit_grouping_is_preserved_around_divisions() {
+    let expr = parse_expression("5 m/5 m/s").expect("spaced unit division parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = expr
+    else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+
+    let numerator_terms = children(&numerator);
+    assert_eq!(number_text(&numerator_terms[0]), "5");
+    assert_eq!(symbol_name(&numerator_terms[1]), "m");
+
+    let denominator_terms = children(&denominator);
+    assert_eq!(number_text(&denominator_terms[0]), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected denominator unit factor to be Division, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    assert_eq!(symbol_name(unit_numerator), "m");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
+fn spaced_parenthesized_calls_do_not_become_postfix_functions() {
+    let expr = parse_expression("2 sin (3)").expect("spaced parenthesized call parses");
+    let factors = children(&expr);
+    assert_eq!(number_text(&factors[0]), "2");
+    let Expression::FunctionCall { function, args } = &factors[1] else {
+        panic!(
+            "expected second factor to be FunctionCall, got {:?}",
+            factors[1]
+        );
+    };
+    assert_eq!(function.id(), "sin");
+    assert_eq!(number_text(&args[0]), "3");
+}
+
+#[test]
+fn percent_subtraction_scans_power_and_factorial_rhs_tails() {
+    let power = parse_expression("10%-6^2%").expect("power percent subtraction parses");
+    let terms = children(&power);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(power_rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    let Expression::Power { exponent, .. } = power_rhs.as_ref() else {
+        panic!("expected RHS power expression, got {power_rhs:?}");
+    };
+    assert!(matches!(exponent.as_ref(), Expression::Percent(_)));
+
+    let factorial = parse_expression("10%-6!%").expect("factorial percent subtraction parses");
+    let terms = children(&factorial);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(factorial_rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    let Expression::Percent(factorial_percent) = factorial_rhs.as_ref() else {
+        panic!("expected RHS percent, got {factorial_rhs:?}");
+    };
+    assert!(matches!(
+        factorial_percent.as_ref(),
+        Expression::Factorial(_)
+    ));
+}
+
+#[test]
+fn bare_function_arguments_include_spaced_variable_and_unit_products() {
+    for source in ["sqrt 2 x", "sqrt 2 m"] {
+        let expr = parse_expression(source)
+            .unwrap_or_else(|err| panic!("{source} should parse as bare function: {err}"));
+        let Expression::FunctionCall { function, args } = expr else {
+            panic!("expected FunctionCall for {source}, got {expr:?}");
+        };
+        assert_eq!(function.id(), "sqrt");
+        let factors = children(&args[0]);
+        assert_eq!(number_text(&factors[0]), "2");
+        assert!(matches!(factors[1], Expression::Symbolic(_)));
+    }
+}

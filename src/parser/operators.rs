@@ -156,6 +156,29 @@ fn is_parallel_detection_operand(expr: &Expression) -> bool {
     }
 }
 
+fn is_parallel_lhs_detection_operand(expr: &Expression, rhs: &Expression) -> bool {
+    if is_parallel_detection_operand(expr) {
+        return true;
+    }
+
+    if is_comparison_or_logical_expression(rhs) {
+        return false;
+    }
+
+    is_parallel_lhs_tail_detection_operand(expr)
+}
+
+fn is_parallel_lhs_tail_detection_operand(expr: &Expression) -> bool {
+    match expr {
+        Expression::Comparison { rhs, .. } => is_parallel_unit_expression(rhs),
+        Expression::LogicalOr(children) => children
+            .as_slice()
+            .last()
+            .is_some_and(is_parallel_lhs_tail_detection_operand),
+        _ => false,
+    }
+}
+
 fn is_parallel_rhs_detection_operand(expr: &Expression) -> bool {
     if is_parallel_unit_expression(expr) {
         return true;
@@ -170,6 +193,17 @@ fn is_parallel_rhs_detection_operand(expr: &Expression) -> bool {
         Expression::LogicalXor { lhs, .. } => is_parallel_rhs_detection_operand(lhs),
         _ => false,
     }
+}
+
+fn is_comparison_or_logical_expression(expr: &Expression) -> bool {
+    matches!(
+        expr,
+        Expression::Comparison { .. }
+            | Expression::LogicalAnd(_)
+            | Expression::LogicalOr(_)
+            | Expression::LogicalXor { .. }
+            | Expression::LogicalNot(_)
+    )
 }
 
 fn multiplication_looks_like_quantity_with_unit(children: &[Expression]) -> bool {
@@ -597,9 +631,13 @@ impl Parser {
                 }
                 let token = self.peek().cloned().unwrap();
                 self.advance();
-                let rhs = self.parse_infix_rhs(precedence, associativity)?;
+                let rhs = if infix == InfixOperator::Divide {
+                    self.parse_division_rhs(precedence, associativity)?
+                } else {
+                    self.parse_infix_rhs(precedence, associativity)?
+                };
                 if infix == InfixOperator::ParallelOr
-                    && is_parallel_detection_operand(&lhs)
+                    && is_parallel_lhs_detection_operand(&lhs, &rhs)
                     && is_parallel_rhs_detection_operand(&rhs)
                 {
                     self.detected_parallel_spans.insert(token.span);
@@ -747,7 +785,11 @@ impl Parser {
             }
 
             if let Some((precedence, associativity)) = self.peek_implicit_multiplication() {
-                if precedence == tight_implicit_multiplication_precedence() {
+                if precedence == tight_implicit_multiplication_precedence()
+                    || self
+                        .peek()
+                        .is_some_and(token_starts_spaced_bare_argument_product)
+                {
                     let rhs = self.parse_infix_rhs(precedence, associativity)?;
                     lhs = merge_nary(NaryOperator::Multiplication, lhs, rhs);
                     continue;
@@ -809,12 +851,12 @@ impl Parser {
             }
             Operator::LogicalNot => {
                 return Ok(Expression::LogicalNot(Box::new(
-                    self.parse_expression(prefix_precedence())?,
+                    self.parse_expression(logical_prefix_precedence())?,
                 )));
             }
             Operator::BitwiseNot => {
                 return Ok(Expression::BitwiseNot(Box::new(
-                    self.parse_expression(prefix_precedence())?,
+                    self.parse_expression(logical_prefix_precedence())?,
                 )));
             }
             _ => {
@@ -837,6 +879,60 @@ impl Parser {
             Associativity::Right => precedence,
         };
         self.parse_expression(next_minimum)
+    }
+
+    fn parse_division_rhs(
+        &mut self,
+        precedence: u8,
+        associativity: Associativity,
+    ) -> Result<Expression, ParseError> {
+        if self.division_rhs_starts_spaced_unit_quantity() {
+            let quantity = self.parse_prefix()?;
+            let unit = self.parse_unit_division_chain()?;
+            return Ok(merge_nary(NaryOperator::Multiplication, quantity, unit));
+        }
+
+        self.parse_infix_rhs(precedence, associativity)
+    }
+
+    fn division_rhs_starts_spaced_unit_quantity(&self) -> bool {
+        let Some(quantity) = self.tokens.get(self.position) else {
+            return false;
+        };
+        if !matches!(quantity.kind, TokenKind::Number { .. }) {
+            return false;
+        }
+
+        self.tokens.get(self.position + 1).is_some_and(|unit| {
+            quantity.span.end() != unit.span.start() && token_is_known_unit_primary(unit)
+        })
+    }
+
+    fn parse_unit_division_chain(&mut self) -> Result<Expression, ParseError> {
+        let mut lhs = self.parse_prefix()?;
+
+        loop {
+            let Some(token) = self.peek() else {
+                break;
+            };
+            if !matches!(token.kind, TokenKind::Operator(Operator::Divide))
+                || !self
+                    .tokens
+                    .get(self.position + 1)
+                    .is_some_and(token_is_known_unit_primary)
+            {
+                break;
+            }
+
+            self.advance();
+            let rhs = self.parse_prefix()?;
+            lhs = Expression::Division {
+                numerator: Box::new(lhs),
+                denominator: Box::new(rhs),
+            };
+        }
+
+        Ok(lhs)
     }
 
     fn peek_infix_operator(&self) -> Result<Option<InfixOperator>, ParseError> {
@@ -907,9 +1003,10 @@ impl Parser {
             return None;
         };
         if !is_known_single_argument_function_name(name)
-            || self.tokens.get(self.position + 1).is_some_and(|next| {
-                matches!(next.kind, TokenKind::OpenParen) && token.span.end() == next.span.start()
-            })
+            || self
+                .tokens
+                .get(self.position + 1)
+                .is_some_and(|next| matches!(next.kind, TokenKind::OpenParen))
         {
             return None;
         }
@@ -999,7 +1096,7 @@ impl Parser {
         // Adjacent `%` + sign + primary, but if the primary itself ends with
         // `%` (as in `10%-6%`), this is percentage subtraction, not remainder.
         !self
-            .primary_end_index(primary_index)
+            .percent_rhs_end_index(primary_index)
             .and_then(|end| self.tokens.get(end + 1))
             .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
     }
@@ -1039,6 +1136,52 @@ impl Parser {
         }
     }
 
+    fn percent_rhs_end_index(&self, index: usize) -> Option<usize> {
+        let mut end = self.primary_end_index(index)?;
+
+        loop {
+            let next_index = end + 1;
+            let Some(next) = self.tokens.get(next_index) else {
+                break;
+            };
+
+            match next.kind {
+                TokenKind::Operator(Operator::Factorial) => {
+                    end = next_index;
+                    while self.tokens.get(end + 1).is_some_and(|token| {
+                        matches!(token.kind, TokenKind::Operator(Operator::Factorial))
+                    }) {
+                        end += 1;
+                    }
+                }
+                TokenKind::Operator(Operator::Power) => {
+                    let rhs_index = next_index + 1;
+                    if self
+                        .tokens
+                        .get(rhs_index)
+                        .is_some_and(token_starts_bare_function_argument)
+                    {
+                        end = self.percent_rhs_end_index(rhs_index)?;
+                    } else {
+                        break;
+                    }
+                }
+                TokenKind::Identifier(ref name)
+                    if is_known_single_argument_function_name(name)
+                        && !self
+                            .tokens
+                            .get(next_index + 1)
+                            .is_some_and(|token| matches!(token.kind, TokenKind::OpenParen)) =>
+                {
+                    end = next_index;
+                }
+                _ => break,
+            }
+        }
+
+        Some(end)
+    }
+
     fn bare_function_end_index(&self, function_index: usize) -> Option<usize> {
         self.bare_function_argument_end_index(function_index + 1)
     }
@@ -1070,7 +1213,10 @@ impl Parser {
                 }
             }
 
-            if token_starts_primary(next) && self.tokens[end].span.end() == next.span.start() {
+            if token_starts_primary(next)
+                && (self.tokens[end].span.end() == next.span.start()
+                    || token_starts_spaced_bare_argument_product(next))
+            {
                 end = self.bare_function_argument_end_index(next_index)?;
                 continue;
             }
@@ -1165,6 +1311,10 @@ fn postfix_function_precedence() -> u8 {
 
 fn prefix_precedence() -> u8 {
     15
+}
+
+fn logical_prefix_precedence() -> u8 {
+    postfix_function_precedence()
 }
 
 fn tight_implicit_multiplication_precedence() -> u8 {
@@ -1304,4 +1454,21 @@ fn token_starts_bare_function_argument(token: &Token) -> bool {
                 Operator::Plus | Operator::Minus | Operator::LogicalNot | Operator::BitwiseNot
             )
         )
+}
+
+fn token_starts_spaced_bare_argument_product(token: &Token) -> bool {
+    match &token.kind {
+        TokenKind::Identifier(name) => !is_known_single_argument_function_name(name),
+        TokenKind::EscapedIdentifier(_) => true,
+        _ => false,
+    }
+}
+
+fn token_is_known_unit_primary(token: &Token) -> bool {
+    match &token.kind {
+        TokenKind::Identifier(name) | TokenKind::EscapedIdentifier(name) => {
+            is_unit_symbol_name(name.trim_start_matches('\\'))
+        }
+        _ => false,
+    }
 }
