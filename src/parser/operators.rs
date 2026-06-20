@@ -457,58 +457,73 @@ fn is_unit_symbol_name(name: &str) -> bool {
     false
 }
 
+const KNOWN_SINGLE_ARGUMENT_FUNCTIONS: &[&str] = &[
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "sinh",
+    "cosh",
+    "tanh",
+    "asinh",
+    "acosh",
+    "atanh",
+    "sqrt",
+    "cbrt",
+    "ln",
+    "log",
+    "log2",
+    "log10",
+    "exp2",
+    "exp10",
+    "exp",
+    "abs",
+    "sign",
+    "sgn",
+    "round",
+    "floor",
+    "ceil",
+    "trunc",
+    "factorial",
+    "gamma",
+    "lnGamma",
+    "erf",
+    "erfc",
+    "zeta",
+    "csc",
+    "cot",
+    "asec",
+    "acsc",
+    "acot",
+    "sech",
+    "csch",
+    "coth",
+    "asech",
+    "acsch",
+    "acoth",
+    "sinc",
+    "fib",
+    "fact",
+];
+
 fn is_known_single_argument_function_name(name: &str) -> bool {
-    matches!(
-        name,
-        "sin"
-            | "cos"
-            | "tan"
-            | "asin"
-            | "acos"
-            | "atan"
-            | "sinh"
-            | "cosh"
-            | "tanh"
-            | "asinh"
-            | "acosh"
-            | "atanh"
-            | "sqrt"
-            | "cbrt"
-            | "ln"
-            | "log"
-            | "log2"
-            | "log10"
-            | "exp2"
-            | "exp10"
-            | "exp"
-            | "abs"
-            | "sign"
-            | "sgn"
-            | "round"
-            | "floor"
-            | "ceil"
-            | "trunc"
-            | "factorial"
-            | "gamma"
-            | "lnGamma"
-            | "erf"
-            | "erfc"
-            | "zeta"
-            | "csc"
-            | "cot"
-            | "asec"
-            | "acsc"
-            | "acot"
-            | "sech"
-            | "csch"
-            | "coth"
-            | "asech"
-            | "acsch"
-            | "acoth"
-            | "sinc"
-            | "fib"
-            | "fact"
-    )
+    KNOWN_SINGLE_ARGUMENT_FUNCTIONS.contains(&name)
+}
+
+fn known_single_argument_function_suffix_start(name: &str) -> Option<usize> {
+    if is_known_single_argument_function_name(name) {
+        return None;
+    }
+
+    KNOWN_SINGLE_ARGUMENT_FUNCTIONS
+        .iter()
+        .filter_map(|function| {
+            let prefix = name.strip_suffix(function)?;
+            (!prefix.is_empty()).then_some(prefix.len())
+        })
+        .max_by_key(|start| name.len() - *start)
 }
 
 struct Parser {
@@ -725,10 +740,25 @@ impl Parser {
                 if self.adjacent_open_paren_follows(token.span) {
                     self.advance(); // consume OpenParen
                     let args = self.parse_function_arguments()?;
-                    Ok(Expression::FunctionCall {
-                        function: FunctionRef::new(name),
-                        args,
-                    })
+                    if let Some(function_start) = known_single_argument_function_suffix_start(&name)
+                    {
+                        let prefix =
+                            Expression::Symbolic(Symbol::new(name[..function_start].to_owned()));
+                        let function_call = Expression::FunctionCall {
+                            function: FunctionRef::new(name[function_start..].to_owned()),
+                            args,
+                        };
+                        Ok(merge_nary(
+                            NaryOperator::Multiplication,
+                            prefix,
+                            function_call,
+                        ))
+                    } else {
+                        Ok(Expression::FunctionCall {
+                            function: FunctionRef::new(name),
+                            args,
+                        })
+                    }
                 } else if is_known_single_argument_function_name(&name)
                     && self.peek().is_some_and(token_starts_bare_function_argument)
                 {
@@ -898,6 +928,10 @@ impl Parser {
         precedence: u8,
         associativity: Associativity,
     ) -> Result<Expression, ParseError> {
+        if self.division_rhs_starts_unit_chain() {
+            return self.parse_unit_division_chain();
+        }
+
         if self.division_rhs_starts_spaced_unit_quantity() {
             let quantity = self.parse_prefix()?;
             let unit = self.parse_unit_division_chain()?;
@@ -905,6 +939,12 @@ impl Parser {
         }
 
         self.parse_infix_rhs(precedence, associativity)
+    }
+
+    fn division_rhs_starts_unit_chain(&self) -> bool {
+        self.tokens
+            .get(self.position)
+            .is_some_and(token_is_known_unit_primary)
     }
 
     fn division_rhs_starts_spaced_unit_quantity(&self) -> bool {
@@ -1118,6 +1158,10 @@ impl Parser {
         };
         if !token_starts_primary(primary) {
             return false;
+        }
+
+        if !prev_adjacent {
+            return true;
         }
 
         // Adjacent `%` + sign + primary, but if the primary itself ends with

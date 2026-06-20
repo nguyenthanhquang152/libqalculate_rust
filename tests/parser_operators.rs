@@ -1257,3 +1257,59 @@ fn logical_and_tail_can_drive_parallel_detection() {
     assert_eq!(number_text(&rhs_terms[0]), "2");
     assert_eq!(symbol_name(&rhs_terms[1]), "Ω");
 }
+
+#[test]
+fn tight_identifier_function_suffix_splits_into_implicit_product() {
+    let expr = parse_expression("2xsin(2)").expect("tight variable/function suffix parses");
+    let factors = children(&expr);
+    assert_eq!(number_text(&factors[0]), "2");
+    let suffix_terms = children(&factors[1]);
+    assert_eq!(symbol_name(&suffix_terms[0]), "x");
+    let Expression::FunctionCall { function, args } = &suffix_terms[1] else {
+        panic!("expected function factor, got {:?}", suffix_terms[1]);
+    };
+    assert_eq!(function.id(), "sin");
+    assert_eq!(number_text(&args[0]), "2");
+}
+
+#[test]
+fn spaced_remainder_keeps_signed_percent_rhs() {
+    let expr =
+        parse_expression("6 % -2%").expect("spaced remainder with signed percent rhs parses");
+    let Expression::Remainder { lhs, rhs } = expr else {
+        panic!("expected Remainder, got {expr:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    let Expression::Negate(negated) = rhs.as_ref() else {
+        panic!("expected signed remainder rhs, got {rhs:?}");
+    };
+    let Expression::Percent(percent_rhs) = negated.as_ref() else {
+        panic!("expected percent in signed rhs, got {negated:?}");
+    };
+    assert_eq!(number_text(percent_rhs), "2");
+}
+
+#[test]
+fn unit_only_divisor_stays_unit_chain() {
+    let expr = parse_expression("5 m/m/s").expect("unit-only divisor chain parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = expr
+    else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+    let numerator_terms = children(&numerator);
+    assert_eq!(number_text(&numerator_terms[0]), "5");
+    assert_eq!(symbol_name(&numerator_terms[1]), "m");
+
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = denominator.as_ref()
+    else {
+        panic!("expected denominator unit chain, got {denominator:?}");
+    };
+    assert_eq!(symbol_name(unit_numerator), "m");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
