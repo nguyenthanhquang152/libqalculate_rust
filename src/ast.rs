@@ -46,6 +46,10 @@ pub enum StructureKind {
     ShiftRight,
     /// Factorial operation node.
     Factorial,
+    /// Double factorial operation node (n!!).
+    DoubleFactorial,
+    /// Multi-factorial operation node (n!!! or higher).
+    MultiFactorial,
     /// Percent operation node.
     Percent,
     /// Numeric value node.
@@ -74,6 +78,8 @@ pub enum StructureKind {
     LogicalOr,
     /// Logical-xor operation node.
     LogicalXor,
+    /// Parallel sum operation node.
+    Parallel,
     /// Logical-not operation node.
     LogicalNot,
     /// Comparison operation node.
@@ -486,6 +492,15 @@ pub enum Expression {
     },
     /// Factorial operation with one child.
     Factorial(Box<Expression>),
+    /// Double factorial operation (n!!) with one child.
+    DoubleFactorial(Box<Expression>),
+    /// Multi-factorial operation (n!!!, n!!!! etc.) with child and repeat count.
+    MultiFactorial {
+        /// The expression being multi-factored.
+        expr: Box<Expression>,
+        /// Number of `!` symbols (3 for `!!!`, 4 for `!!!!`, etc.).
+        count: u32,
+    },
     /// Percent operation with one child.
     Percent(Box<Expression>),
     /// Numeric value.
@@ -526,6 +541,13 @@ pub enum Expression {
     LogicalOr(NaryChildren),
     /// Logical-xor expression with left then right child.
     LogicalXor {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Parallel sum expression with left then right child.
+    Parallel {
         /// Left-hand side expression.
         lhs: Box<Expression>,
         /// Right-hand side expression.
@@ -572,6 +594,8 @@ impl Expression {
             Self::ShiftLeft { .. } => StructureKind::ShiftLeft,
             Self::ShiftRight { .. } => StructureKind::ShiftRight,
             Self::Factorial(_) => StructureKind::Factorial,
+            Self::DoubleFactorial(_) => StructureKind::DoubleFactorial,
+            Self::MultiFactorial { .. } => StructureKind::MultiFactorial,
             Self::Percent(_) => StructureKind::Percent,
             Self::Number(_) => StructureKind::Number,
             Self::Unit { .. } => StructureKind::Unit,
@@ -586,6 +610,7 @@ impl Expression {
             Self::LogicalAnd(_) => StructureKind::LogicalAnd,
             Self::LogicalOr(_) => StructureKind::LogicalOr,
             Self::LogicalXor { .. } => StructureKind::LogicalXor,
+            Self::Parallel { .. } => StructureKind::Parallel,
             Self::LogicalNot(_) => StructureKind::LogicalNot,
             Self::Comparison { .. } => StructureKind::Comparison,
             Self::Undefined => StructureKind::Undefined,
@@ -639,7 +664,10 @@ impl Expression {
                 Associativity::Left,
                 PrecedenceClass::Shift,
             )),
-            Self::Factorial(_) | Self::Percent(_) => Some(OperatorMetadata::new(
+            Self::Factorial(_)
+            | Self::DoubleFactorial(_)
+            | Self::MultiFactorial { .. }
+            | Self::Percent(_) => Some(OperatorMetadata::new(
                 OperatorArity::Exact(1),
                 Associativity::None,
                 PrecedenceClass::Primary,
@@ -686,6 +714,11 @@ impl Expression {
                 Associativity::Left,
                 PrecedenceClass::LogicalXor,
             )),
+            Self::Parallel { .. } => Some(OperatorMetadata::new(
+                OperatorArity::Exact(2),
+                Associativity::Left,
+                PrecedenceClass::LogicalOr,
+            )),
             Self::LogicalNot(_) => Some(OperatorMetadata::new(
                 OperatorArity::Exact(1),
                 Associativity::Prefix,
@@ -720,7 +753,10 @@ impl Expression {
             Self::Vector(children) => children.len(),
             Self::FunctionCall { args, .. } => args.len(),
             Self::Inverse(_) | Self::Negate(_) | Self::BitwiseNot(_) | Self::LogicalNot(_) => 1,
-            Self::Factorial(_) | Self::Percent(_) => 1,
+            Self::Factorial(_)
+            | Self::DoubleFactorial(_)
+            | Self::MultiFactorial { .. }
+            | Self::Percent(_) => 1,
             Self::Division { .. }
             | Self::Power { .. }
             | Self::Remainder { .. }
@@ -729,6 +765,7 @@ impl Expression {
             | Self::ShiftLeft { .. }
             | Self::ShiftRight { .. }
             | Self::LogicalXor { .. }
+            | Self::Parallel { .. }
             | Self::Comparison { .. } => 2,
             Self::Number(_)
             | Self::Unit { .. }
@@ -755,9 +792,11 @@ impl Expression {
             Self::Inverse(child)
             | Self::Negate(child)
             | Self::Factorial(child)
+            | Self::DoubleFactorial(child)
             | Self::Percent(child)
             | Self::BitwiseNot(child)
             | Self::LogicalNot(child) => (index == 0).then_some(child.as_ref()),
+            Self::MultiFactorial { expr, .. } => (index == 0).then_some(expr.as_ref()),
             Self::Division {
                 numerator,
                 denominator,
@@ -780,7 +819,7 @@ impl Expression {
                 1 => Some(rhs.as_ref()),
                 _ => None,
             },
-            Self::LogicalXor { lhs, rhs } => match index {
+            Self::LogicalXor { lhs, rhs } | Self::Parallel { lhs, rhs } => match index {
                 0 => Some(lhs.as_ref()),
                 1 => Some(rhs.as_ref()),
                 _ => None,

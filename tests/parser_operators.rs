@@ -183,21 +183,23 @@ fn parses_comparison_logical_and_bitwise_precedence() {
     assert_eq!(symbol_name(&and_terms[0]), "b");
     assert_eq!(symbol_name(&and_terms[1]), "c");
 
-    // `xor` word operator produces logical XOR (binary, lower than OR).
-    let xor_logical =
-        parse_expression("a xor b").expect("parse word xor as logical xor");
-    let Expression::LogicalXor { lhs, rhs } = xor_logical else {
-        panic!("expected LogicalXor, got {xor_logical:?}");
-    };
-    assert_eq!(symbol_name(&lhs), "a");
-    assert_eq!(symbol_name(&rhs), "b");
+    // `xor` word operator produces bitwise XOR at parse time.
+    // Promotion to logical XOR is deferred to evaluation.
+    let xor_bitwise =
+        parse_expression("a xor b").expect("parse word xor as bitwise xor");
+    let xor_terms = children(&xor_bitwise);
+    assert_eq!(xor_terms.len(), 2);
+    assert!(matches!(xor_bitwise, Expression::BitwiseXor(_)));
+    assert_eq!(symbol_name(&xor_terms[0]), "a");
+    assert_eq!(symbol_name(&xor_terms[1]), "b");
 
-    // `||` is parsed as logical OR (lexer emits Parallel, parser maps to LogicalOr).
-    let pipe_or = parse_expression("1>2 || 2>1").expect("parse || as logical or");
-    let or_terms = children(&pipe_or);
-    assert_eq!(or_terms.len(), 2);
-    assert!(matches!(or_terms[0], Expression::Comparison { .. }));
-    assert!(matches!(or_terms[1], Expression::Comparison { .. }));
+    // `||` is parsed as Parallel (deferred disambiguation to later unit resolution).
+    let pipe_parallel = parse_expression("1>2 || 2>1").expect("parse || as parallel");
+    let Expression::Parallel { lhs, rhs } = pipe_parallel else {
+        panic!("expected Parallel, got {pipe_parallel:?}");
+    };
+    assert!(matches!(lhs.as_ref(), Expression::Comparison { .. }));
+    assert!(matches!(rhs.as_ref(), Expression::Comparison { .. }));
 
     // Bitwise `xor` via `bitxor` or `^^` still uses BitwiseXor.
     let bitwise_xor_word =
@@ -383,31 +385,31 @@ fn trailing_comments_are_ignored() {
 }
 
 #[test]
-fn pipe_pipe_parses_as_logical_or() {
-    // Comment 8, 11: `||` should map to LogicalOr (not UnsupportedOperator).
-    let expr = parse_expression("a || b").expect("|| should parse as logical or");
-    let terms = children(&expr);
-    assert_eq!(terms.len(), 2);
-    assert_eq!(symbol_name(&terms[0]), "a");
-    assert_eq!(symbol_name(&terms[1]), "b");
-
-    // Chained `||` produces n-ary LogicalOr.
-    let expr3 = parse_expression("a || b || c").expect("chained || parses");
-    let terms3 = children(&expr3);
-    assert_eq!(terms3.len(), 3);
-}
-
-#[test]
-fn xor_word_is_logical_xor() {
-    // Comment 9: `xor` word operator should produce LogicalXor, not BitwiseXor.
-    let expr = parse_expression("a xor b").expect("xor should be logical");
-    let Expression::LogicalXor { lhs, rhs } = expr else {
-        panic!("expected LogicalXor, got {expr:?}");
+fn pipe_pipe_parses_as_parallel() {
+    // Comment 20: `||` should map to Parallel (not LogicalOr).
+    // The parallel-sum semantics are preserved; logical-OR fallback
+    // is deferred to later unit resolution.
+    let expr = parse_expression("a || b").expect("|| should parse as parallel");
+    let Expression::Parallel { lhs, rhs } = expr else {
+        panic!("expected Parallel, got {expr:?}");
     };
     assert_eq!(symbol_name(&lhs), "a");
     assert_eq!(symbol_name(&rhs), "b");
+}
 
-    // `bitxor` remains BitwiseXor.
+#[test]
+fn xor_word_is_bitwise_xor() {
+    // Comment 17: `xor` word operator should produce BitwiseXor.
+    // Upstream treats `xor` as bitwise XOR at parse time,
+    // with promotion to logical XOR deferred to evaluation.
+    let expr = parse_expression("a xor b").expect("xor should be bitwise");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(expr, Expression::BitwiseXor(_)));
+    assert_eq!(symbol_name(&terms[0]), "a");
+    assert_eq!(symbol_name(&terms[1]), "b");
+
+    // `bitxor` also remains BitwiseXor.
     let bitwise = parse_expression("a bitxor b").expect("bitxor should be bitwise");
     let terms = children(&bitwise);
     assert_eq!(terms.len(), 2);
@@ -426,27 +428,40 @@ fn logical_precedence_matches_qalc_manual() {
     assert_eq!(symbol_name(&and_terms[0]), "b");
     assert_eq!(symbol_name(&and_terms[1]), "c");
 
-    // `a xor b or c` → `a xor (b or c)` (XOR loosest)
-    let xor_expr = parse_expression("a xor b or c").expect("xor loosest");
-    let Expression::LogicalXor { lhs, rhs } = xor_expr else {
-        panic!("expected LogicalXor, got {xor_expr:?}");
-    };
-    assert_eq!(symbol_name(&lhs), "a");
-    let or_terms = children(&rhs);
+    // `a xor b or c` → LogicalOr(BitwiseXor(a, b), c)
+    // xor (BitwiseXor) at precedence 7 is tighter than LogicalOr at 2,
+    // so xor binds a and b first.
+    let xor_expr = parse_expression("a xor b or c").expect("xor tighter than or");
+    let or_terms = children(&xor_expr);
     assert_eq!(or_terms.len(), 2);
+    // First child is BitwiseXor(a, b)
+    let inner_xor = children(&or_terms[0]);
+    assert_eq!(inner_xor.len(), 2);
+    assert_eq!(symbol_name(&inner_xor[0]), "a");
+    assert_eq!(symbol_name(&inner_xor[1]), "b");
+    // Second child is c
+    assert_eq!(symbol_name(&or_terms[1]), "c");
 }
 
 #[test]
-fn double_factorial_is_nested_factorial() {
-    // Comment 12: `5!!` should parse as Factorial(Factorial(5)), not error.
+fn double_factorial_is_double_factorial_node() {
+    // Comment 21: `5!!` should parse as DoubleFactorial(5), not nested Factorial.
     let expr = parse_expression("5!!").expect("double factorial should parse");
-    let Expression::Factorial(inner) = expr else {
-        panic!("expected outer Factorial, got {expr:?}");
+    let Expression::DoubleFactorial(inner) = expr else {
+        panic!("expected DoubleFactorial, got {expr:?}");
     };
-    let Expression::Factorial(inner2) = *inner else {
-        panic!("expected inner Factorial, got {inner:?}");
+    assert_eq!(number_text(&inner), "5");
+}
+
+#[test]
+fn triple_factorial_is_multifactorial() {
+    // Comment 21: `5!!!` should parse as MultiFactorial { expr: 5, count: 3 }.
+    let expr = parse_expression("5!!!").expect("triple factorial should parse");
+    let Expression::MultiFactorial { expr: inner, count } = expr else {
+        panic!("expected MultiFactorial, got {expr:?}");
     };
-    assert_eq!(number_text(&inner2), "5");
+    assert_eq!(number_text(&inner), "5");
+    assert_eq!(count, 3);
 }
 
 #[test]
@@ -487,6 +502,14 @@ fn percent_spacing_disambiguates_postfix_from_remainder() {
     };
     assert_eq!(number_text(&lhs), "6");
     assert_eq!(number_text(&rhs), "2");
+
+    // Comment 18: `6 % 2` (spaced) is also Remainder(6, 2).
+    let spaced = parse_expression("6 % 2").expect("spaced percent with operand is remainder");
+    let Expression::Remainder { lhs, rhs } = spaced else {
+        panic!("expected Remainder, got {spaced:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    assert_eq!(number_text(&rhs), "2");
 }
 
 #[test]
@@ -504,18 +527,57 @@ fn standalone_e_operator_is_power_of_ten() {
 }
 
 #[test]
+fn lowercase_e_remains_identifier() {
+    // Comment 16: Lowercase `e` should be an identifier (Euler's number),
+    // not the ten-power operator.
+    let expr = parse_expression("2 e 4").expect("lowercase e is implicit multiply");
+    let terms = children(&expr);
+    // `2 e 4` is implicit multiplication: Mul(2, e, 4)
+    assert!(terms.len() >= 2);
+    // Check that `e` appears as a symbolic identifier, not consumed as operator
+    assert!(terms.iter().any(|t| matches!(t, Expression::Symbolic(s) if s.name() == "e")));
+}
+
+#[test]
+fn e_operator_binds_tighter_than_power() {
+    // Comment 19: Standalone `E` operator binds tighter than exponentiation.
+    // `2 E 3^2` → `(2 × 10^3) ^ 2`, i.e. Power(Mul(2, Power(10, 3)), 2).
+    // NOTE: `2E3` without spaces is a single scientific notation number literal
+    // (= 2000), so only the spaced form triggers the standalone E operator.
+    let expr = parse_expression("2 E 3^2").expect("E binds tighter than ^");
+    let Expression::Power { base, exponent } = expr else {
+        panic!("expected Power at top level, got {expr:?}");
+    };
+    assert_eq!(number_text(&exponent), "2");
+    // base should be Multiplication(2, Power(10, 3))
+    let mul_terms = children(&base);
+    assert_eq!(mul_terms.len(), 2);
+    assert_eq!(number_text(&mul_terms[0]), "2");
+    let Expression::Power { base: ten, exponent: three } = &mul_terms[1] else {
+        panic!("expected inner Power(10, 3), got {:?}", mul_terms[1]);
+    };
+    assert_eq!(number_text(ten), "10");
+    assert_eq!(number_text(three), "3");
+
+    // Without spaces, `2E3` is parsed as a single number literal by the lexer.
+    let literal = parse_expression("2E3").expect("scientific notation");
+    assert_eq!(number_text(&literal), "2000");
+}
+
+#[test]
 fn pr117_fixture_rows_parse_without_evaluating() {
     // Additional fixture rows from PR #117 review comments.
     for source in [
         "5!!",                // double factorial
+        "5!!!",               // triple factorial (multifactorial)
         "7 rem -2",           // rem with signed RHS
         "1 + 2 # comment",   // trailing comment
-        "a || b",             // parallel as logical OR
-        "a xor b",            // word xor as logical XOR
+        "a || b",             // parallel operator
+        "a xor b",            // word xor as bitwise XOR
         "a or b and c",       // correct logical precedence
         "10% + 100",          // spaced percent as postfix
+        "6 % 2",              // spaced percent with primary as remainder
         "5 E 3",              // standalone E operator
-        "2 e 4",              // lowercase e operator
     ] {
         parse_expression(source).unwrap_or_else(|err| panic!("{source}: {err}"));
     }

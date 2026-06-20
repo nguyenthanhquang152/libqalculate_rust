@@ -1000,7 +1000,7 @@ fn word_operator(word: &str) -> Option<Operator> {
         "div" => Operator::IntegerDivide,
         "and" => Operator::LogicalAnd,
         "or" => Operator::LogicalOr,
-        "xor" => Operator::LogicalXor,
+        "xor" => Operator::BitwiseXor,
         "nand" => Operator::LogicalNand,
         "nor" => Operator::LogicalNor,
         "not" => Operator::LogicalNot,

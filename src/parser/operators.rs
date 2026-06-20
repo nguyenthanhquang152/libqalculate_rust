@@ -122,6 +122,10 @@ enum InfixOperator {
     LogicalXor,
     LogicalNand,
     LogicalNor,
+    /// Parallel sum: `a || b` when units are involved.
+    /// Deferred to later unit resolution; falls back to logical OR
+    /// only when no units are present.
+    Parallel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,8 +172,25 @@ impl Parser {
                 if postfix_precedence() < minimum_precedence {
                     break;
                 }
-                self.advance();
-                lhs = Expression::Factorial(Box::new(lhs));
+                // Count consecutive `!` tokens for multifactorial.
+                // Upstream: 1 `!` = factorial, 2 `!!` = double factorial,
+                // 3+ `!!!...` = multifactorial(n, count).
+                let mut factorial_count = 0u32;
+                while self
+                    .peek()
+                    .is_some_and(|t| matches!(t.kind, TokenKind::Operator(Operator::Factorial)))
+                {
+                    self.advance();
+                    factorial_count += 1;
+                }
+                lhs = match factorial_count {
+                    1 => Expression::Factorial(Box::new(lhs)),
+                    2 => Expression::DoubleFactorial(Box::new(lhs)),
+                    n => Expression::MultiFactorial {
+                        expr: Box::new(lhs),
+                        count: n,
+                    },
+                };
                 continue;
             }
 
@@ -208,14 +229,15 @@ impl Parser {
             }
 
             // Standalone `E` operator: `5 E 3` → `5 × 10^3`.
-            // Qalculate treats `E` (or `e`) between expressions as
-            // multiplication by a power of ten.
+            // Qalculate treats uppercase `E` between expressions as
+            // multiplication by a power of ten. Lowercase `e` remains
+            // an identifier (Euler's number / variable name).
             if let Some(token) = self.peek() {
-                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E" || name == "e")
+                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E")
                 {
-                    // Use the same binding power as tight implicit multiplication
-                    // so `5 E 3` binds tighter than addition but looser than power.
-                    let bp = tight_implicit_multiplication_precedence();
+                    // The E ten-power operator binds tighter than exponentiation,
+                    // so `2E3^2` is `(2E3)^2`, not `2 * 10^(3^2)`.
+                    let bp = e_operator_precedence();
                     if bp >= minimum_precedence {
                         self.advance(); // consume the `E`
                         let rhs =
@@ -370,9 +392,10 @@ impl Parser {
             Operator::LogicalXor => InfixOperator::LogicalXor,
             Operator::LogicalNand => InfixOperator::LogicalNand,
             Operator::LogicalNor => InfixOperator::LogicalNor,
-            // `||` is lexed as Parallel; in a pure-operator context (no units)
-            // treat it as logical OR per qalc documentation.
-            Operator::Parallel => InfixOperator::LogicalOr,
+            // `||` is lexed as Parallel; preserve the parallel-sum
+            // semantics for unit expressions like `10 Ω || 6 Ω`.
+            // Logical-OR fallback is deferred to later unit resolution.
+            Operator::Parallel => InfixOperator::Parallel,
             Operator::Percent | Operator::Factorial => return Ok(None),
             unsupported => {
                 return Err(ParseError::new(
@@ -430,14 +453,13 @@ impl Parser {
             return false;
         };
 
-        // If there is whitespace between `%` and the next token, this `%` is
-        // postfix percent; the following `+`/`-` is an arithmetic operator.
-        // Example: `10% + 100` → Percent(10) + 100
         let adjacent = percent_token.span.end() == next.span.start();
 
         if token_starts_primary(next) {
-            // `6%2` (adjacent) → remainder; `100 %  x` (spaced) → percent * x
-            return adjacent;
+            // Both `6%2` (adjacent) and `6 % 2` (spaced) are remainder.
+            // Qalculate treats `%` followed by a primary operand as
+            // remainder regardless of whitespace.
+            return true;
         }
 
         if !matches!(
@@ -561,6 +583,12 @@ fn tight_implicit_multiplication_precedence() -> u8 {
     13
 }
 
+/// The standalone `E` ten-power operator binds tighter than exponentiation
+/// so `2E3^2` is `(2E3)^2`. Placed above Power (14) in the precedence table.
+fn e_operator_precedence() -> u8 {
+    15
+}
+
 fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
     // Qalculate precedence (https://qalculate.github.io/manual/qalculate-expressions.html):
     // Logical XOR (loosest) < OR < NOR < NAND < AND (tightest among logicals)
@@ -583,6 +611,10 @@ fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
         | InfixOperator::Modulo
         | InfixOperator::IntegerDivision => (12, Associativity::Left),
         InfixOperator::Power => (14, Associativity::Right),
+        // `||` is overloaded: parallel-sum for units, logical-OR otherwise.
+        // At parse time, use logical-OR precedence so that `1>2 || 2>1`
+        // groups as `(1>2) || (2>1)`. Unit-level disambiguation happens later.
+        InfixOperator::Parallel => (2, Associativity::Left),
     }
 }
 
@@ -643,6 +675,10 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
         InfixOperator::LogicalNor => {
             Expression::LogicalNot(Box::new(merge_nary(NaryOperator::LogicalOr, lhs, rhs)))
         }
+        InfixOperator::Parallel => Expression::Parallel {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        },
     }
 }
 
