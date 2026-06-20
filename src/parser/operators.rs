@@ -169,12 +169,17 @@ fn is_parallel_lhs_detection_operand(expr: &Expression, rhs: &Expression) -> boo
 }
 
 fn is_parallel_lhs_tail_detection_operand(expr: &Expression) -> bool {
+    if is_parallel_unit_expression(expr) {
+        return true;
+    }
+
     match expr {
         Expression::Comparison { rhs, .. } => is_parallel_unit_expression(rhs),
-        Expression::LogicalOr(children) => children
+        Expression::LogicalAnd(children) | Expression::LogicalOr(children) => children
             .as_slice()
             .last()
             .is_some_and(is_parallel_lhs_tail_detection_operand),
+        Expression::LogicalNot(inner) => is_parallel_lhs_tail_detection_operand(inner),
         _ => false,
     }
 }
@@ -209,11 +214,17 @@ fn is_comparison_or_logical_expression(expr: &Expression) -> bool {
 fn multiplication_looks_like_quantity_with_unit(children: &[Expression]) -> bool {
     // The definition registry is not ported yet, so a product like `1 widget`
     // must stay eligible for parallel-sum parsing as a possible user unit.
-    let has_number = children
-        .iter()
-        .any(|child| matches!(child, Expression::Number(_)));
+    let has_number = children.iter().any(contains_numeric_factor);
     let has_symbolic_factor = children.iter().any(contains_symbolic_factor);
     has_number && has_symbolic_factor
+}
+
+fn contains_numeric_factor(expr: &Expression) -> bool {
+    match expr {
+        Expression::Number(_) => true,
+        Expression::Negate(inner) => contains_numeric_factor(inner),
+        _ => false,
+    }
 }
 
 fn contains_symbolic_factor(expr: &Expression) -> bool {
@@ -472,6 +483,7 @@ fn is_known_single_argument_function_name(name: &str) -> bool {
             | "exp"
             | "abs"
             | "sign"
+            | "sgn"
             | "round"
             | "floor"
             | "ceil"
@@ -909,7 +921,7 @@ impl Parser {
     }
 
     fn parse_unit_division_chain(&mut self) -> Result<Expression, ParseError> {
-        let mut lhs = self.parse_prefix()?;
+        let mut lhs = self.parse_unit_power_factor()?;
 
         loop {
             let Some(token) = self.peek() else {
@@ -925,7 +937,7 @@ impl Parser {
             }
 
             self.advance();
-            let rhs = self.parse_prefix()?;
+            let rhs = self.parse_unit_power_factor()?;
             lhs = Expression::Division {
                 numerator: Box::new(lhs),
                 denominator: Box::new(rhs),
@@ -933,6 +945,21 @@ impl Parser {
         }
 
         Ok(lhs)
+    }
+
+    fn parse_unit_power_factor(&mut self) -> Result<Expression, ParseError> {
+        let lhs = self.parse_prefix()?;
+        let Some(token) = self.peek() else {
+            return Ok(lhs);
+        };
+        if !matches!(token.kind, TokenKind::Operator(Operator::Power)) {
+            return Ok(lhs);
+        }
+
+        let (precedence, associativity) = infix_binding_power(InfixOperator::Power);
+        self.advance();
+        let rhs = self.parse_infix_rhs(precedence, associativity)?;
+        Ok(build_infix_expression(InfixOperator::Power, lhs, rhs))
     }
 
     fn peek_infix_operator(&self) -> Result<Option<InfixOperator>, ParseError> {
@@ -1095,10 +1122,7 @@ impl Parser {
 
         // Adjacent `%` + sign + primary, but if the primary itself ends with
         // `%` (as in `10%-6%`), this is percentage subtraction, not remainder.
-        !self
-            .percent_rhs_end_index(primary_index)
-            .and_then(|end| self.tokens.get(end + 1))
-            .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
+        !self.percent_rhs_has_percent_tail(primary_index)
     }
 
     fn primary_end_index(&self, index: usize) -> Option<usize> {
@@ -1180,6 +1204,27 @@ impl Parser {
         }
 
         Some(end)
+    }
+
+    fn percent_rhs_has_percent_tail(&self, index: usize) -> bool {
+        let Some(end) = self.percent_rhs_end_index(index) else {
+            return false;
+        };
+
+        self.tokens
+            .get(end + 1)
+            .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
+            || self.grouped_primary_ends_with_percent(index, end)
+    }
+
+    fn grouped_primary_ends_with_percent(&self, index: usize, end: usize) -> bool {
+        matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::OpenParen)
+        ) && self
+            .tokens
+            .get(end.checked_sub(1).unwrap_or(index))
+            .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
     }
 
     fn bare_function_end_index(&self, function_index: usize) -> Option<usize> {

@@ -1159,3 +1159,101 @@ fn bare_function_arguments_include_spaced_variable_and_unit_products() {
         assert!(matches!(factors[1], Expression::Symbolic(_)));
     }
 }
+
+#[test]
+fn powered_denominator_units_stay_inside_adaptive_division() {
+    let expr = parse_expression("5 m/5 m^2/s").expect("powered unit denominator parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = expr
+    else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+    let numerator_terms = children(&numerator);
+    assert_eq!(number_text(&numerator_terms[0]), "5");
+    assert_eq!(symbol_name(&numerator_terms[1]), "m");
+
+    let denominator_terms = children(&denominator);
+    assert_eq!(number_text(&denominator_terms[0]), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected denominator unit factor to be Division, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    let Expression::Power { base, exponent } = unit_numerator.as_ref() else {
+        panic!("expected powered denominator unit, got {unit_numerator:?}");
+    };
+    assert_eq!(symbol_name(base), "m");
+    assert_eq!(number_text(exponent), "2");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
+fn negated_numeric_user_unit_products_drive_parallel_detection() {
+    let expr = parse_expression("-1 widget || -2 widget")
+        .expect("signed possible user-unit quantities parse as parallel");
+    let Expression::Parallel { lhs, rhs } = expr else {
+        panic!("expected Parallel, got {expr:?}");
+    };
+    let lhs_terms = children(&lhs);
+    assert!(matches!(lhs_terms[0], Expression::Negate(_)));
+    assert_eq!(symbol_name(&lhs_terms[1]), "widget");
+    let rhs_terms = children(&rhs);
+    assert!(matches!(rhs_terms[0], Expression::Negate(_)));
+    assert_eq!(symbol_name(&rhs_terms[1]), "widget");
+}
+
+#[test]
+fn grouped_rhs_percent_stays_percentage_subtraction() {
+    let expr = parse_expression("10%-(6%)").expect("grouped percent subtraction parses");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    assert!(matches!(rhs.as_ref(), Expression::Percent(_)));
+}
+
+#[test]
+fn sgn_alias_parses_as_bare_and_postfix_single_argument_function() {
+    let bare = parse_expression("sgn -2").expect("bare sgn alias parses");
+    let Expression::FunctionCall { function, args } = bare else {
+        panic!("expected FunctionCall, got {bare:?}");
+    };
+    assert_eq!(function.id(), "sgn");
+    assert!(matches!(args[0], Expression::Negate(_)));
+
+    let postfix = parse_expression("2 sgn").expect("postfix sgn alias parses");
+    let Expression::FunctionCall { function, args } = postfix else {
+        panic!("expected FunctionCall, got {postfix:?}");
+    };
+    assert_eq!(function.id(), "sgn");
+    assert_eq!(number_text(&args[0]), "2");
+}
+
+#[test]
+fn logical_and_tail_can_drive_parallel_detection() {
+    let expr = parse_expression("a and 1 Ω || 2 Ω")
+        .expect("logical and with RHS parallel unit expression parses");
+    let terms = children(&expr);
+    assert_eq!(symbol_name(&terms[0]), "a");
+    let Expression::Parallel { lhs, rhs } = &terms[1] else {
+        panic!(
+            "expected logical-and rhs to be Parallel, got {:?}",
+            terms[1]
+        );
+    };
+    let lhs_terms = children(lhs);
+    assert_eq!(number_text(&lhs_terms[0]), "1");
+    assert_eq!(symbol_name(&lhs_terms[1]), "Ω");
+    let rhs_terms = children(rhs);
+    assert_eq!(number_text(&rhs_terms[0]), "2");
+    assert_eq!(symbol_name(&rhs_terms[1]), "Ω");
+}
