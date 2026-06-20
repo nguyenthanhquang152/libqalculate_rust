@@ -165,6 +165,8 @@ pub enum Operator {
     Power,
     /// Remainder or percent-like operator depending on parser context.
     Percent,
+    /// Remainder operator, written `rem`. Always binary, never postfix.
+    Remainder,
     /// Modulo operator, written `%%` or `mod`.
     Modulo,
     /// Integer division, written `//`, `\`, or `div`.
@@ -904,17 +906,17 @@ fn is_duodecimal_digit(ch: char) -> bool {
 }
 
 fn is_prefix_operator_position(previous: Option<&Token>) -> bool {
-    previous.is_none_or(|token| {
-        matches!(
-            token.kind,
-            TokenKind::Operator(_)
-                | TokenKind::OpenParen
-                | TokenKind::OpenBracket
-                | TokenKind::Comma
-                | TokenKind::Semicolon
-                | TokenKind::Colon
-                | TokenKind::CommandPrefix
-        )
+    previous.is_none_or(|token| match token.kind {
+        // After a postfix operator (`!`, `%`) the position is infix, not prefix.
+        TokenKind::Operator(Operator::Factorial | Operator::Percent) => false,
+        TokenKind::Operator(_)
+        | TokenKind::OpenParen
+        | TokenKind::OpenBracket
+        | TokenKind::Comma
+        | TokenKind::Semicolon
+        | TokenKind::Colon
+        | TokenKind::CommandPrefix => true,
+        _ => false,
     })
 }
 
@@ -993,12 +995,12 @@ fn word_operator(word: &str) -> Option<Operator> {
         "times" => Operator::Multiply,
         "per" => Operator::Divide,
         "to" => Operator::Conversion,
-        "rem" => Operator::Percent,
+        "rem" => Operator::Remainder,
         "mod" => Operator::Modulo,
         "div" => Operator::IntegerDivide,
         "and" => Operator::LogicalAnd,
         "or" => Operator::LogicalOr,
-        "xor" => Operator::BitwiseXor,
+        "xor" => Operator::LogicalXor,
         "nand" => Operator::LogicalNand,
         "nor" => Operator::LogicalNor,
         "not" => Operator::LogicalNot,

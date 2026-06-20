@@ -78,6 +78,11 @@ impl Error for ParseError {}
 pub fn parse_expression(input: &str) -> Result<Expression, ParseError> {
     let tokens = lex_expression(input)
         .map_err(|err| ParseError::new(ParseErrorKind::Lex(err.kind), err.span))?;
+    // Filter out comment tokens — qalc treats `# ...` as trailing comments.
+    let tokens: Vec<Token> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, TokenKind::Comment(_)))
+        .collect();
     let mut parser = Parser {
         tokens,
         position: 0,
@@ -114,6 +119,7 @@ enum InfixOperator {
     BitwiseOr,
     LogicalAnd,
     LogicalOr,
+    LogicalXor,
     LogicalNand,
     LogicalNor,
 }
@@ -199,6 +205,29 @@ impl Parser {
                 let rhs = self.parse_infix_rhs(precedence, associativity)?;
                 lhs = build_infix_expression(infix, lhs, rhs);
                 continue;
+            }
+
+            // Standalone `E` operator: `5 E 3` → `5 × 10^3`.
+            // Qalculate treats `E` (or `e`) between expressions as
+            // multiplication by a power of ten.
+            if let Some(token) = self.peek() {
+                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E" || name == "e")
+                {
+                    // Use the same binding power as tight implicit multiplication
+                    // so `5 E 3` binds tighter than addition but looser than power.
+                    let bp = tight_implicit_multiplication_precedence();
+                    if bp >= minimum_precedence {
+                        self.advance(); // consume the `E`
+                        let rhs =
+                            self.parse_infix_rhs(bp, Associativity::Left)?;
+                        let ten_power = Expression::Power {
+                            base: Box::new(Expression::Number(Number::from_str("10").expect("10 is valid"))),
+                            exponent: Box::new(rhs),
+                        };
+                        lhs = merge_nary(NaryOperator::Multiplication, lhs, ten_power);
+                        continue;
+                    }
+                }
             }
 
             if let Some((precedence, associativity)) = self.peek_implicit_multiplication() {
@@ -320,6 +349,7 @@ impl Parser {
             Operator::Multiply => InfixOperator::Multiply,
             Operator::Divide => InfixOperator::Divide,
             Operator::Modulo => InfixOperator::Modulo,
+            Operator::Remainder => InfixOperator::Remainder,
             Operator::IntegerDivide => InfixOperator::IntegerDivision,
             Operator::Power => InfixOperator::Power,
             Operator::ShiftLeft => InfixOperator::ShiftLeft,
@@ -337,8 +367,12 @@ impl Parser {
             Operator::BitwiseOr => InfixOperator::BitwiseOr,
             Operator::LogicalAnd => InfixOperator::LogicalAnd,
             Operator::LogicalOr => InfixOperator::LogicalOr,
+            Operator::LogicalXor => InfixOperator::LogicalXor,
             Operator::LogicalNand => InfixOperator::LogicalNand,
             Operator::LogicalNor => InfixOperator::LogicalNor,
+            // `||` is lexed as Parallel; in a pure-operator context (no units)
+            // treat it as logical OR per qalc documentation.
+            Operator::Parallel => InfixOperator::LogicalOr,
             Operator::Percent | Operator::Factorial => return Ok(None),
             unsupported => {
                 return Err(ParseError::new(
@@ -390,19 +424,32 @@ impl Parser {
     }
 
     fn percent_starts_remainder_rhs(&self) -> bool {
+        let percent_token = self.tokens.get(self.position).expect("called on %");
         let next_index = self.position + 1;
         let Some(next) = self.tokens.get(next_index) else {
             return false;
         };
 
+        // If there is whitespace between `%` and the next token, this `%` is
+        // postfix percent; the following `+`/`-` is an arithmetic operator.
+        // Example: `10% + 100` → Percent(10) + 100
+        let adjacent = percent_token.span.end() == next.span.start();
+
         if token_starts_primary(next) {
-            return true;
+            // `6%2` (adjacent) → remainder; `100 %  x` (spaced) → percent * x
+            return adjacent;
         }
 
         if !matches!(
             next.kind,
             TokenKind::Operator(Operator::Plus | Operator::Minus)
         ) {
+            return false;
+        }
+
+        // `%` followed by `+`/`-` — only treat as remainder if adjacent,
+        // so `10% + 100` stays as postfix percent plus 100.
+        if !adjacent {
             return false;
         }
 
@@ -414,6 +461,8 @@ impl Parser {
             return false;
         }
 
+        // Adjacent `%` + sign + primary, but if the primary itself ends with
+        // `%` (as in `10%-6%`), this is percentage subtraction, not remainder.
         !self
             .primary_end_index(primary_index)
             .and_then(|end| self.tokens.get(end + 1))
@@ -501,33 +550,39 @@ fn duodecimal_digit(ch: char) -> Option<u32> {
 fn postfix_precedence() -> u8 {
     // Postfix is checked before binary infix, so sharing power's binding
     // bucket still attaches `!` and postfix `%` before another `^` can bind.
-    12
+    14
 }
 
 fn prefix_precedence() -> u8 {
-    12
+    14
 }
 
 fn tight_implicit_multiplication_precedence() -> u8 {
-    11
+    13
 }
 
 fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
+    // Qalculate precedence (https://qalculate.github.io/manual/qalculate-expressions.html):
+    // Logical XOR (loosest) < OR < NOR < NAND < AND (tightest among logicals)
+    // Then: bitwise OR < XOR < AND < comparison < shift < add < mul < power
     match operator {
-        InfixOperator::LogicalAnd | InfixOperator::LogicalNand => (1, Associativity::Left),
-        InfixOperator::LogicalOr | InfixOperator::LogicalNor => (2, Associativity::Left),
-        InfixOperator::BitwiseOr => (4, Associativity::Left),
-        InfixOperator::BitwiseXor => (5, Associativity::Left),
-        InfixOperator::BitwiseAnd => (6, Associativity::Left),
-        InfixOperator::Comparison(_) => (7, Associativity::Left),
-        InfixOperator::ShiftLeft | InfixOperator::ShiftRight => (8, Associativity::Left),
-        InfixOperator::Add | InfixOperator::Subtract => (9, Associativity::Left),
+        InfixOperator::LogicalXor => (1, Associativity::Left),
+        InfixOperator::LogicalOr => (2, Associativity::Left),
+        InfixOperator::LogicalNor => (3, Associativity::Left),
+        InfixOperator::LogicalNand => (4, Associativity::Left),
+        InfixOperator::LogicalAnd => (5, Associativity::Left),
+        InfixOperator::BitwiseOr => (6, Associativity::Left),
+        InfixOperator::BitwiseXor => (7, Associativity::Left),
+        InfixOperator::BitwiseAnd => (8, Associativity::Left),
+        InfixOperator::Comparison(_) => (9, Associativity::Left),
+        InfixOperator::ShiftLeft | InfixOperator::ShiftRight => (10, Associativity::Left),
+        InfixOperator::Add | InfixOperator::Subtract => (11, Associativity::Left),
         InfixOperator::Multiply
         | InfixOperator::Divide
         | InfixOperator::Remainder
         | InfixOperator::Modulo
-        | InfixOperator::IntegerDivision => (10, Associativity::Left),
-        InfixOperator::Power => (12, Associativity::Right),
+        | InfixOperator::IntegerDivision => (12, Associativity::Left),
+        InfixOperator::Power => (14, Associativity::Right),
     }
 }
 
@@ -578,6 +633,10 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
         InfixOperator::BitwiseOr => merge_nary(NaryOperator::BitwiseOr, lhs, rhs),
         InfixOperator::LogicalAnd => merge_nary(NaryOperator::LogicalAnd, lhs, rhs),
         InfixOperator::LogicalOr => merge_nary(NaryOperator::LogicalOr, lhs, rhs),
+        InfixOperator::LogicalXor => Expression::LogicalXor {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        },
         InfixOperator::LogicalNand => {
             Expression::LogicalNot(Box::new(merge_nary(NaryOperator::LogicalAnd, lhs, rhs)))
         }

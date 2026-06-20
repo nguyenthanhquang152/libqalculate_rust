@@ -173,16 +173,35 @@ fn parses_comparison_logical_and_bitwise_precedence() {
     assert!(matches!(lhs.as_ref(), Expression::Addition(_)));
     assert!(matches!(rhs.as_ref(), Expression::Multiplication(_)));
 
+    // With corrected qalc precedence, AND binds tighter than OR:
+    // `not a or b and c` → `(not a) or (b and c)`
     let logical = parse_expression("not a or b and c").expect("parse logical");
-    let and_terms = children(&logical);
-    assert_eq!(and_terms.len(), 2);
-    let or_terms = children(&and_terms[0]);
+    let or_terms = children(&logical);
+    assert_eq!(or_terms.len(), 2);
     assert!(matches!(or_terms[0], Expression::LogicalNot(_)));
-    assert_eq!(symbol_name(&or_terms[1]), "b");
+    let and_terms = children(&or_terms[1]);
+    assert_eq!(symbol_name(&and_terms[0]), "b");
     assert_eq!(symbol_name(&and_terms[1]), "c");
 
+    // `xor` word operator produces logical XOR (binary, lower than OR).
+    let xor_logical =
+        parse_expression("a xor b").expect("parse word xor as logical xor");
+    let Expression::LogicalXor { lhs, rhs } = xor_logical else {
+        panic!("expected LogicalXor, got {xor_logical:?}");
+    };
+    assert_eq!(symbol_name(&lhs), "a");
+    assert_eq!(symbol_name(&rhs), "b");
+
+    // `||` is parsed as logical OR (lexer emits Parallel, parser maps to LogicalOr).
+    let pipe_or = parse_expression("1>2 || 2>1").expect("parse || as logical or");
+    let or_terms = children(&pipe_or);
+    assert_eq!(or_terms.len(), 2);
+    assert!(matches!(or_terms[0], Expression::Comparison { .. }));
+    assert!(matches!(or_terms[1], Expression::Comparison { .. }));
+
+    // Bitwise `xor` via `bitxor` or `^^` still uses BitwiseXor.
     let bitwise_xor_word =
-        parse_expression("0b1011 0010 xor 0b0111 0001").expect("parse word xor as bitwise xor");
+        parse_expression("0b1011 0010 bitxor 0b0111 0001").expect("parse bitxor as bitwise xor");
     let xor_terms = children(&bitwise_xor_word);
     assert_eq!(number_text(&xor_terms[0]), "178");
     assert_eq!(number_text(&xor_terms[1]), "113");
@@ -343,4 +362,161 @@ fn returns_structured_errors_for_invalid_operator_syntax() {
         unsupported.kind(),
         ParseErrorKind::UnsupportedOperator(_)
     ));
+}
+
+// ============================================================================
+// PR #117 review fix tests
+// ============================================================================
+
+#[test]
+fn trailing_comments_are_ignored() {
+    // Comment 14: `1 + 2 # note` must parse as `1 + 2`, ignoring the comment.
+    let expr = parse_expression("1 + 2 # note").expect("trailing comment should be ignored");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert_eq!(number_text(&terms[0]), "1");
+    assert_eq!(number_text(&terms[1]), "2");
+
+    // Comment at end of number expression.
+    let expr2 = parse_expression("42 # the answer").expect("comment after single value");
+    assert_eq!(number_text(&expr2), "42");
+}
+
+#[test]
+fn pipe_pipe_parses_as_logical_or() {
+    // Comment 8, 11: `||` should map to LogicalOr (not UnsupportedOperator).
+    let expr = parse_expression("a || b").expect("|| should parse as logical or");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert_eq!(symbol_name(&terms[0]), "a");
+    assert_eq!(symbol_name(&terms[1]), "b");
+
+    // Chained `||` produces n-ary LogicalOr.
+    let expr3 = parse_expression("a || b || c").expect("chained || parses");
+    let terms3 = children(&expr3);
+    assert_eq!(terms3.len(), 3);
+}
+
+#[test]
+fn xor_word_is_logical_xor() {
+    // Comment 9: `xor` word operator should produce LogicalXor, not BitwiseXor.
+    let expr = parse_expression("a xor b").expect("xor should be logical");
+    let Expression::LogicalXor { lhs, rhs } = expr else {
+        panic!("expected LogicalXor, got {expr:?}");
+    };
+    assert_eq!(symbol_name(&lhs), "a");
+    assert_eq!(symbol_name(&rhs), "b");
+
+    // `bitxor` remains BitwiseXor.
+    let bitwise = parse_expression("a bitxor b").expect("bitxor should be bitwise");
+    let terms = children(&bitwise);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(bitwise, Expression::BitwiseXor(_)));
+}
+
+#[test]
+fn logical_precedence_matches_qalc_manual() {
+    // Comment 6, 10: AND binds tighter than OR, XOR is loosest.
+    // `a or b and c` → `a or (b and c)` (AND tighter)
+    let expr = parse_expression("a or b and c").expect("precedence test");
+    let or_terms = children(&expr);
+    assert_eq!(or_terms.len(), 2);
+    assert_eq!(symbol_name(&or_terms[0]), "a");
+    let and_terms = children(&or_terms[1]);
+    assert_eq!(symbol_name(&and_terms[0]), "b");
+    assert_eq!(symbol_name(&and_terms[1]), "c");
+
+    // `a xor b or c` → `a xor (b or c)` (XOR loosest)
+    let xor_expr = parse_expression("a xor b or c").expect("xor loosest");
+    let Expression::LogicalXor { lhs, rhs } = xor_expr else {
+        panic!("expected LogicalXor, got {xor_expr:?}");
+    };
+    assert_eq!(symbol_name(&lhs), "a");
+    let or_terms = children(&rhs);
+    assert_eq!(or_terms.len(), 2);
+}
+
+#[test]
+fn double_factorial_is_nested_factorial() {
+    // Comment 12: `5!!` should parse as Factorial(Factorial(5)), not error.
+    let expr = parse_expression("5!!").expect("double factorial should parse");
+    let Expression::Factorial(inner) = expr else {
+        panic!("expected outer Factorial, got {expr:?}");
+    };
+    let Expression::Factorial(inner2) = *inner else {
+        panic!("expected inner Factorial, got {inner:?}");
+    };
+    assert_eq!(number_text(&inner2), "5");
+}
+
+#[test]
+fn rem_word_is_always_remainder() {
+    // Comment 4, 13: `rem` word operator should always be a remainder,
+    // never postfix percent.
+
+    // `7 rem 2` → Remainder(7, 2)
+    let expr = parse_expression("7 rem 2").expect("rem is remainder");
+    let Expression::Remainder { lhs, rhs } = expr else {
+        panic!("expected Remainder, got {expr:?}");
+    };
+    assert_eq!(number_text(&lhs), "7");
+    assert_eq!(number_text(&rhs), "2");
+
+    // `7 rem -2` → Remainder(7, Negation(-2))
+    let expr2 = parse_expression("7 rem -2").expect("rem with negative rhs");
+    let Expression::Remainder { lhs, rhs } = expr2 else {
+        panic!("expected Remainder, got {expr2:?}");
+    };
+    assert_eq!(number_text(&lhs), "7");
+    assert!(matches!(*rhs, Expression::Negate(_)));
+}
+
+#[test]
+fn percent_spacing_disambiguates_postfix_from_remainder() {
+    // Comment 7: `10% + 100` (spaced) is Percent(10) + 100.
+    let expr = parse_expression("10% + 100").expect("spaced percent is postfix");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    assert_eq!(number_text(&terms[1]), "100");
+
+    // `6%2` (adjacent) is Remainder(6, 2).
+    let tight = parse_expression("6%2").expect("tight percent is remainder");
+    let Expression::Remainder { lhs, rhs } = tight else {
+        panic!("expected Remainder, got {tight:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    assert_eq!(number_text(&rhs), "2");
+}
+
+#[test]
+fn standalone_e_operator_is_power_of_ten() {
+    // Comment 15: `5 E 3` → Multiplication(5, Power(10, 3))
+    let expr = parse_expression("5 E 3").expect("standalone E parses");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert_eq!(number_text(&terms[0]), "5");
+    let Expression::Power { base, exponent } = &terms[1] else {
+        panic!("expected Power, got {:?}", terms[1]);
+    };
+    assert_eq!(number_text(base), "10");
+    assert_eq!(number_text(exponent), "3");
+}
+
+#[test]
+fn pr117_fixture_rows_parse_without_evaluating() {
+    // Additional fixture rows from PR #117 review comments.
+    for source in [
+        "5!!",                // double factorial
+        "7 rem -2",           // rem with signed RHS
+        "1 + 2 # comment",   // trailing comment
+        "a || b",             // parallel as logical OR
+        "a xor b",            // word xor as logical XOR
+        "a or b and c",       // correct logical precedence
+        "10% + 100",          // spaced percent as postfix
+        "5 E 3",              // standalone E operator
+        "2 e 4",              // lowercase e operator
+    ] {
+        parse_expression(source).unwrap_or_else(|err| panic!("{source}: {err}"));
+    }
 }

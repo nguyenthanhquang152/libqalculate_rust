@@ -359,7 +359,7 @@ fn tokenizes_unicode_ascii_and_word_operator_aliases() {
             TokenKind::Identifier("a".into()),
             TokenKind::Operator(Operator::LogicalAnd),
             TokenKind::Identifier("b".into()),
-            TokenKind::Operator(Operator::BitwiseXor),
+            TokenKind::Operator(Operator::LogicalXor),
             TokenKind::Identifier("c".into()),
             TokenKind::Operator(Operator::BitwiseXor),
             TokenKind::Identifier("d".into()),
@@ -403,7 +403,7 @@ fn tokenizes_operator_spellings_from_upstream_operator_fixtures() {
     );
 
     for (source, operator) in [
-        ("7 rem 2", Operator::Percent),
+        ("7 rem 2", Operator::Remainder),
         ("3 %% 2", Operator::Modulo),
         ("3 mod -2", Operator::Modulo),
         ("5//2", Operator::IntegerDivide),
