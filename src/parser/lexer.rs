@@ -171,6 +171,10 @@ pub enum Operator {
     Modulo,
     /// Integer division, written `//`, `\`, or `div`.
     IntegerDivide,
+    /// Combination operator, written `comb`.
+    Combination,
+    /// Permutation operator, written `perm`.
+    Permutation,
     /// Factorial.
     Factorial,
     /// Bitwise left shift.
@@ -1002,6 +1006,8 @@ fn word_operator(word: &str) -> Option<Operator> {
         "rem" => Operator::Remainder,
         "mod" => Operator::Modulo,
         "div" => Operator::IntegerDivide,
+        "comb" => Operator::Combination,
+        "perm" => Operator::Permutation,
         "and" => Operator::LogicalAnd,
         "or" => Operator::LogicalOr,
         "xor" => Operator::BitwiseXor,

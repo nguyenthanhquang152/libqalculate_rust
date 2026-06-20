@@ -1,4 +1,5 @@
 use libqalculate_rust::ast::{ComparisonOperator, Expression};
+use libqalculate_rust::parser::lexer::Operator;
 use libqalculate_rust::parser::operators::{parse_expression, ParseErrorKind};
 
 fn number_text(expr: &Expression) -> String {
@@ -1198,6 +1199,58 @@ fn powered_denominator_units_stay_inside_adaptive_division() {
 }
 
 #[test]
+fn unit_power_shorthand_stays_inside_adaptive_division() {
+    let expr = parse_expression("5 m/5 m2/s").expect("unit shorthand denominator parses");
+    let Expression::Division { denominator, .. } = expr else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+
+    let denominator_terms = children(&denominator);
+    assert_eq!(number_text(&denominator_terms[0]), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected denominator unit factor to be Division, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    let Expression::Power { base, exponent } = unit_numerator.as_ref() else {
+        panic!("expected shorthand powered denominator unit, got {unit_numerator:?}");
+    };
+    assert_eq!(symbol_name(base), "m");
+    assert_eq!(number_text(exponent), "2");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
+fn spaced_unit_products_stay_inside_adaptive_denominators() {
+    let expr = parse_expression("5 m/5 m m/s").expect("spaced unit product denominator parses");
+    let Expression::Division { denominator, .. } = expr else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+
+    let denominator_terms = children(&denominator);
+    assert_eq!(number_text(&denominator_terms[0]), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected denominator unit factor to be Division, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    let unit_product = children(unit_numerator);
+    assert_eq!(symbol_name(&unit_product[0]), "m");
+    assert_eq!(symbol_name(&unit_product[1]), "m");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
 fn negated_numeric_user_unit_products_drive_parallel_detection() {
     let expr = parse_expression("-1 widget || -2 widget")
         .expect("signed possible user-unit quantities parse as parallel");
@@ -1384,6 +1437,19 @@ fn bare_function_argument_includes_postfix_tails() {
 }
 
 #[test]
+fn postfix_function_binds_after_postfix_percent() {
+    let expr = parse_expression("10% sin").expect("postfix function after percent parses");
+    let Expression::FunctionCall { function, args } = expr else {
+        panic!("expected FunctionCall, got {expr:?}");
+    };
+    assert_eq!(function.id(), "sin");
+    let Expression::Percent(arg) = &args[0] else {
+        panic!("expected percent function argument, got {:?}", args[0]);
+    };
+    assert_eq!(number_text(arg), "10");
+}
+
+#[test]
 fn signed_spaced_unit_denominator_stays_quantity_unit_chain() {
     let expr = parse_expression("5 m/-5 m/s").expect("signed spaced unit denominator parses");
     let Expression::Division {
@@ -1425,4 +1491,18 @@ fn nonadjacent_units_do_not_drive_parallel_detection() {
     let operands = children(&expr);
     assert_eq!(operands.len(), 2);
     assert!(matches!(expr, Expression::LogicalOr(_)));
+}
+
+#[test]
+fn unsupported_word_operators_are_rejected() {
+    for (source, operator) in [
+        ("5 comb 2", Operator::Combination),
+        ("5 perm 2", Operator::Permutation),
+    ] {
+        let err = match parse_expression(source) {
+            Ok(expr) => panic!("{source} should not parse, got {expr:?}"),
+            Err(err) => err,
+        };
+        assert_eq!(err.kind(), ParseErrorKind::UnsupportedOperator(operator));
+    }
 }

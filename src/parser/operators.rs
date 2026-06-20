@@ -444,6 +444,25 @@ fn is_unit_symbol_name(name: &str) -> bool {
     false
 }
 
+fn split_unit_power_shorthand_name(name: &str) -> Option<(&str, &str)> {
+    let base_len = name.trim_end_matches(|ch: char| ch.is_ascii_digit()).len();
+    if base_len == 0 || base_len == name.len() {
+        return None;
+    }
+
+    let base = &name[..base_len];
+    let exponent = &name[base_len..];
+    is_unit_symbol_name(base).then_some((base, exponent))
+}
+
+fn unit_power_shorthand_expression(name: &str) -> Option<Expression> {
+    let (base, exponent) = split_unit_power_shorthand_name(name)?;
+    Some(Expression::Power {
+        base: Box::new(Expression::Symbolic(Symbol::new(base.to_owned()))),
+        exponent: Box::new(Expression::Number(Number::from_str(exponent).ok()?)),
+    })
+}
+
 const KNOWN_SINGLE_ARGUMENT_FUNCTIONS: &[&str] = &[
     "sin",
     "cos",
@@ -1005,7 +1024,7 @@ impl Parser {
     }
 
     fn parse_unit_division_chain(&mut self) -> Result<Expression, ParseError> {
-        let mut lhs = self.parse_unit_power_factor()?;
+        let mut lhs = self.parse_unit_product()?;
 
         loop {
             let Some(token) = self.peek() else {
@@ -1021,7 +1040,7 @@ impl Parser {
             }
 
             self.advance();
-            let rhs = self.parse_unit_power_factor()?;
+            let rhs = self.parse_unit_product()?;
             lhs = Expression::Division {
                 numerator: Box::new(lhs),
                 denominator: Box::new(rhs),
@@ -1031,7 +1050,36 @@ impl Parser {
         Ok(lhs)
     }
 
+    fn parse_unit_product(&mut self) -> Result<Expression, ParseError> {
+        let mut lhs = self.parse_unit_power_factor()?;
+
+        loop {
+            if !self.peek().is_some_and(token_is_known_unit_primary) {
+                break;
+            }
+
+            let rhs = self.parse_unit_power_factor()?;
+            lhs = merge_nary(NaryOperator::Multiplication, lhs, rhs);
+        }
+
+        Ok(lhs)
+    }
+
     fn parse_unit_power_factor(&mut self) -> Result<Expression, ParseError> {
+        if let Some(token) = self.peek().cloned() {
+            match token.kind {
+                TokenKind::Identifier(name) | TokenKind::EscapedIdentifier(name) => {
+                    if let Some(expression) =
+                        unit_power_shorthand_expression(name.trim_start_matches('\\'))
+                    {
+                        self.advance();
+                        return Ok(expression);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         let lhs = self.parse_prefix()?;
         let Some(token) = self.peek() else {
             return Ok(lhs);
@@ -1172,6 +1220,10 @@ impl Parser {
         let adjacent = percent_token.span.end() == next.span.start();
 
         if token_starts_primary(next) {
+            if self.token_at_starts_postfix_function(next_index) {
+                return false;
+            }
+
             // Both `6%2` (adjacent) and `6 % 2` (spaced) are remainder.
             // Qalculate treats `%` followed by a primary operand as
             // remainder regardless of whitespace.
@@ -1358,6 +1410,21 @@ impl Parser {
         self.bare_function_argument_end_index(function_index + 1)
     }
 
+    fn token_at_starts_postfix_function(&self, index: usize) -> bool {
+        let Some(token) = self.tokens.get(index) else {
+            return false;
+        };
+        let TokenKind::Identifier(name) = &token.kind else {
+            return false;
+        };
+
+        is_known_single_argument_function_name(name)
+            && !self
+                .tokens
+                .get(index + 1)
+                .is_some_and(|next| matches!(next.kind, TokenKind::OpenParen))
+    }
+
     fn bare_function_argument_end_index(&self, index: usize) -> Option<usize> {
         let token = self.tokens.get(index)?;
         let mut end = match token.kind {
@@ -1391,10 +1458,7 @@ impl Parser {
                 }
                 TokenKind::Identifier(ref name)
                     if is_known_single_argument_function_name(name)
-                        && !self
-                            .tokens
-                            .get(next_index + 1)
-                            .is_some_and(|token| matches!(token.kind, TokenKind::OpenParen)) =>
+                        && self.token_at_starts_postfix_function(next_index) =>
                 {
                     end = next_index;
                     continue;
@@ -1668,7 +1732,8 @@ fn token_starts_spaced_bare_argument_product(token: &Token) -> bool {
 fn token_is_known_unit_primary(token: &Token) -> bool {
     match &token.kind {
         TokenKind::Identifier(name) | TokenKind::EscapedIdentifier(name) => {
-            is_unit_symbol_name(name.trim_start_matches('\\'))
+            let name = name.trim_start_matches('\\');
+            is_unit_symbol_name(name) || split_unit_power_shorthand_name(name).is_some()
         }
         _ => false,
     }
