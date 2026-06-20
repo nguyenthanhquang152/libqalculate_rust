@@ -11,7 +11,7 @@
 //!   `../libqalculate/tests/percentages.batch` for compatibility fixtures.
 
 use crate::{
-    ast::{ComparisonOperator, Expression, NaryChildren, Symbol},
+    ast::{ComparisonOperator, Expression, FunctionRef, NaryChildren, Symbol},
     number::Number,
     parser::lexer::{
         lex_expression, BasePrefix, LexErrorKind, NumberLiteralKind, Operator, Span, Token,
@@ -83,27 +83,32 @@ pub fn parse_expression(input: &str) -> Result<Expression, ParseError> {
         .into_iter()
         .filter(|t| !matches!(t.kind, TokenKind::Comment(_)))
         .collect();
+
+    // Pass 1: Parse with no parallel spans. Detect where parallel sums occur.
     let mut parser = Parser {
         tokens: tokens.clone(),
         position: 0,
         input_len: input.len(),
-        treat_or_as_parallel: false,
+        parallel_spans: std::collections::HashSet::new(),
+        detected_parallel_spans: std::collections::HashSet::new(),
     };
     let expression = parser.parse_expression(0)?;
     if let Some(token) = parser.peek() {
         return Err(parser.unexpected_token(token));
     }
 
-    if contains_parallel_units(&expression) {
-        let mut parser = Parser {
+    if !parser.detected_parallel_spans.is_empty() {
+        // Pass 2: Parse again, treating only the detected spans as Parallel.
+        let mut parser2 = Parser {
             tokens,
             position: 0,
             input_len: input.len(),
-            treat_or_as_parallel: true,
+            parallel_spans: parser.detected_parallel_spans,
+            detected_parallel_spans: std::collections::HashSet::new(),
         };
-        let expression = parser.parse_expression(0)?;
-        if let Some(token) = parser.peek() {
-            return Err(parser.unexpected_token(token));
+        let expression = parser2.parse_expression(0)?;
+        if let Some(token) = parser2.peek() {
+            return Err(parser2.unexpected_token(token));
         }
         Ok(expression)
     } else {
@@ -111,55 +116,9 @@ pub fn parse_expression(input: &str) -> Result<Expression, ParseError> {
     }
 }
 
-fn contains_parallel_units(expr: &Expression) -> bool {
-    if let Expression::LogicalOr(children) = expr {
-        for child in children.as_slice().iter() {
-            if !has_unit(child) {
-                return false;
-            }
-            if represents_boolean(child) {
-                if let Expression::LogicalOr(_) = child {
-                    if !contains_parallel_units(child) {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-    if represents_boolean(expr) {
-        return false;
-    }
-    let count = expr.child_count();
-    for i in 0..count {
-        if let Some(child) = expr.child(i) {
-            if contains_parallel_units(child) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn represents_boolean(expr: &Expression) -> bool {
-    matches!(
-        expr,
-        Expression::Comparison { .. }
-            | Expression::LogicalAnd(_)
-            | Expression::LogicalOr(_)
-            | Expression::LogicalXor { .. }
-            | Expression::LogicalNot(_)
-    )
-}
-
-
 fn has_unit(expr: &Expression) -> bool {
     match expr {
-        Expression::Symbolic(symbol) => {
-            is_unit_symbol_name(symbol.name())
-        }
+        Expression::Symbolic(symbol) => is_unit_symbol_name(symbol.name()),
         _ => {
             let count = expr.child_count();
             for i in 0..count {
@@ -175,20 +134,291 @@ fn has_unit(expr: &Expression) -> bool {
 }
 
 fn is_unit_symbol_name(name: &str) -> bool {
-    if name == "Ω" || name == "ohm" || name == "ohms" || name == "A" || name == "V" || name == "W" || name == "J" || name == "N" || name == "Hz" || name == "Pa" || name == "m" || name == "s" || name == "g" || name == "kg" || name == "deg" || name == "rad" {
+    // List of base unit symbol/name suffixes.
+    // If a name matches one of these directly, or ends with one of these
+    // preceded by a valid SI prefix, it is treated as a unit.
+    const UNITS: &[&str] = &[
+        "Ω",
+        "ohm",
+        "ohms",
+        "m",
+        "meter",
+        "meters",
+        "metre",
+        "metres",
+        "g",
+        "gram",
+        "grams",
+        "s",
+        "second",
+        "seconds",
+        "sec",
+        "secs",
+        "A",
+        "ampere",
+        "amperes",
+        "amp",
+        "amps",
+        "K",
+        "kelvin",
+        "kelvins",
+        "mol",
+        "mole",
+        "moles",
+        "cd",
+        "candela",
+        "candelas",
+        "Hz",
+        "hertz",
+        "N",
+        "newton",
+        "newtons",
+        "Pa",
+        "pascal",
+        "pascals",
+        "J",
+        "joule",
+        "joules",
+        "W",
+        "watt",
+        "watts",
+        "C",
+        "coulomb",
+        "coulombs",
+        "V",
+        "volt",
+        "volts",
+        "F",
+        "farad",
+        "farads",
+        "S",
+        "siemens",
+        "Wb",
+        "weber",
+        "webers",
+        "T",
+        "tesla",
+        "teslas",
+        "H",
+        "henry",
+        "henries",
+        "lm",
+        "lumen",
+        "lumens",
+        "lx",
+        "lux",
+        "Bq",
+        "becquerel",
+        "becquerels",
+        "Gy",
+        "gray",
+        "grays",
+        "Sv",
+        "sievert",
+        "sieverts",
+        "kat",
+        "katal",
+        "katals",
+        "L",
+        "l",
+        "liter",
+        "liters",
+        "litre",
+        "litres",
+        "min",
+        "minute",
+        "minutes",
+        "h",
+        "hr",
+        "hrs",
+        "hour",
+        "hours",
+        "d",
+        "day",
+        "days",
+        "t",
+        "tonne",
+        "tonnes",
+        "ton",
+        "tons",
+        "au",
+        "astronomical_unit",
+        "pc",
+        "parsec",
+        "parsecs",
+        "ly",
+        "light_year",
+        "light_years",
+        "eV",
+        "electronvolt",
+        "electronvolts",
+        "Da",
+        "dalton",
+        "daltons",
+        "bar",
+        "bars",
+        "atm",
+        "atmosphere",
+        "atmospheres",
+        "cal",
+        "calorie",
+        "calories",
+        "deg",
+        "degree",
+        "degrees",
+        "rad",
+        "radian",
+        "radians",
+        "sr",
+        "steradian",
+        "steradians",
+        "ft",
+        "foot",
+        "feet",
+        "in",
+        "inch",
+        "inches",
+        "yd",
+        "yard",
+        "yards",
+        "mi",
+        "mile",
+        "miles",
+        "lb",
+        "pound",
+        "pounds",
+        "oz",
+        "ounce",
+        "ounces",
+        "gal",
+        "gallon",
+        "gallons",
+        "qt",
+        "quart",
+        "quarts",
+        "pt",
+        "pint",
+        "pints",
+        "cup",
+        "cups",
+        "floz",
+        "fl_oz",
+        "tbsp",
+        "tablespoon",
+        "tablespoons",
+        "tsp",
+        "teaspoon",
+        "teaspoons",
+        "psi",
+        "hp",
+        "horsepower",
+        "B",
+        "byte",
+        "bytes",
+        "bit",
+        "bits",
+    ];
+
+    if UNITS.contains(&name) {
         return true;
     }
-    if name.ends_with('Ω') || name.ends_with("ohm") || name.ends_with("ohms") || name.ends_with('A') || name.ends_with('V') || name.ends_with("Hz") || name.ends_with('W') || name.ends_with('m') {
-        return true;
+
+    // Check SI prefixes
+    const SI_PREFIXES: &[&str] = &[
+        "y", "z", "a", "f", "p", "n", "μ", "u", "m", "c", "d", "da", "h", "k", "M", "G", "T", "P",
+        "E", "Z", "Y",
+    ];
+
+    for prefix in SI_PREFIXES {
+        if let Some(rest) = name.strip_prefix(prefix) {
+            if UNITS.contains(&rest) {
+                return true;
+            }
+        }
     }
+
     false
+}
+
+fn is_function_name(name: &str) -> bool {
+    if name.starts_with('\\') {
+        return true;
+    }
+    const FUNCTIONS: &[&str] = &[
+        "sin",
+        "cos",
+        "tan",
+        "asin",
+        "acos",
+        "atan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "asinh",
+        "acosh",
+        "atanh",
+        "sqrt",
+        "cbrt",
+        "ln",
+        "log",
+        "log2",
+        "log10",
+        "exp",
+        "abs",
+        "sign",
+        "round",
+        "floor",
+        "ceil",
+        "trunc",
+        "factorial",
+        "gamma",
+        "lnGamma",
+        "erf",
+        "erfc",
+        "zeta",
+        "beta",
+        "min",
+        "max",
+        "sum",
+        "product",
+        "mean",
+        "median",
+        "stddev",
+        "var",
+        "count",
+        "average",
+        "sec",
+        "csc",
+        "cot",
+        "asec",
+        "acsc",
+        "acot",
+        "sech",
+        "csch",
+        "coth",
+        "asech",
+        "acsch",
+        "acoth",
+        "sinc",
+        "atan2",
+        "hypot",
+        "pow",
+        "mod",
+        "rem",
+        "gcd",
+        "lcm",
+        "fib",
+        "fact",
+    ];
+    FUNCTIONS.contains(&name)
 }
 
 struct Parser {
     tokens: Vec<Token>,
     position: usize,
     input_len: usize,
-    treat_or_as_parallel: bool,
+    parallel_spans: std::collections::HashSet<Span>,
+    detected_parallel_spans: std::collections::HashSet<Span>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,7 +517,7 @@ impl Parser {
 
             if let TokenKind::Operator(Operator::Percent) = token.kind {
                 if self.percent_starts_remainder_rhs() {
-                    let (precedence, associativity) = infix_binding_power(InfixOperator::Remainder, self.treat_or_as_parallel);
+                    let (precedence, associativity) = infix_binding_power(InfixOperator::Remainder);
                     if precedence < minimum_precedence {
                         break;
                     }
@@ -309,13 +539,17 @@ impl Parser {
             }
 
             if let Some(infix) = self.peek_infix_operator()? {
-                let (precedence, associativity) = infix_binding_power(infix, self.treat_or_as_parallel);
+                let (precedence, associativity) = infix_binding_power(infix);
                 if precedence < minimum_precedence {
                     break;
                 }
+                let token = self.peek().cloned().unwrap();
                 self.advance();
                 let rhs = self.parse_infix_rhs(precedence, associativity)?;
-                lhs = build_infix_expression(infix, lhs, rhs, self.treat_or_as_parallel);
+                if infix == InfixOperator::ParallelOr && has_unit(&lhs) && has_unit(&rhs) {
+                    self.detected_parallel_spans.insert(token.span);
+                }
+                lhs = build_infix_expression(infix, lhs, rhs);
                 continue;
             }
 
@@ -324,17 +558,17 @@ impl Parser {
             // multiplication by a power of ten. Lowercase `e` remains
             // an identifier (Euler's number / variable name).
             if let Some(token) = self.peek() {
-                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E")
-                {
+                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E") {
                     // The E ten-power operator binds tighter than exponentiation,
                     // so `2E3^2` is `(2E3)^2`, not `2 * 10^(3^2)`.
                     let bp = e_operator_precedence();
                     if bp >= minimum_precedence {
                         self.advance(); // consume the `E`
-                        let rhs =
-                            self.parse_infix_rhs(bp, Associativity::Left)?;
+                        let rhs = self.parse_infix_rhs(bp, Associativity::Left)?;
                         let ten_power = Expression::Power {
-                            base: Box::new(Expression::Number(Number::from_str("10").expect("10 is valid"))),
+                            base: Box::new(Expression::Number(
+                                Number::from_str("10").expect("10 is valid"),
+                            )),
                             exponent: Box::new(rhs),
                         };
                         lhs = merge_nary(NaryOperator::Multiplication, lhs, ten_power);
@@ -370,9 +604,37 @@ impl Parser {
             TokenKind::Number { text, kind } => parse_number_literal(&text, kind)
                 .map(Expression::Number)
                 .map_err(|_| ParseError::new(ParseErrorKind::InvalidNumber, token.span)),
-            TokenKind::Identifier(name) => Ok(Expression::Symbolic(Symbol::new(name))),
+            TokenKind::Identifier(name) => {
+                if is_function_name(&name)
+                    && self
+                        .peek()
+                        .is_some_and(|t| matches!(t.kind, TokenKind::OpenParen))
+                {
+                    self.advance(); // consume OpenParen
+                    let args = self.parse_function_arguments()?;
+                    Ok(Expression::FunctionCall {
+                        function: FunctionRef::new(name),
+                        args,
+                    })
+                } else {
+                    Ok(Expression::Symbolic(Symbol::new(name)))
+                }
+            }
             TokenKind::EscapedIdentifier(name) => {
-                Ok(Expression::Symbolic(Symbol::new(format!("\\{name}"))))
+                let escaped_name = format!("\\{name}");
+                if self
+                    .peek()
+                    .is_some_and(|t| matches!(t.kind, TokenKind::OpenParen))
+                {
+                    self.advance(); // consume OpenParen
+                    let args = self.parse_function_arguments()?;
+                    Ok(Expression::FunctionCall {
+                        function: FunctionRef::new(escaped_name),
+                        args,
+                    })
+                } else {
+                    Ok(Expression::Symbolic(Symbol::new(escaped_name)))
+                }
             }
             TokenKind::OpenParen => {
                 let expression = self.parse_expression(0)?;
@@ -402,6 +664,36 @@ impl Parser {
                 Err(ParseError::new(ParseErrorKind::UnexpectedToken, token.span))
             }
         }
+    }
+
+    fn parse_function_arguments(&mut self) -> Result<Vec<Expression>, ParseError> {
+        let mut args = Vec::new();
+        if let Some(token) = self.peek() {
+            if matches!(token.kind, TokenKind::CloseParen) {
+                self.advance();
+                return Ok(args);
+            }
+        }
+        loop {
+            let arg = self.parse_expression(0)?;
+            args.push(arg);
+            let next = self
+                .advance()
+                .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEnd, self.end_span()))?;
+            match next.kind {
+                TokenKind::CloseParen => break,
+                TokenKind::Comma | TokenKind::Semicolon => {
+                    if let Some(token) = self.peek() {
+                        if matches!(token.kind, TokenKind::CloseParen) {
+                            self.advance();
+                            break;
+                        }
+                    }
+                }
+                _ => return Err(self.unexpected_token(&next)),
+            }
+        }
+        Ok(args)
     }
 
     fn parse_prefix_operator(
@@ -487,7 +779,13 @@ impl Parser {
             // semantics for unit expressions like `10 Ω || 6 Ω`.
             // Logical-OR fallback is deferred to later unit resolution.
             Operator::Parallel => InfixOperator::Parallel,
-            Operator::ParallelOr => InfixOperator::ParallelOr,
+            Operator::ParallelOr => {
+                if self.parallel_spans.contains(&token.span) {
+                    InfixOperator::Parallel
+                } else {
+                    InfixOperator::ParallelOr
+                }
+            }
             Operator::Percent | Operator::Factorial => return Ok(None),
             unsupported => {
                 return Err(ParseError::new(
@@ -532,7 +830,7 @@ impl Parser {
             if is_adjacent {
                 tight_implicit_multiplication_precedence()
             } else {
-                infix_binding_power(InfixOperator::Multiply, self.treat_or_as_parallel).0
+                infix_binding_power(InfixOperator::Multiply).0
             },
             Associativity::Left,
         ))
@@ -564,7 +862,8 @@ impl Parser {
         // `%` followed by `+`/`-` — only treat as remainder if adjacent or if % is not attached to the left operand,
         // so `10% + 100` stays as postfix percent plus 100, but `6 % -2` becomes remainder.
         let prev_adjacent = if self.position > 0 {
-            self.tokens.get(self.position - 1)
+            self.tokens
+                .get(self.position - 1)
                 .map(|prev| prev.span.end() == percent_token.span.start())
                 .unwrap_or(false)
         } else {
@@ -689,7 +988,7 @@ fn e_operator_precedence() -> u8 {
     16
 }
 
-fn infix_binding_power(operator: InfixOperator, treat_or_as_parallel: bool) -> (u8, Associativity) {
+fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
     // Qalculate precedence (https://qalculate.github.io/manual/qalculate-expressions.html):
     // Logical XOR (loosest) < OR < NOR < NAND < AND (tightest among logicals)
     // Then: bitwise OR < XOR < AND < comparison < shift < add < parallel < mul < power
@@ -706,13 +1005,7 @@ fn infix_binding_power(operator: InfixOperator, treat_or_as_parallel: bool) -> (
         InfixOperator::ShiftLeft | InfixOperator::ShiftRight => (10, Associativity::Left),
         InfixOperator::Add | InfixOperator::Subtract => (11, Associativity::Left),
         InfixOperator::Parallel => (12, Associativity::Left),
-        InfixOperator::ParallelOr => {
-            if treat_or_as_parallel {
-                (12, Associativity::Left)
-            } else {
-                (2, Associativity::Left)
-            }
-        }
+        InfixOperator::ParallelOr => (2, Associativity::Left),
         InfixOperator::Multiply
         | InfixOperator::Divide
         | InfixOperator::Remainder
@@ -722,7 +1015,7 @@ fn infix_binding_power(operator: InfixOperator, treat_or_as_parallel: bool) -> (
     }
 }
 
-fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Expression, treat_or_as_parallel: bool) -> Expression {
+fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Expression) -> Expression {
     match operator {
         InfixOperator::Add => merge_nary(NaryOperator::Addition, lhs, rhs),
         InfixOperator::Subtract => merge_nary(
@@ -783,16 +1076,7 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         },
-        InfixOperator::ParallelOr => {
-            if treat_or_as_parallel {
-                Expression::Parallel {
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                }
-            } else {
-                merge_nary(NaryOperator::LogicalOr, lhs, rhs)
-            }
-        }
+        InfixOperator::ParallelOr => merge_nary(NaryOperator::LogicalOr, lhs, rhs),
     }
 }
 

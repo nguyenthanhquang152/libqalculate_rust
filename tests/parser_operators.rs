@@ -185,8 +185,7 @@ fn parses_comparison_logical_and_bitwise_precedence() {
 
     // `xor` word operator produces bitwise XOR at parse time.
     // Promotion to logical XOR is deferred to evaluation.
-    let xor_bitwise =
-        parse_expression("a xor b").expect("parse word xor as bitwise xor");
+    let xor_bitwise = parse_expression("a xor b").expect("parse word xor as bitwise xor");
     let xor_terms = children(&xor_bitwise);
     assert_eq!(xor_terms.len(), 2);
     assert!(matches!(xor_bitwise, Expression::BitwiseXor(_)));
@@ -535,8 +534,13 @@ fn percent_spacing_disambiguates_postfix_from_remainder() {
     assert_eq!(number_text(&rhs), "2");
 
     // Comment 3446611878: `6 % -2` (spaced with signed RHS) is Remainder(6, -2).
-    let spaced_signed = parse_expression("6 % -2").expect("spaced percent with signed operand is remainder");
-    let Expression::Remainder { lhs: lhs_signed, rhs: rhs_signed } = spaced_signed else {
+    let spaced_signed =
+        parse_expression("6 % -2").expect("spaced percent with signed operand is remainder");
+    let Expression::Remainder {
+        lhs: lhs_signed,
+        rhs: rhs_signed,
+    } = spaced_signed
+    else {
         panic!("expected Remainder, got {spaced_signed:?}");
     };
     assert_eq!(number_text(&lhs_signed), "6");
@@ -566,7 +570,9 @@ fn lowercase_e_remains_identifier() {
     // `2 e 4` is implicit multiplication: Mul(2, e, 4)
     assert!(terms.len() >= 2);
     // Check that `e` appears as a symbolic identifier, not consumed as operator
-    assert!(terms.iter().any(|t| matches!(t, Expression::Symbolic(s) if s.name() == "e")));
+    assert!(terms
+        .iter()
+        .any(|t| matches!(t, Expression::Symbolic(s) if s.name() == "e")));
 }
 
 #[test]
@@ -584,7 +590,11 @@ fn e_operator_binds_tighter_than_power() {
     let mul_terms = children(&base);
     assert_eq!(mul_terms.len(), 2);
     assert_eq!(number_text(&mul_terms[0]), "2");
-    let Expression::Power { base: ten, exponent: three } = &mul_terms[1] else {
+    let Expression::Power {
+        base: ten,
+        exponent: three,
+    } = &mul_terms[1]
+    else {
         panic!("expected inner Power(10, 3), got {:?}", mul_terms[1]);
     };
     assert_eq!(number_text(ten), "10");
@@ -599,16 +609,16 @@ fn e_operator_binds_tighter_than_power() {
 fn pr117_fixture_rows_parse_without_evaluating() {
     // Additional fixture rows from PR #117 review comments.
     for source in [
-        "5!!",                // double factorial
-        "5!!!",               // triple factorial (multifactorial)
-        "7 rem -2",           // rem with signed RHS
-        "1 + 2 # comment",   // trailing comment
-        "a || b",             // parallel operator
-        "a xor b",            // word xor as bitwise XOR
-        "a or b and c",       // correct logical precedence
-        "10% + 100",          // spaced percent as postfix
-        "6 % 2",              // spaced percent with primary as remainder
-        "5 E 3",              // standalone E operator
+        "5!!",             // double factorial
+        "5!!!",            // triple factorial (multifactorial)
+        "7 rem -2",        // rem with signed RHS
+        "1 + 2 # comment", // trailing comment
+        "a || b",          // parallel operator
+        "a xor b",         // word xor as bitwise XOR
+        "a or b and c",    // correct logical precedence
+        "10% + 100",       // spaced percent as postfix
+        "6 % 2",           // spaced percent with primary as remainder
+        "5 E 3",           // standalone E operator
     ] {
         parse_expression(source).unwrap_or_else(|err| panic!("{source}: {err}"));
     }
@@ -642,13 +652,18 @@ fn parallel_sum_precedence() {
     assert_eq!(number_text(rhs), "3");
 
     // Test with `||` and unit symbols (which triggers the parallel-sum precedence path)
-    let expr_pipe = parse_expression("1 + 2 ohm || 3 ohm").expect("parse || parallel sum with addition");
+    let expr_pipe =
+        parse_expression("1 + 2 ohm || 3 ohm").expect("parse || parallel sum with addition");
     let Expression::Addition(terms_pipe) = expr_pipe else {
         panic!("expected Addition, got {expr_pipe:?}");
     };
     assert_eq!(terms_pipe.as_slice().len(), 2);
     assert_eq!(number_text(&terms_pipe.as_slice()[0]), "1");
-    let Expression::Parallel { lhs: lhs_pipe, rhs: rhs_pipe } = &terms_pipe.as_slice()[1] else {
+    let Expression::Parallel {
+        lhs: lhs_pipe,
+        rhs: rhs_pipe,
+    } = &terms_pipe.as_slice()[1]
+    else {
         panic!("expected Parallel, got {:?}", terms_pipe.as_slice()[1]);
     };
     let lhs_terms = children(lhs_pipe.as_ref());
@@ -657,4 +672,90 @@ fn parallel_sum_precedence() {
     let rhs_terms = children(rhs_pipe.as_ref());
     assert_eq!(number_text(&rhs_terms[0]), "3");
     assert_eq!(symbol_name(&rhs_terms[1]), "ohm");
+}
+
+#[test]
+fn test_code_review_issue_25_independent_parallel_resolution() {
+    // Comment 25: (10 Ω || 6 Ω) + (a || b)
+    // The first `||` must parse as Parallel, and the second as LogicalOr.
+    let expr =
+        parse_expression("(10 Ω || 6 Ω) + (a || b)").expect("parse (10 Ω || 6 Ω) + (a || b)");
+    let Expression::Addition(terms) = expr else {
+        panic!("expected Addition, got {expr:?}");
+    };
+    assert_eq!(terms.as_slice().len(), 2);
+
+    // First term: 10 Ω || 6 Ω should be Expression::Parallel
+    let Expression::Parallel { lhs, rhs } = &terms.as_slice()[0] else {
+        panic!(
+            "expected first term to be Parallel, got {:?}",
+            terms.as_slice()[0]
+        );
+    };
+    let lhs_terms = children(lhs.as_ref());
+    assert_eq!(number_text(&lhs_terms[0]), "10");
+    assert_eq!(symbol_name(&lhs_terms[1]), "Ω");
+    let rhs_terms = children(rhs.as_ref());
+    assert_eq!(number_text(&rhs_terms[0]), "6");
+    assert_eq!(symbol_name(&rhs_terms[1]), "Ω");
+
+    // Second term: a || b should be Expression::LogicalOr
+    let logical_or = &terms.as_slice()[1];
+    let logical_or_children = children(logical_or);
+    assert_eq!(logical_or_children.len(), 2);
+    assert_eq!(symbol_name(&logical_or_children[0]), "a");
+    assert_eq!(symbol_name(&logical_or_children[1]), "b");
+}
+
+#[test]
+fn test_code_review_issue_26_whitelist_free_unit_detection() {
+    // Comment 26: 1 L || 2 L and 1 ft || 2 ft must parse as Parallel.
+    for source in &["1 L || 2 L", "1 ft || 2 ft"] {
+        let expr =
+            parse_expression(source).unwrap_or_else(|e| panic!("failed to parse {source}: {e}"));
+        let Expression::Parallel { lhs, rhs } = expr else {
+            panic!("expected Parallel for {source}, got {expr:?}");
+        };
+        let lhs_terms = children(lhs.as_ref());
+        assert_eq!(number_text(&lhs_terms[0]), "1");
+        let rhs_terms = children(rhs.as_ref());
+        assert_eq!(number_text(&rhs_terms[0]), "2");
+    }
+}
+
+#[test]
+fn test_code_review_issue_27_function_calls() {
+    // Comment 27: sin(2) and sqrt(32) should parse as FunctionCall
+    let sin_expr = parse_expression("sin(2)").expect("parse sin(2)");
+    let Expression::FunctionCall { function, args } = sin_expr else {
+        panic!("expected FunctionCall, got {sin_expr:?}");
+    };
+    assert_eq!(function.id(), "sin");
+    assert_eq!(args.len(), 1);
+    assert_eq!(number_text(&args[0]), "2");
+
+    let sqrt_expr = parse_expression("sqrt(32)").expect("parse sqrt(32)");
+    let Expression::FunctionCall {
+        function: sqrt_fn,
+        args: sqrt_args,
+    } = sqrt_expr
+    else {
+        panic!("expected FunctionCall, got {sqrt_expr:?}");
+    };
+    assert_eq!(sqrt_fn.id(), "sqrt");
+    assert_eq!(sqrt_args.len(), 1);
+    assert_eq!(number_text(&sqrt_args[0]), "32");
+
+    // Check escaped identifier as function name: \sin(2)
+    let escaped_expr = parse_expression("\\sin(2)").expect("parse \\sin(2)");
+    let Expression::FunctionCall {
+        function: esc_fn,
+        args: esc_args,
+    } = escaped_expr
+    else {
+        panic!("expected FunctionCall, got {escaped_expr:?}");
+    };
+    assert_eq!(esc_fn.id(), "\\sin");
+    assert_eq!(esc_args.len(), 1);
+    assert_eq!(number_text(&esc_args[0]), "2");
 }
