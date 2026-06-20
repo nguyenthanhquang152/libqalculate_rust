@@ -781,6 +781,8 @@ impl Parser {
                         function: FunctionRef::new(name),
                         args: vec![arg],
                     })
+                } else if let Some(expression) = unit_power_shorthand_expression(&name) {
+                    Ok(expression)
                 } else {
                     Ok(Expression::Symbolic(Symbol::new(name)))
                 }
@@ -794,6 +796,10 @@ impl Parser {
                         function: FunctionRef::new(escaped_name),
                         args,
                     })
+                } else if let Some(expression) =
+                    unit_power_shorthand_expression(name.trim_start_matches('\\'))
+                {
+                    Ok(expression)
                 } else {
                     Ok(Expression::Symbolic(Symbol::new(escaped_name)))
                 }
@@ -1018,9 +1024,9 @@ impl Parser {
             return false;
         }
 
-        self.tokens.get(quantity_index + 1).is_some_and(|unit| {
-            quantity.span.end() != unit.span.start() && token_is_known_unit_primary(unit)
-        })
+        self.tokens
+            .get(quantity_index + 1)
+            .is_some_and(token_is_known_unit_primary)
     }
 
     fn parse_unit_division_chain(&mut self) -> Result<Expression, ParseError> {
@@ -1218,9 +1224,17 @@ impl Parser {
         };
 
         let adjacent = percent_token.span.end() == next.span.start();
+        let prev_adjacent = if percent_index > 0 {
+            self.tokens
+                .get(percent_index - 1)
+                .map(|prev| prev.span.end() == percent_token.span.start())
+                .unwrap_or(false)
+        } else {
+            false
+        };
 
         if token_starts_primary(next) {
-            if self.token_at_starts_postfix_function(next_index) {
+            if prev_adjacent && self.token_at_starts_postfix_function(next_index) {
                 return false;
             }
 
@@ -1239,15 +1253,6 @@ impl Parser {
 
         // `%` followed by `+`/`-` — only treat as remainder if adjacent or if % is not attached to the left operand,
         // so `10% + 100` stays as postfix percent plus 100, but `6 % -2` becomes remainder.
-        let prev_adjacent = if percent_index > 0 {
-            self.tokens
-                .get(percent_index - 1)
-                .map(|prev| prev.span.end() == percent_token.span.start())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
         if prev_adjacent && !adjacent {
             return false;
         }

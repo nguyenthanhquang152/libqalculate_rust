@@ -1199,6 +1199,38 @@ fn powered_denominator_units_stay_inside_adaptive_division() {
 }
 
 #[test]
+fn unit_power_shorthand_expands_outside_adaptive_divisors() {
+    let product = parse_expression("5 m2").expect("unit shorthand product parses");
+    let factors = children(&product);
+    assert_eq!(number_text(&factors[0]), "5");
+    let Expression::Power { base, exponent } = &factors[1] else {
+        panic!("expected shorthand powered unit, got {:?}", factors[1]);
+    };
+    assert_eq!(symbol_name(base), "m");
+    assert_eq!(number_text(exponent), "2");
+
+    let quotient = parse_expression("5 m2/s").expect("unit shorthand quotient parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = quotient
+    else {
+        panic!("expected Division, got {quotient:?}");
+    };
+    let numerator_terms = children(&numerator);
+    assert_eq!(number_text(&numerator_terms[0]), "5");
+    let Expression::Power { base, exponent } = &numerator_terms[1] else {
+        panic!(
+            "expected shorthand powered numerator unit, got {:?}",
+            numerator_terms[1]
+        );
+    };
+    assert_eq!(symbol_name(base), "m");
+    assert_eq!(number_text(exponent), "2");
+    assert_eq!(symbol_name(&denominator), "s");
+}
+
+#[test]
 fn unit_power_shorthand_stays_inside_adaptive_division() {
     let expr = parse_expression("5 m/5 m2/s").expect("unit shorthand denominator parses");
     let Expression::Division { denominator, .. } = expr else {
@@ -1486,6 +1518,53 @@ fn signed_spaced_unit_denominator_stays_quantity_unit_chain() {
 }
 
 #[test]
+fn compact_unit_denominators_stay_inside_adaptive_division() {
+    let expr = parse_expression("5 m/5m/s").expect("compact unit denominator parses");
+    let Expression::Division { denominator, .. } = expr else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+    let denominator_terms = children(&denominator);
+    assert_eq!(number_text(&denominator_terms[0]), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected denominator unit factor to be Division, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    assert_eq!(symbol_name(unit_numerator), "m");
+    assert_eq!(symbol_name(unit_denominator), "s");
+
+    let signed = parse_expression("5 m/-5m/s").expect("signed compact unit denominator parses");
+    let Expression::Division { denominator, .. } = signed else {
+        panic!("expected top-level Division, got {signed:?}");
+    };
+    let denominator_terms = children(&denominator);
+    let Expression::Negate(quantity) = &denominator_terms[0] else {
+        panic!(
+            "expected signed denominator quantity, got {:?}",
+            denominator_terms[0]
+        );
+    };
+    assert_eq!(number_text(quantity), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected signed denominator unit factor to be Division, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    assert_eq!(symbol_name(unit_numerator), "m");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
 fn nonadjacent_units_do_not_drive_parallel_detection() {
     let expr = parse_expression("1 Ω + a || b + 2 Ω").expect("nonadjacent units parse");
     let operands = children(&expr);
@@ -1505,4 +1584,18 @@ fn unsupported_word_operators_are_rejected() {
         };
         assert_eq!(err.kind(), ParseErrorKind::UnsupportedOperator(operator));
     }
+}
+
+#[test]
+fn bare_function_can_be_remainder_rhs() {
+    let expr = parse_expression("6 % sqrt 4").expect("bare function remainder rhs parses");
+    let Expression::Remainder { lhs, rhs } = expr else {
+        panic!("expected Remainder, got {expr:?}");
+    };
+    assert_eq!(number_text(&lhs), "6");
+    let Expression::FunctionCall { function, args } = rhs.as_ref() else {
+        panic!("expected bare function RHS, got {rhs:?}");
+    };
+    assert_eq!(function.id(), "sqrt");
+    assert_eq!(number_text(&args[0]), "4");
 }
