@@ -177,7 +177,7 @@ fn preserves_codex_reviewed_lexer_boundaries() {
     );
     assert_eq!(kinds("5!")[1], TokenKind::Operator(Operator::Factorial));
 
-    assert!(kinds("10 Ω || 6 Ω").contains(&TokenKind::Operator(Operator::Parallel)));
+    assert!(kinds("10 Ω || 6 Ω").contains(&TokenKind::Operator(Operator::ParallelOr)));
     assert!(kinds("10 Ω ∥ 6 Ω").contains(&TokenKind::Operator(Operator::Parallel)));
 
     assert_eq!(

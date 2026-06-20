@@ -203,6 +203,17 @@ fn constructs_every_upstream_mathstructure_variant_with_shape_metadata() {
             Some(PrecedenceClass::Comparison),
         ),
         (
+            Expression::Parallel {
+                lhs: Box::new(n(2)),
+                rhs: Box::new(n(3)),
+            },
+            StructureKind::Parallel,
+            2,
+            Some(OperatorArity::Exact(2)),
+            Some(Associativity::Left),
+            Some(PrecedenceClass::Parallel),
+        ),
+        (
             Expression::Undefined,
             StructureKind::Undefined,
             0,

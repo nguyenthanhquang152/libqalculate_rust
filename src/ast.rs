@@ -129,6 +129,8 @@ pub enum PrecedenceClass {
     Power,
     /// Multiplication, division, and inverse.
     Multiplicative,
+    /// Parallel sum.
+    Parallel,
     /// Addition and negation.
     Additive,
     /// Bitwise shifts.
@@ -717,7 +719,7 @@ impl Expression {
             Self::Parallel { .. } => Some(OperatorMetadata::new(
                 OperatorArity::Exact(2),
                 Associativity::Left,
-                PrecedenceClass::LogicalOr,
+                PrecedenceClass::Parallel,
             )),
             Self::LogicalNot(_) => Some(OperatorMetadata::new(
                 OperatorArity::Exact(1),

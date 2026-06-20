@@ -193,13 +193,25 @@ fn parses_comparison_logical_and_bitwise_precedence() {
     assert_eq!(symbol_name(&xor_terms[0]), "a");
     assert_eq!(symbol_name(&xor_terms[1]), "b");
 
-    // `||` is parsed as Parallel (deferred disambiguation to later unit resolution).
-    let pipe_parallel = parse_expression("1>2 || 2>1").expect("parse || as parallel");
-    let Expression::Parallel { lhs, rhs } = pipe_parallel else {
-        panic!("expected Parallel, got {pipe_parallel:?}");
+    // `||` without units is parsed as LogicalOr.
+    let logical_or = parse_expression("1>2 || 2>1").expect("parse || as logical or");
+    let Expression::LogicalOr(terms) = logical_or else {
+        panic!("expected LogicalOr, got {logical_or:?}");
     };
-    assert!(matches!(lhs.as_ref(), Expression::Comparison { .. }));
-    assert!(matches!(rhs.as_ref(), Expression::Comparison { .. }));
+    assert!(matches!(terms[0], Expression::Comparison { .. }));
+    assert!(matches!(terms[1], Expression::Comparison { .. }));
+
+    // `||` with units is parsed as Parallel.
+    let parallel = parse_expression("10 Ω || 6 Ω").expect("parse || as parallel");
+    let Expression::Parallel { lhs, rhs } = parallel else {
+        panic!("expected Parallel, got {parallel:?}");
+    };
+    let lhs_terms = children(lhs.as_ref());
+    assert_eq!(number_text(&lhs_terms[0]), "10");
+    assert_eq!(symbol_name(&lhs_terms[1]), "Ω");
+    let rhs_terms = children(rhs.as_ref());
+    assert_eq!(number_text(&rhs_terms[0]), "6");
+    assert_eq!(symbol_name(&rhs_terms[1]), "Ω");
 
     // Bitwise `xor` via `bitxor` or `^^` still uses BitwiseXor.
     let bitwise_xor_word =
@@ -385,16 +397,27 @@ fn trailing_comments_are_ignored() {
 }
 
 #[test]
-fn pipe_pipe_parses_as_parallel() {
-    // Comment 20: `||` should map to Parallel (not LogicalOr).
-    // The parallel-sum semantics are preserved; logical-OR fallback
-    // is deferred to later unit resolution.
-    let expr = parse_expression("a || b").expect("|| should parse as parallel");
-    let Expression::Parallel { lhs, rhs } = expr else {
-        panic!("expected Parallel, got {expr:?}");
+fn pipe_pipe_parses_as_logical_or_or_parallel() {
+    // Comment 20 / Comment 3446611880 / Comment 3446611881:
+    // `||` represents logical OR when operands do not contain unit symbols.
+    // If they contain units (like `ohm`), it parses as parallel sum.
+    let expr_logical = parse_expression("a || b").expect("|| should parse as logical or");
+    let Expression::LogicalOr(terms) = expr_logical else {
+        panic!("expected LogicalOr, got {expr_logical:?}");
     };
-    assert_eq!(symbol_name(&lhs), "a");
-    assert_eq!(symbol_name(&rhs), "b");
+    assert_eq!(symbol_name(&terms.as_slice()[0]), "a");
+    assert_eq!(symbol_name(&terms.as_slice()[1]), "b");
+
+    let expr_parallel = parse_expression("a ohm || b ohm").expect("|| should parse as parallel");
+    let Expression::Parallel { lhs, rhs } = expr_parallel else {
+        panic!("expected Parallel, got {expr_parallel:?}");
+    };
+    let lhs_terms = children(lhs.as_ref());
+    assert_eq!(symbol_name(&lhs_terms[0]), "a");
+    assert_eq!(symbol_name(&lhs_terms[1]), "ohm");
+    let rhs_terms = children(rhs.as_ref());
+    assert_eq!(symbol_name(&rhs_terms[0]), "b");
+    assert_eq!(symbol_name(&rhs_terms[1]), "ohm");
 }
 
 #[test]
@@ -510,6 +533,14 @@ fn percent_spacing_disambiguates_postfix_from_remainder() {
     };
     assert_eq!(number_text(&lhs), "6");
     assert_eq!(number_text(&rhs), "2");
+
+    // Comment 3446611878: `6 % -2` (spaced with signed RHS) is Remainder(6, -2).
+    let spaced_signed = parse_expression("6 % -2").expect("spaced percent with signed operand is remainder");
+    let Expression::Remainder { lhs: lhs_signed, rhs: rhs_signed } = spaced_signed else {
+        panic!("expected Remainder, got {spaced_signed:?}");
+    };
+    assert_eq!(number_text(&lhs_signed), "6");
+    assert!(matches!(*rhs_signed, Expression::Negate(_)));
 }
 
 #[test]
@@ -581,4 +612,49 @@ fn pr117_fixture_rows_parse_without_evaluating() {
     ] {
         parse_expression(source).unwrap_or_else(|err| panic!("{source}: {err}"));
     }
+}
+
+#[test]
+fn logical_xor_symbol_is_logical_xor_node() {
+    // Comment 3446611881: `⊕` should map to LogicalXor, not unit symbol or bitwise XOR.
+    let expr = parse_expression("1>2 ⊕ 2>1").expect("⊕ should parse as logical xor");
+    let Expression::LogicalXor { lhs, rhs } = expr else {
+        panic!("expected LogicalXor, got {expr:?}");
+    };
+    assert!(matches!(lhs.as_ref(), Expression::Comparison { .. }));
+    assert!(matches!(rhs.as_ref(), Expression::Comparison { .. }));
+}
+
+#[test]
+fn parallel_sum_precedence() {
+    // Comment 3446611880: Parallel sum `∥` groups between addition (11) and multiplication (13).
+    // So `1 + 2 ∥ 3` parses as `1 + (2 ∥ 3)`.
+    let expr = parse_expression("1 + 2 ∥ 3").expect("parse parallel sum with addition");
+    let Expression::Addition(terms) = expr else {
+        panic!("expected Addition, got {expr:?}");
+    };
+    assert_eq!(terms.as_slice().len(), 2);
+    assert_eq!(number_text(&terms.as_slice()[0]), "1");
+    let Expression::Parallel { lhs, rhs } = &terms.as_slice()[1] else {
+        panic!("expected Parallel, got {:?}", terms.as_slice()[1]);
+    };
+    assert_eq!(number_text(lhs), "2");
+    assert_eq!(number_text(rhs), "3");
+
+    // Test with `||` and unit symbols (which triggers the parallel-sum precedence path)
+    let expr_pipe = parse_expression("1 + 2 ohm || 3 ohm").expect("parse || parallel sum with addition");
+    let Expression::Addition(terms_pipe) = expr_pipe else {
+        panic!("expected Addition, got {expr_pipe:?}");
+    };
+    assert_eq!(terms_pipe.as_slice().len(), 2);
+    assert_eq!(number_text(&terms_pipe.as_slice()[0]), "1");
+    let Expression::Parallel { lhs: lhs_pipe, rhs: rhs_pipe } = &terms_pipe.as_slice()[1] else {
+        panic!("expected Parallel, got {:?}", terms_pipe.as_slice()[1]);
+    };
+    let lhs_terms = children(lhs_pipe.as_ref());
+    assert_eq!(number_text(&lhs_terms[0]), "2");
+    assert_eq!(symbol_name(&lhs_terms[1]), "ohm");
+    let rhs_terms = children(rhs_pipe.as_ref());
+    assert_eq!(number_text(&rhs_terms[0]), "3");
+    assert_eq!(symbol_name(&rhs_terms[1]), "ohm");
 }

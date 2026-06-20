@@ -211,6 +211,8 @@ pub enum Operator {
     BitwiseNot,
     /// Parallel sum operator, written `||` or `∥`.
     Parallel,
+    /// Overloaded parallel/logical OR operator `||`.
+    ParallelOr,
     /// Set union.
     SetUnion,
     /// Set intersection.
@@ -606,7 +608,7 @@ impl Lexer<'_> {
         } else if rest.starts_with("&&") {
             (TokenKind::Operator(Operator::LogicalAnd), 2)
         } else if rest.starts_with("||") {
-            (TokenKind::Operator(Operator::Parallel), 2)
+            (TokenKind::Operator(Operator::ParallelOr), 2)
         } else if rest.starts_with("^^") {
             (TokenKind::Operator(Operator::BitwiseXor), 2)
         } else if rest.starts_with("**") {
@@ -638,6 +640,7 @@ impl Lexer<'_> {
                 '⊻' => (TokenKind::Operator(Operator::BitwiseXor), ch.len_utf8()),
                 '~' => (TokenKind::Operator(Operator::BitwiseNot), 1),
                 '¬' => (TokenKind::Operator(Operator::BitwiseNot), ch.len_utf8()),
+                '⊕' => (TokenKind::Operator(Operator::LogicalXor), ch.len_utf8()),
                 '∥' => (TokenKind::Operator(Operator::Parallel), ch.len_utf8()),
                 '∪' => (TokenKind::Operator(Operator::SetUnion), ch.len_utf8()),
                 '∩' => (
@@ -969,6 +972,7 @@ fn is_unit_symbol(ch: char) -> bool {
                 | '∩'
                 | '∖'
                 | '⊖'
+                | '⊕'
                 | '∈'
                 | '∉'
                 | '∋'
