@@ -142,22 +142,12 @@ fn is_parallel_unit_expression(expr: &Expression) -> bool {
     }
 }
 
-fn is_parallel_detection_operand(expr: &Expression) -> bool {
-    if is_parallel_unit_expression(expr) {
-        return true;
-    }
-
-    match expr {
-        Expression::LogicalOr(children) => children
-            .as_slice()
-            .last()
-            .is_some_and(is_parallel_unit_expression),
-        _ => false,
-    }
-}
-
 fn is_parallel_lhs_detection_operand(expr: &Expression, rhs: &Expression) -> bool {
-    if is_parallel_detection_operand(expr) {
+    if is_comparison_or_logical_expression(expr) && is_comparison_or_logical_expression(rhs) {
+        return false;
+    }
+
+    if is_parallel_lhs_adjacent_detection_operand(expr) {
         return true;
     }
 
@@ -165,38 +155,35 @@ fn is_parallel_lhs_detection_operand(expr: &Expression, rhs: &Expression) -> boo
         return false;
     }
 
-    is_parallel_lhs_tail_detection_operand(expr)
+    false
 }
 
-fn is_parallel_lhs_tail_detection_operand(expr: &Expression) -> bool {
-    if is_parallel_unit_expression(expr) {
-        return true;
-    }
-
+fn is_parallel_lhs_adjacent_detection_operand(expr: &Expression) -> bool {
     match expr {
-        Expression::Comparison { rhs, .. } => is_parallel_unit_expression(rhs),
-        Expression::LogicalAnd(children) | Expression::LogicalOr(children) => children
+        Expression::Addition(children)
+        | Expression::LogicalAnd(children)
+        | Expression::LogicalOr(children) => children
             .as_slice()
             .last()
-            .is_some_and(is_parallel_lhs_tail_detection_operand),
-        Expression::LogicalNot(inner) => is_parallel_lhs_tail_detection_operand(inner),
-        _ => false,
+            .is_some_and(is_parallel_lhs_adjacent_detection_operand),
+        Expression::Comparison { rhs, .. } => is_parallel_lhs_adjacent_detection_operand(rhs),
+        Expression::LogicalNot(inner) => is_parallel_lhs_adjacent_detection_operand(inner),
+        _ => is_parallel_unit_expression(expr),
     }
 }
 
 fn is_parallel_rhs_detection_operand(expr: &Expression) -> bool {
-    if is_parallel_unit_expression(expr) {
-        return true;
-    }
-
     match expr {
-        Expression::Comparison { lhs, .. } => is_parallel_unit_expression(lhs),
-        Expression::LogicalAnd(children) | Expression::LogicalOr(children) => children
+        Expression::Addition(children)
+        | Expression::LogicalAnd(children)
+        | Expression::LogicalOr(children) => children
             .as_slice()
             .first()
             .is_some_and(is_parallel_rhs_detection_operand),
+        Expression::Comparison { lhs, .. } => is_parallel_rhs_detection_operand(lhs),
         Expression::LogicalXor { lhs, .. } => is_parallel_rhs_detection_operand(lhs),
-        _ => false,
+        Expression::LogicalNot(inner) => is_parallel_rhs_detection_operand(inner),
+        _ => is_parallel_unit_expression(expr),
     }
 }
 
@@ -521,7 +508,7 @@ fn known_single_argument_function_suffix_start(name: &str) -> Option<usize> {
         .iter()
         .filter_map(|function| {
             let prefix = name.strip_suffix(function)?;
-            (!prefix.is_empty()).then_some(prefix.len())
+            (prefix.chars().count() == 1).then_some(prefix.len())
         })
         .max_by_key(|start| name.len() - *start)
 }
@@ -691,20 +678,28 @@ impl Parser {
             if let Some(token) = self.peek() {
                 if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E" || name == "e")
                 {
-                    // The E ten-power operator binds tighter than exponentiation,
-                    // so `2E3^2` is `(2E3)^2`, not `2 * 10^(3^2)`.
-                    let bp = e_operator_precedence();
-                    if bp >= minimum_precedence {
-                        self.advance(); // consume the `E`
-                        let rhs = self.parse_infix_rhs(bp, Associativity::Left)?;
-                        let ten_power = Expression::Power {
-                            base: Box::new(Expression::Number(
-                                Number::from_str("10").expect("10 is valid"),
-                            )),
-                            exponent: Box::new(rhs),
-                        };
-                        lhs = merge_nary(NaryOperator::Multiplication, lhs, ten_power);
-                        continue;
+                    let previous_is_adjacent = self.position > 0
+                        && self.tokens[self.position - 1].span.end() == token.span.start();
+                    let has_rhs = self
+                        .tokens
+                        .get(self.position + 1)
+                        .is_some_and(token_starts_bare_function_argument);
+                    if !previous_is_adjacent && has_rhs {
+                        // The E ten-power operator binds tighter than exponentiation,
+                        // so `2E3^2` is `(2E3)^2`, not `2 * 10^(3^2)`.
+                        let bp = e_operator_precedence();
+                        if bp >= minimum_precedence {
+                            self.advance(); // consume the `E`
+                            let rhs = self.parse_infix_rhs(bp, Associativity::Left)?;
+                            let ten_power = Expression::Power {
+                                base: Box::new(Expression::Number(
+                                    Number::from_str("10").expect("10 is valid"),
+                                )),
+                                exponent: Box::new(rhs),
+                            };
+                            lhs = merge_nary(NaryOperator::Multiplication, lhs, ten_power);
+                            continue;
+                        }
                     }
                 }
             }
@@ -818,6 +813,45 @@ impl Parser {
         let mut lhs = self.parse_prefix()?;
 
         loop {
+            if let Some(token) = self.peek() {
+                if matches!(token.kind, TokenKind::Operator(Operator::Factorial)) {
+                    let mut factorial_count = 0u32;
+                    while let Some(token) = self.peek() {
+                        if !matches!(token.kind, TokenKind::Operator(Operator::Factorial)) {
+                            break;
+                        }
+                        self.advance();
+                        factorial_count += 1;
+                    }
+                    lhs = match factorial_count {
+                        1 => Expression::Factorial(Box::new(lhs)),
+                        2 => Expression::DoubleFactorial(Box::new(lhs)),
+                        n => Expression::MultiFactorial {
+                            expr: Box::new(lhs),
+                            count: n,
+                        },
+                    };
+                    continue;
+                }
+
+                if matches!(token.kind, TokenKind::Operator(Operator::Percent))
+                    && !self.percent_starts_remainder_rhs()
+                {
+                    self.advance();
+                    lhs = Expression::Percent(Box::new(lhs));
+                    continue;
+                }
+            }
+
+            if let Some(function) = self.peek_postfix_function() {
+                self.advance();
+                lhs = Expression::FunctionCall {
+                    function,
+                    args: vec![lhs],
+                };
+                continue;
+            }
+
             if let Some(infix @ InfixOperator::Power) = self.peek_infix_operator()? {
                 let (precedence, associativity) = infix_binding_power(infix);
                 self.advance();
@@ -948,14 +982,24 @@ impl Parser {
     }
 
     fn division_rhs_starts_spaced_unit_quantity(&self) -> bool {
-        let Some(quantity) = self.tokens.get(self.position) else {
+        let mut quantity_index = self.position;
+        if self.tokens.get(quantity_index).is_some_and(|token| {
+            matches!(
+                token.kind,
+                TokenKind::Operator(Operator::Plus | Operator::Minus)
+            )
+        }) {
+            quantity_index += 1;
+        }
+
+        let Some(quantity) = self.tokens.get(quantity_index) else {
             return false;
         };
         if !matches!(quantity.kind, TokenKind::Number { .. }) {
             return false;
         }
 
-        self.tokens.get(self.position + 1).is_some_and(|unit| {
+        self.tokens.get(quantity_index + 1).is_some_and(|unit| {
             quantity.span.end() != unit.span.start() && token_is_known_unit_primary(unit)
         })
     }
@@ -1115,8 +1159,12 @@ impl Parser {
     }
 
     fn percent_starts_remainder_rhs(&self) -> bool {
-        let percent_token = self.tokens.get(self.position).expect("called on %");
-        let next_index = self.position + 1;
+        self.percent_at_starts_remainder_rhs(self.position)
+    }
+
+    fn percent_at_starts_remainder_rhs(&self, percent_index: usize) -> bool {
+        let percent_token = self.tokens.get(percent_index).expect("called on %");
+        let next_index = percent_index + 1;
         let Some(next) = self.tokens.get(next_index) else {
             return false;
         };
@@ -1139,9 +1187,9 @@ impl Parser {
 
         // `%` followed by `+`/`-` — only treat as remainder if adjacent or if % is not attached to the left operand,
         // so `10% + 100` stays as postfix percent plus 100, but `6 % -2` becomes remainder.
-        let prev_adjacent = if self.position > 0 {
+        let prev_adjacent = if percent_index > 0 {
             self.tokens
-                .get(self.position - 1)
+                .get(percent_index - 1)
                 .map(|prev| prev.span.end() == percent_token.span.start())
                 .unwrap_or(false)
         } else {
@@ -1256,19 +1304,54 @@ impl Parser {
         };
 
         self.tokens
-            .get(end + 1)
+            .get(end)
             .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
+            || self
+                .tokens
+                .get(end + 1)
+                .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
             || self.grouped_primary_ends_with_percent(index, end)
     }
 
     fn grouped_primary_ends_with_percent(&self, index: usize, end: usize) -> bool {
-        matches!(
-            self.tokens.get(index).map(|token| &token.kind),
-            Some(TokenKind::OpenParen)
-        ) && self
-            .tokens
-            .get(end.checked_sub(1).unwrap_or(index))
-            .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
+        let mut open_index = index;
+        let mut close_index = end;
+
+        loop {
+            if !matches!(
+                self.tokens.get(open_index).map(|token| &token.kind),
+                Some(TokenKind::OpenParen)
+            ) || !matches!(
+                self.tokens.get(close_index).map(|token| &token.kind),
+                Some(TokenKind::CloseParen)
+            ) {
+                return false;
+            }
+
+            let Some(inner_end) = close_index.checked_sub(1) else {
+                return false;
+            };
+            if self
+                .tokens
+                .get(inner_end)
+                .is_some_and(|token| matches!(token.kind, TokenKind::Operator(Operator::Percent)))
+            {
+                return true;
+            }
+
+            let inner_open = open_index + 1;
+            if matches!(
+                self.tokens.get(inner_open).map(|token| &token.kind),
+                Some(TokenKind::OpenParen)
+            ) && self.group_end_index(inner_open) == Some(inner_end)
+            {
+                open_index = inner_open;
+                close_index = inner_end;
+                continue;
+            }
+
+            return false;
+        }
     }
 
     fn bare_function_end_index(&self, function_index: usize) -> Option<usize> {
@@ -1289,6 +1372,35 @@ impl Parser {
             let Some(next) = self.tokens.get(next_index) else {
                 break;
             };
+
+            match next.kind {
+                TokenKind::Operator(Operator::Factorial) => {
+                    end = next_index;
+                    while self.tokens.get(end + 1).is_some_and(|token| {
+                        matches!(token.kind, TokenKind::Operator(Operator::Factorial))
+                    }) {
+                        end += 1;
+                    }
+                    continue;
+                }
+                TokenKind::Operator(Operator::Percent)
+                    if !self.percent_at_starts_remainder_rhs(next_index) =>
+                {
+                    end = next_index;
+                    continue;
+                }
+                TokenKind::Identifier(ref name)
+                    if is_known_single_argument_function_name(name)
+                        && !self
+                            .tokens
+                            .get(next_index + 1)
+                            .is_some_and(|token| matches!(token.kind, TokenKind::OpenParen)) =>
+                {
+                    end = next_index;
+                    continue;
+                }
+                _ => {}
+            }
 
             if matches!(next.kind, TokenKind::Operator(Operator::Power)) {
                 let rhs_index = next_index + 1;

@@ -1010,14 +1010,17 @@ fn bare_function_tail_participates_in_percent_subtraction() {
     let Expression::Negate(rhs) = &terms[1] else {
         panic!("expected subtraction term, got {:?}", terms[1]);
     };
-    let Expression::Percent(percent_rhs) = rhs.as_ref() else {
-        panic!("expected percent around RHS function, got {rhs:?}");
-    };
-    let Expression::FunctionCall { function, args } = percent_rhs.as_ref() else {
-        panic!("expected RHS percent to wrap FunctionCall, got {percent_rhs:?}");
+    let Expression::FunctionCall { function, args } = rhs.as_ref() else {
+        panic!("expected RHS function, got {rhs:?}");
     };
     assert_eq!(function.id(), "sqrt");
-    assert_eq!(number_text(&args[0]), "4");
+    let Expression::Percent(arg) = &args[0] else {
+        panic!(
+            "expected percent inside bare function argument, got {:?}",
+            args[0]
+        );
+    };
+    assert_eq!(number_text(arg), "4");
 }
 
 #[test]
@@ -1222,6 +1225,18 @@ fn grouped_rhs_percent_stays_percentage_subtraction() {
 }
 
 #[test]
+fn nested_grouped_rhs_percent_stays_percentage_subtraction() {
+    let expr = parse_expression("10%-((6%))").expect("nested grouped percent subtraction parses");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    assert!(matches!(rhs.as_ref(), Expression::Percent(_)));
+}
+
+#[test]
 fn sgn_alias_parses_as_bare_and_postfix_single_argument_function() {
     let bare = parse_expression("sgn -2").expect("bare sgn alias parses");
     let Expression::FunctionCall { function, args } = bare else {
@@ -1273,6 +1288,16 @@ fn tight_identifier_function_suffix_splits_into_implicit_product() {
 }
 
 #[test]
+fn multi_letter_unknown_function_suffix_is_preserved() {
+    let expr = parse_expression("myasin(2)").expect("unknown suffix function parses");
+    let Expression::FunctionCall { function, args } = expr else {
+        panic!("expected FunctionCall, got {expr:?}");
+    };
+    assert_eq!(function.id(), "myasin");
+    assert_eq!(number_text(&args[0]), "2");
+}
+
+#[test]
 fn spaced_remainder_keeps_signed_percent_rhs() {
     let expr =
         parse_expression("6 % -2%").expect("spaced remainder with signed percent rhs parses");
@@ -1312,4 +1337,92 @@ fn unit_only_divisor_stays_unit_chain() {
     };
     assert_eq!(symbol_name(unit_numerator), "m");
     assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
+fn tight_e_identifier_is_implicit_product_not_ten_power() {
+    let expr = parse_expression("2e").expect("tight e parses as implicit product");
+    let factors = children(&expr);
+    assert_eq!(number_text(&factors[0]), "2");
+    assert_eq!(symbol_name(&factors[1]), "e");
+
+    let reciprocal = parse_expression("1/(2e)").expect("tight e in denominator parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = reciprocal
+    else {
+        panic!("expected Division, got {reciprocal:?}");
+    };
+    assert_eq!(number_text(&numerator), "1");
+    let denominator_factors = children(&denominator);
+    assert_eq!(number_text(&denominator_factors[0]), "2");
+    assert_eq!(symbol_name(&denominator_factors[1]), "e");
+}
+
+#[test]
+fn bare_function_argument_includes_postfix_tails() {
+    let factorial = parse_expression("sqrt 4!").expect("bare factorial argument parses");
+    let Expression::FunctionCall { function, args } = factorial else {
+        panic!("expected FunctionCall, got {factorial:?}");
+    };
+    assert_eq!(function.id(), "sqrt");
+    let Expression::Factorial(arg) = &args[0] else {
+        panic!("expected factorial argument, got {:?}", args[0]);
+    };
+    assert_eq!(number_text(arg), "4");
+
+    let percent = parse_expression("sqrt 10%").expect("bare percent argument parses");
+    let Expression::FunctionCall { function, args } = percent else {
+        panic!("expected FunctionCall, got {percent:?}");
+    };
+    assert_eq!(function.id(), "sqrt");
+    let Expression::Percent(arg) = &args[0] else {
+        panic!("expected percent argument, got {:?}", args[0]);
+    };
+    assert_eq!(number_text(arg), "10");
+}
+
+#[test]
+fn signed_spaced_unit_denominator_stays_quantity_unit_chain() {
+    let expr = parse_expression("5 m/-5 m/s").expect("signed spaced unit denominator parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = expr
+    else {
+        panic!("expected top-level Division, got {expr:?}");
+    };
+    let numerator_terms = children(&numerator);
+    assert_eq!(number_text(&numerator_terms[0]), "5");
+    assert_eq!(symbol_name(&numerator_terms[1]), "m");
+
+    let denominator_terms = children(&denominator);
+    let Expression::Negate(quantity) = &denominator_terms[0] else {
+        panic!(
+            "expected signed denominator quantity, got {:?}",
+            denominator_terms[0]
+        );
+    };
+    assert_eq!(number_text(quantity), "5");
+    let Expression::Division {
+        numerator: unit_numerator,
+        denominator: unit_denominator,
+    } = &denominator_terms[1]
+    else {
+        panic!(
+            "expected denominator unit chain, got {:?}",
+            denominator_terms[1]
+        );
+    };
+    assert_eq!(symbol_name(unit_numerator), "m");
+    assert_eq!(symbol_name(unit_denominator), "s");
+}
+
+#[test]
+fn nonadjacent_units_do_not_drive_parallel_detection() {
+    let expr = parse_expression("1 Ω + a || b + 2 Ω").expect("nonadjacent units parse");
+    let operands = children(&expr);
+    assert_eq!(operands.len(), 2);
+    assert!(matches!(expr, Expression::LogicalOr(_)));
 }
