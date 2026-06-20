@@ -116,14 +116,19 @@ pub fn parse_expression(input: &str) -> Result<Expression, ParseError> {
     }
 }
 
-fn has_unit(expr: &Expression) -> bool {
+fn is_parallel_unit_expression(expr: &Expression) -> bool {
     match expr {
         Expression::Symbolic(symbol) => is_unit_symbol_name(symbol.name()),
+        Expression::Comparison { .. }
+        | Expression::LogicalAnd(_)
+        | Expression::LogicalOr(_)
+        | Expression::LogicalXor { .. }
+        | Expression::LogicalNot(_) => false,
         _ => {
             let count = expr.child_count();
             for i in 0..count {
                 if let Some(child) = expr.child(i) {
-                    if has_unit(child) {
+                    if is_parallel_unit_expression(child) {
                         return true;
                     }
                 }
@@ -340,79 +345,6 @@ fn is_unit_symbol_name(name: &str) -> bool {
     false
 }
 
-fn is_function_name(name: &str) -> bool {
-    if name.starts_with('\\') {
-        return true;
-    }
-    const FUNCTIONS: &[&str] = &[
-        "sin",
-        "cos",
-        "tan",
-        "asin",
-        "acos",
-        "atan",
-        "sinh",
-        "cosh",
-        "tanh",
-        "asinh",
-        "acosh",
-        "atanh",
-        "sqrt",
-        "cbrt",
-        "ln",
-        "log",
-        "log2",
-        "log10",
-        "exp",
-        "abs",
-        "sign",
-        "round",
-        "floor",
-        "ceil",
-        "trunc",
-        "factorial",
-        "gamma",
-        "lnGamma",
-        "erf",
-        "erfc",
-        "zeta",
-        "beta",
-        "min",
-        "max",
-        "sum",
-        "product",
-        "mean",
-        "median",
-        "stddev",
-        "var",
-        "count",
-        "average",
-        "sec",
-        "csc",
-        "cot",
-        "asec",
-        "acsc",
-        "acot",
-        "sech",
-        "csch",
-        "coth",
-        "asech",
-        "acsch",
-        "acoth",
-        "sinc",
-        "atan2",
-        "hypot",
-        "pow",
-        "mod",
-        "rem",
-        "gcd",
-        "lcm",
-        "fib",
-        "fact",
-    ];
-    FUNCTIONS.contains(&name)
-}
-
 struct Parser {
     tokens: Vec<Token>,
     position: usize,
@@ -546,7 +478,10 @@ impl Parser {
                 let token = self.peek().cloned().unwrap();
                 self.advance();
                 let rhs = self.parse_infix_rhs(precedence, associativity)?;
-                if infix == InfixOperator::ParallelOr && has_unit(&lhs) && has_unit(&rhs) {
+                if infix == InfixOperator::ParallelOr
+                    && is_parallel_unit_expression(&lhs)
+                    && is_parallel_unit_expression(&rhs)
+                {
                     self.detected_parallel_spans.insert(token.span);
                 }
                 lhs = build_infix_expression(infix, lhs, rhs);
@@ -605,11 +540,9 @@ impl Parser {
                 .map(Expression::Number)
                 .map_err(|_| ParseError::new(ParseErrorKind::InvalidNumber, token.span)),
             TokenKind::Identifier(name) => {
-                if is_function_name(&name)
-                    && self
-                        .peek()
-                        .is_some_and(|t| matches!(t.kind, TokenKind::OpenParen))
-                {
+                if self.peek().is_some_and(|t| {
+                    matches!(t.kind, TokenKind::OpenParen) && token.span.end() == t.span.start()
+                }) {
                     self.advance(); // consume OpenParen
                     let args = self.parse_function_arguments()?;
                     Ok(Expression::FunctionCall {
@@ -622,10 +555,9 @@ impl Parser {
             }
             TokenKind::EscapedIdentifier(name) => {
                 let escaped_name = format!("\\{name}");
-                if self
-                    .peek()
-                    .is_some_and(|t| matches!(t.kind, TokenKind::OpenParen))
-                {
+                if self.peek().is_some_and(|t| {
+                    matches!(t.kind, TokenKind::OpenParen) && token.span.end() == t.span.start()
+                }) {
                     self.advance(); // consume OpenParen
                     let args = self.parse_function_arguments()?;
                     Ok(Expression::FunctionCall {

@@ -54,7 +54,7 @@ fn parses_arithmetic_precedence_and_right_associative_power() {
 
 #[test]
 fn parses_prefix_postfix_and_implicit_multiplication() {
-    let expr = parse_expression("-2x(3 + 4)!").expect("parse expression");
+    let expr = parse_expression("-2x (3 + 4)!").expect("parse expression");
     let factors = children(&expr);
     assert_eq!(factors.len(), 3);
 
@@ -420,6 +420,17 @@ fn pipe_pipe_parses_as_logical_or_or_parallel() {
 }
 
 #[test]
+fn pipe_pipe_between_unit_comparisons_stays_logical_or() {
+    let expr = parse_expression("1 m = 1 m || 2 m = 2 m").expect("unit comparisons joined by ||");
+    let Expression::LogicalOr(terms) = expr else {
+        panic!("expected LogicalOr, got {expr:?}");
+    };
+    assert_eq!(terms.as_slice().len(), 2);
+    assert!(matches!(terms.as_slice()[0], Expression::Comparison { .. }));
+    assert!(matches!(terms.as_slice()[1], Expression::Comparison { .. }));
+}
+
+#[test]
 fn xor_word_is_bitwise_xor() {
     // Comment 17: `xor` word operator should produce BitwiseXor.
     // Upstream treats `xor` as bitwise XOR at parse time,
@@ -725,7 +736,7 @@ fn test_code_review_issue_26_whitelist_free_unit_detection() {
 
 #[test]
 fn test_code_review_issue_27_function_calls() {
-    // Comment 27: sin(2) and sqrt(32) should parse as FunctionCall
+    // Adjacent identifier calls are unresolved FunctionCall placeholders.
     let sin_expr = parse_expression("sin(2)").expect("parse sin(2)");
     let Expression::FunctionCall { function, args } = sin_expr else {
         panic!("expected FunctionCall, got {sin_expr:?}");
@@ -758,4 +769,47 @@ fn test_code_review_issue_27_function_calls() {
     assert_eq!(esc_fn.id(), "\\sin");
     assert_eq!(esc_args.len(), 1);
     assert_eq!(number_text(&esc_args[0]), "2");
+
+    let circle_expr = parse_expression("circle(3)").expect("parse circle(3)");
+    let Expression::FunctionCall {
+        function: circle_fn,
+        args: circle_args,
+    } = circle_expr
+    else {
+        panic!("expected FunctionCall, got {circle_expr:?}");
+    };
+    assert_eq!(circle_fn.id(), "circle");
+    assert_eq!(circle_args.len(), 1);
+    assert_eq!(number_text(&circle_args[0]), "3");
+
+    let diff_expr = parse_expression("diff(6x^2)").expect("parse diff(6x^2)");
+    let Expression::FunctionCall {
+        function: diff_fn,
+        args: diff_args,
+    } = diff_expr
+    else {
+        panic!("expected FunctionCall, got {diff_expr:?}");
+    };
+    assert_eq!(diff_fn.id(), "diff");
+    assert_eq!(diff_args.len(), 1);
+    assert!(matches!(diff_args[0], Expression::Multiplication(_)));
+
+    let coeff_expr = parse_expression("coeff(3x + 4, 0)").expect("parse coeff call");
+    let Expression::FunctionCall {
+        function: coeff_fn,
+        args: coeff_args,
+    } = coeff_expr
+    else {
+        panic!("expected FunctionCall, got {coeff_expr:?}");
+    };
+    assert_eq!(coeff_fn.id(), "coeff");
+    assert_eq!(coeff_args.len(), 2);
+    assert!(matches!(coeff_args[0], Expression::Addition(_)));
+    assert_eq!(number_text(&coeff_args[1]), "0");
+
+    let spaced_group =
+        parse_expression("x (3 + 4)").expect("spaced group remains implicit multiplication");
+    let spaced_terms = children(&spaced_group);
+    assert_eq!(symbol_name(&spaced_terms[0]), "x");
+    assert!(matches!(spaced_terms[1], Expression::Addition(_)));
 }
