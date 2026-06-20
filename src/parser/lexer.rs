@@ -165,10 +165,16 @@ pub enum Operator {
     Power,
     /// Remainder or percent-like operator depending on parser context.
     Percent,
+    /// Remainder operator, written `rem`. Always binary, never postfix.
+    Remainder,
     /// Modulo operator, written `%%` or `mod`.
     Modulo,
     /// Integer division, written `//`, `\`, or `div`.
     IntegerDivide,
+    /// Combination operator, written `comb`.
+    Combination,
+    /// Permutation operator, written `perm`.
+    Permutation,
     /// Factorial.
     Factorial,
     /// Bitwise left shift.
@@ -209,6 +215,8 @@ pub enum Operator {
     BitwiseNot,
     /// Parallel sum operator, written `||` or `∥`.
     Parallel,
+    /// Overloaded parallel/logical OR operator `||`.
+    ParallelOr,
     /// Set union.
     SetUnion,
     /// Set intersection.
@@ -604,7 +612,7 @@ impl Lexer<'_> {
         } else if rest.starts_with("&&") {
             (TokenKind::Operator(Operator::LogicalAnd), 2)
         } else if rest.starts_with("||") {
-            (TokenKind::Operator(Operator::Parallel), 2)
+            (TokenKind::Operator(Operator::ParallelOr), 2)
         } else if rest.starts_with("^^") {
             (TokenKind::Operator(Operator::BitwiseXor), 2)
         } else if rest.starts_with("**") {
@@ -635,7 +643,8 @@ impl Lexer<'_> {
                 '|' | '∨' => (TokenKind::Operator(Operator::BitwiseOr), ch.len_utf8()),
                 '⊻' => (TokenKind::Operator(Operator::BitwiseXor), ch.len_utf8()),
                 '~' => (TokenKind::Operator(Operator::BitwiseNot), 1),
-                '¬' => (TokenKind::Operator(Operator::LogicalNot), ch.len_utf8()),
+                '¬' => (TokenKind::Operator(Operator::BitwiseNot), ch.len_utf8()),
+                '⊕' => (TokenKind::Operator(Operator::LogicalXor), ch.len_utf8()),
                 '∥' => (TokenKind::Operator(Operator::Parallel), ch.len_utf8()),
                 '∪' => (TokenKind::Operator(Operator::SetUnion), ch.len_utf8()),
                 '∩' => (
@@ -904,17 +913,17 @@ fn is_duodecimal_digit(ch: char) -> bool {
 }
 
 fn is_prefix_operator_position(previous: Option<&Token>) -> bool {
-    previous.is_none_or(|token| {
-        matches!(
-            token.kind,
-            TokenKind::Operator(_)
-                | TokenKind::OpenParen
-                | TokenKind::OpenBracket
-                | TokenKind::Comma
-                | TokenKind::Semicolon
-                | TokenKind::Colon
-                | TokenKind::CommandPrefix
-        )
+    previous.is_none_or(|token| match token.kind {
+        // After a postfix operator (`!`, `%`) the position is infix, not prefix.
+        TokenKind::Operator(Operator::Factorial | Operator::Percent) => false,
+        TokenKind::Operator(_)
+        | TokenKind::OpenParen
+        | TokenKind::OpenBracket
+        | TokenKind::Comma
+        | TokenKind::Semicolon
+        | TokenKind::Colon
+        | TokenKind::CommandPrefix => true,
+        _ => false,
     })
 }
 
@@ -967,6 +976,7 @@ fn is_unit_symbol(ch: char) -> bool {
                 | '∩'
                 | '∖'
                 | '⊖'
+                | '⊕'
                 | '∈'
                 | '∉'
                 | '∋'
@@ -993,12 +1003,14 @@ fn word_operator(word: &str) -> Option<Operator> {
         "times" => Operator::Multiply,
         "per" => Operator::Divide,
         "to" => Operator::Conversion,
-        "rem" => Operator::Percent,
+        "rem" => Operator::Remainder,
         "mod" => Operator::Modulo,
         "div" => Operator::IntegerDivide,
+        "comb" => Operator::Combination,
+        "perm" => Operator::Permutation,
         "and" => Operator::LogicalAnd,
         "or" => Operator::LogicalOr,
-        "xor" => Operator::LogicalXor,
+        "xor" => Operator::BitwiseXor,
         "nand" => Operator::LogicalNand,
         "nor" => Operator::LogicalNor,
         "not" => Operator::LogicalNot,

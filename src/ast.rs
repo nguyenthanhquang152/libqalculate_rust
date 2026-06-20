@@ -14,7 +14,12 @@
 use crate::number::Number;
 use std::ops::Index;
 
-/// Stable kind tag matching the expression categories used by upstream `MathStructure`.
+/// Stable kind tag for Rust expression categories used by the staged port.
+///
+/// Most variants mirror upstream `MathStructure::StructureType`. Parser-stage
+/// operator variants such as remainder, shifts, factorial, and percent are
+/// Rust-side placeholders for upstream function-backed forms until function
+/// definitions and evaluation are ported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructureKind {
     /// Multiplication node with ordered factors.
@@ -29,6 +34,24 @@ pub enum StructureKind {
     Negate,
     /// Power node with base then exponent.
     Power,
+    /// Remainder operation node.
+    Remainder,
+    /// Modulo operation node.
+    Modulo,
+    /// Integer division operation node.
+    IntegerDivision,
+    /// Bitwise left-shift operation node.
+    ShiftLeft,
+    /// Bitwise right-shift operation node.
+    ShiftRight,
+    /// Factorial operation node.
+    Factorial,
+    /// Double factorial operation node (n!!).
+    DoubleFactorial,
+    /// Multi-factorial operation node (n!!! or higher).
+    MultiFactorial,
+    /// Percent operation node.
+    Percent,
     /// Numeric value node.
     Number,
     /// Unit reference node.
@@ -55,6 +78,8 @@ pub enum StructureKind {
     LogicalOr,
     /// Logical-xor operation node.
     LogicalXor,
+    /// Parallel sum operation node.
+    Parallel,
     /// Logical-not operation node.
     LogicalNot,
     /// Comparison operation node.
@@ -104,8 +129,12 @@ pub enum PrecedenceClass {
     Power,
     /// Multiplication, division, and inverse.
     Multiplicative,
+    /// Parallel sum.
+    Parallel,
     /// Addition and negation.
     Additive,
+    /// Bitwise shifts.
+    Shift,
     /// Comparison operators.
     Comparison,
     /// Bitwise and.
@@ -428,6 +457,54 @@ pub enum Expression {
         /// Exponent expression.
         exponent: Box<Expression>,
     },
+    /// Remainder operation with left then right child.
+    Remainder {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Modulo operation with left then right child.
+    Modulo {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Integer division operation with left then right child.
+    IntegerDivision {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Bitwise left shift with left then right child.
+    ShiftLeft {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Bitwise right shift with left then right child.
+    ShiftRight {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
+    /// Factorial operation with one child.
+    Factorial(Box<Expression>),
+    /// Double factorial operation (n!!) with one child.
+    DoubleFactorial(Box<Expression>),
+    /// Multi-factorial operation (n!!!, n!!!! etc.) with child and repeat count.
+    MultiFactorial {
+        /// The expression being multi-factored.
+        expr: Box<Expression>,
+        /// Number of `!` symbols (3 for `!!!`, 4 for `!!!!`, etc.).
+        count: u32,
+    },
+    /// Percent operation with one child.
+    Percent(Box<Expression>),
     /// Numeric value.
     Number(Number),
     /// Unit reference and optional formatted prefix.
@@ -471,6 +548,13 @@ pub enum Expression {
         /// Right-hand side expression.
         rhs: Box<Expression>,
     },
+    /// Parallel sum expression with left then right child.
+    Parallel {
+        /// Left-hand side expression.
+        lhs: Box<Expression>,
+        /// Right-hand side expression.
+        rhs: Box<Expression>,
+    },
     /// Logical-not expression.
     LogicalNot(Box<Expression>),
     /// Comparison with left-hand side then right-hand side children.
@@ -506,6 +590,15 @@ impl Expression {
             Self::Addition(_) => StructureKind::Addition,
             Self::Negate(_) => StructureKind::Negate,
             Self::Power { .. } => StructureKind::Power,
+            Self::Remainder { .. } => StructureKind::Remainder,
+            Self::Modulo { .. } => StructureKind::Modulo,
+            Self::IntegerDivision { .. } => StructureKind::IntegerDivision,
+            Self::ShiftLeft { .. } => StructureKind::ShiftLeft,
+            Self::ShiftRight { .. } => StructureKind::ShiftRight,
+            Self::Factorial(_) => StructureKind::Factorial,
+            Self::DoubleFactorial(_) => StructureKind::DoubleFactorial,
+            Self::MultiFactorial { .. } => StructureKind::MultiFactorial,
+            Self::Percent(_) => StructureKind::Percent,
             Self::Number(_) => StructureKind::Number,
             Self::Unit { .. } => StructureKind::Unit,
             Self::Symbolic(_) => StructureKind::Symbolic,
@@ -519,6 +612,7 @@ impl Expression {
             Self::LogicalAnd(_) => StructureKind::LogicalAnd,
             Self::LogicalOr(_) => StructureKind::LogicalOr,
             Self::LogicalXor { .. } => StructureKind::LogicalXor,
+            Self::Parallel { .. } => StructureKind::Parallel,
             Self::LogicalNot(_) => StructureKind::LogicalNot,
             Self::Comparison { .. } => StructureKind::Comparison,
             Self::Undefined => StructureKind::Undefined,
@@ -559,6 +653,26 @@ impl Expression {
                 OperatorArity::Exact(2),
                 Associativity::Right,
                 PrecedenceClass::Power,
+            )),
+            Self::Remainder { .. } | Self::Modulo { .. } | Self::IntegerDivision { .. } => {
+                Some(OperatorMetadata::new(
+                    OperatorArity::Exact(2),
+                    Associativity::Left,
+                    PrecedenceClass::Multiplicative,
+                ))
+            }
+            Self::ShiftLeft { .. } | Self::ShiftRight { .. } => Some(OperatorMetadata::new(
+                OperatorArity::Exact(2),
+                Associativity::Left,
+                PrecedenceClass::Shift,
+            )),
+            Self::Factorial(_)
+            | Self::DoubleFactorial(_)
+            | Self::MultiFactorial { .. }
+            | Self::Percent(_) => Some(OperatorMetadata::new(
+                OperatorArity::Exact(1),
+                Associativity::None,
+                PrecedenceClass::Primary,
             )),
             Self::FunctionCall { .. } => Some(OperatorMetadata::new(
                 OperatorArity::Any,
@@ -602,6 +716,11 @@ impl Expression {
                 Associativity::Left,
                 PrecedenceClass::LogicalXor,
             )),
+            Self::Parallel { .. } => Some(OperatorMetadata::new(
+                OperatorArity::Exact(2),
+                Associativity::Left,
+                PrecedenceClass::Parallel,
+            )),
             Self::LogicalNot(_) => Some(OperatorMetadata::new(
                 OperatorArity::Exact(1),
                 Associativity::Prefix,
@@ -636,9 +755,19 @@ impl Expression {
             Self::Vector(children) => children.len(),
             Self::FunctionCall { args, .. } => args.len(),
             Self::Inverse(_) | Self::Negate(_) | Self::BitwiseNot(_) | Self::LogicalNot(_) => 1,
+            Self::Factorial(_)
+            | Self::DoubleFactorial(_)
+            | Self::MultiFactorial { .. }
+            | Self::Percent(_) => 1,
             Self::Division { .. }
             | Self::Power { .. }
+            | Self::Remainder { .. }
+            | Self::Modulo { .. }
+            | Self::IntegerDivision { .. }
+            | Self::ShiftLeft { .. }
+            | Self::ShiftRight { .. }
             | Self::LogicalXor { .. }
+            | Self::Parallel { .. }
             | Self::Comparison { .. } => 2,
             Self::Number(_)
             | Self::Unit { .. }
@@ -664,8 +793,12 @@ impl Expression {
             Self::FunctionCall { args, .. } => args.get(index),
             Self::Inverse(child)
             | Self::Negate(child)
+            | Self::Factorial(child)
+            | Self::DoubleFactorial(child)
+            | Self::Percent(child)
             | Self::BitwiseNot(child)
             | Self::LogicalNot(child) => (index == 0).then_some(child.as_ref()),
+            Self::MultiFactorial { expr, .. } => (index == 0).then_some(expr.as_ref()),
             Self::Division {
                 numerator,
                 denominator,
@@ -679,7 +812,16 @@ impl Expression {
                 1 => Some(exponent.as_ref()),
                 _ => None,
             },
-            Self::LogicalXor { lhs, rhs } => match index {
+            Self::Remainder { lhs, rhs }
+            | Self::Modulo { lhs, rhs }
+            | Self::IntegerDivision { lhs, rhs }
+            | Self::ShiftLeft { lhs, rhs }
+            | Self::ShiftRight { lhs, rhs } => match index {
+                0 => Some(lhs.as_ref()),
+                1 => Some(rhs.as_ref()),
+                _ => None,
+            },
+            Self::LogicalXor { lhs, rhs } | Self::Parallel { lhs, rhs } => match index {
                 0 => Some(lhs.as_ref()),
                 1 => Some(rhs.as_ref()),
                 _ => None,
