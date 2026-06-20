@@ -600,16 +600,23 @@ fn standalone_e_operator_is_power_of_ten() {
 
 #[test]
 fn lowercase_e_remains_identifier() {
-    // Comment 16: Lowercase `e` should be an identifier (Euler's number),
-    // not the ten-power operator.
-    let expr = parse_expression("2 e 4").expect("lowercase e is implicit multiply");
+    let expr = parse_expression("e + 4").expect("leading lowercase e remains symbolic");
     let terms = children(&expr);
-    // `2 e 4` is implicit multiplication: Mul(2, e, 4)
-    assert!(terms.len() >= 2);
-    // Check that `e` appears as a symbolic identifier, not consumed as operator
-    assert!(terms
-        .iter()
-        .any(|t| matches!(t, Expression::Symbolic(s) if s.name() == "e")));
+    assert_eq!(symbol_name(&terms[0]), "e");
+    assert_eq!(number_text(&terms[1]), "4");
+}
+
+#[test]
+fn lowercase_e_between_operands_is_power_of_ten() {
+    let expr = parse_expression("5 e 3").expect("lowercase e parses as ten-power operator");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert_eq!(number_text(&terms[0]), "5");
+    let Expression::Power { base, exponent } = &terms[1] else {
+        panic!("expected Power, got {:?}", terms[1]);
+    };
+    assert_eq!(number_text(base), "10");
+    assert_eq!(number_text(exponent), "3");
 }
 
 #[test]
@@ -882,4 +889,133 @@ fn bare_and_postfix_single_argument_functions_parse_as_calls() {
     };
     assert_eq!(postfix_fn.id(), "sin");
     assert_eq!(number_text(&postfix_args[0]), "2");
+}
+
+#[test]
+fn parallel_sum_with_comparison_tail_keeps_parallel_precedence() {
+    let expr = parse_expression("1 Ω || 2 Ω = 3 Ω")
+        .expect("parallel unit expression followed by comparison parses");
+    let Expression::Comparison {
+        op: ComparisonOperator::Equal,
+        lhs,
+        rhs,
+    } = expr
+    else {
+        panic!("expected comparison root, got {expr:?}");
+    };
+
+    let Expression::Parallel {
+        lhs: parallel_lhs,
+        rhs: parallel_rhs,
+    } = lhs.as_ref()
+    else {
+        panic!("expected comparison lhs to be Parallel, got {lhs:?}");
+    };
+
+    let left_terms = children(parallel_lhs);
+    assert_eq!(number_text(&left_terms[0]), "1");
+    assert_eq!(symbol_name(&left_terms[1]), "Ω");
+    let right_terms = children(parallel_rhs);
+    assert_eq!(number_text(&right_terms[0]), "2");
+    assert_eq!(symbol_name(&right_terms[1]), "Ω");
+
+    let rhs_terms = children(&rhs);
+    assert_eq!(number_text(&rhs_terms[0]), "3");
+    assert_eq!(symbol_name(&rhs_terms[1]), "Ω");
+}
+
+#[test]
+fn postfix_function_binds_below_power() {
+    let expr = parse_expression("2^3 sin").expect("postfix function after power parses");
+    let Expression::FunctionCall { function, args } = expr else {
+        panic!("expected FunctionCall root, got {expr:?}");
+    };
+    assert_eq!(function.id(), "sin");
+    assert_eq!(args.len(), 1);
+    let Expression::Power { base, exponent } = &args[0] else {
+        panic!(
+            "expected postfix function argument to be Power, got {:?}",
+            args[0]
+        );
+    };
+    assert_eq!(number_text(base), "2");
+    assert_eq!(number_text(exponent), "3");
+}
+
+#[test]
+fn upstream_unit_aliases_can_drive_parallel_detection() {
+    // `angstrom` is an upstream built-in alias from ../libqalculate/data/units.xml.in.
+    let expr = parse_expression("1 angstrom || 2 angstrom")
+        .expect("upstream unit alias drives parallel detection");
+    let Expression::Parallel { lhs, rhs } = expr else {
+        panic!("expected Parallel for upstream unit alias, got {expr:?}");
+    };
+    let lhs_terms = children(&lhs);
+    assert_eq!(number_text(&lhs_terms[0]), "1");
+    assert_eq!(symbol_name(&lhs_terms[1]), "angstrom");
+    let rhs_terms = children(&rhs);
+    assert_eq!(number_text(&rhs_terms[0]), "2");
+    assert_eq!(symbol_name(&rhs_terms[1]), "angstrom");
+
+    let unresolved_unit = parse_expression("1 widget || 2 widget")
+        .expect("numeric symbol products are potential unit quantities");
+    let Expression::Parallel { lhs, rhs } = unresolved_unit else {
+        panic!("expected Parallel for unresolved unit-like products, got {unresolved_unit:?}");
+    };
+    let lhs_terms = children(&lhs);
+    assert_eq!(number_text(&lhs_terms[0]), "1");
+    assert_eq!(symbol_name(&lhs_terms[1]), "widget");
+    let rhs_terms = children(&rhs);
+    assert_eq!(number_text(&rhs_terms[0]), "2");
+    assert_eq!(symbol_name(&rhs_terms[1]), "widget");
+}
+
+#[test]
+fn bare_function_argument_stops_before_explicit_division() {
+    let expr = parse_expression("sqrt 2/2").expect("bare function before division parses");
+    let Expression::Division {
+        numerator,
+        denominator,
+    } = expr
+    else {
+        panic!("expected division root, got {expr:?}");
+    };
+    let Expression::FunctionCall { function, args } = numerator.as_ref() else {
+        panic!("expected numerator to be FunctionCall, got {numerator:?}");
+    };
+    assert_eq!(function.id(), "sqrt");
+    assert_eq!(number_text(&args[0]), "2");
+    assert_eq!(number_text(&denominator), "2");
+}
+
+#[test]
+fn exp10_parses_as_bare_single_argument_function() {
+    // `exp10` is an upstream built-in function from ../libqalculate/data/functions.xml.in.
+    let expr = parse_expression("exp10 3").expect("bare exp10 parses");
+    let Expression::FunctionCall { function, args } = expr else {
+        panic!("expected FunctionCall root, got {expr:?}");
+    };
+    assert_eq!(function.id(), "exp10");
+    assert_eq!(args.len(), 1);
+    assert_eq!(number_text(&args[0]), "3");
+}
+
+#[test]
+fn bare_function_tail_participates_in_percent_subtraction() {
+    let expr = parse_expression("10%-sqrt 4%").expect("bare function percent subtraction parses");
+    let terms = children(&expr);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+
+    let Expression::Negate(rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    let Expression::Percent(percent_rhs) = rhs.as_ref() else {
+        panic!("expected percent around RHS function, got {rhs:?}");
+    };
+    let Expression::FunctionCall { function, args } = percent_rhs.as_ref() else {
+        panic!("expected RHS percent to wrap FunctionCall, got {percent_rhs:?}");
+    };
+    assert_eq!(function.id(), "sqrt");
+    assert_eq!(number_text(&args[0]), "4");
 }

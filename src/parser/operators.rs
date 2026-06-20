@@ -119,6 +119,10 @@ pub fn parse_expression(input: &str) -> Result<Expression, ParseError> {
 fn is_parallel_unit_expression(expr: &Expression) -> bool {
     match expr {
         Expression::Symbolic(symbol) => is_unit_symbol_name(symbol.name()),
+        Expression::Multiplication(children) => {
+            children.as_slice().iter().any(is_parallel_unit_expression)
+                || multiplication_looks_like_quantity_with_unit(children.as_slice())
+        }
         Expression::Comparison { .. }
         | Expression::LogicalAnd(_)
         | Expression::LogicalOr(_)
@@ -152,8 +156,43 @@ fn is_parallel_detection_operand(expr: &Expression) -> bool {
     }
 }
 
+fn is_parallel_rhs_detection_operand(expr: &Expression) -> bool {
+    if is_parallel_unit_expression(expr) {
+        return true;
+    }
+
+    match expr {
+        Expression::Comparison { lhs, .. } => is_parallel_unit_expression(lhs),
+        Expression::LogicalAnd(children) | Expression::LogicalOr(children) => children
+            .as_slice()
+            .first()
+            .is_some_and(is_parallel_rhs_detection_operand),
+        Expression::LogicalXor { lhs, .. } => is_parallel_rhs_detection_operand(lhs),
+        _ => false,
+    }
+}
+
+fn multiplication_looks_like_quantity_with_unit(children: &[Expression]) -> bool {
+    // The definition registry is not ported yet, so a product like `1 widget`
+    // must stay eligible for parallel-sum parsing as a possible user unit.
+    let has_number = children
+        .iter()
+        .any(|child| matches!(child, Expression::Number(_)));
+    let has_symbolic_factor = children.iter().any(contains_symbolic_factor);
+    has_number && has_symbolic_factor
+}
+
+fn contains_symbolic_factor(expr: &Expression) -> bool {
+    match expr {
+        Expression::Symbolic(_) => true,
+        Expression::Power { base, .. } => contains_symbolic_factor(base),
+        _ => false,
+    }
+}
+
 fn is_unit_symbol_name(name: &str) -> bool {
-    // List of base unit symbol/name suffixes.
+    // Staged stand-in for definition lookup: keep a table of common built-in
+    // unit aliases until the full definition registry is ported.
     // If a name matches one of these directly, or ends with one of these
     // preceded by a valid SI prefix, it is treated as a unit.
     const UNITS: &[&str] = &[
@@ -262,6 +301,20 @@ fn is_unit_symbol_name(name: &str) -> bool {
         "tons",
         "au",
         "astronomical_unit",
+        "Å",
+        "Å",
+        "angstrom",
+        "angstroms",
+        "ångström",
+        "ångströms",
+        "nmi",
+        "nautical_mile",
+        "nautical_miles",
+        "ha",
+        "hectare",
+        "hectares",
+        "acre",
+        "acres",
         "pc",
         "parsec",
         "parsecs",
@@ -380,6 +433,8 @@ fn is_known_single_argument_function_name(name: &str) -> bool {
             | "log"
             | "log2"
             | "log10"
+            | "exp2"
+            | "exp10"
             | "exp"
             | "abs"
             | "sign"
@@ -545,7 +600,7 @@ impl Parser {
                 let rhs = self.parse_infix_rhs(precedence, associativity)?;
                 if infix == InfixOperator::ParallelOr
                     && is_parallel_detection_operand(&lhs)
-                    && is_parallel_detection_operand(&rhs)
+                    && is_parallel_rhs_detection_operand(&rhs)
                 {
                     self.detected_parallel_spans.insert(token.span);
                 }
@@ -554,7 +609,7 @@ impl Parser {
             }
 
             if let Some(function) = self.peek_postfix_function() {
-                if postfix_precedence() < minimum_precedence {
+                if postfix_function_precedence() < minimum_precedence {
                     break;
                 }
                 self.advance();
@@ -565,12 +620,12 @@ impl Parser {
                 continue;
             }
 
-            // Standalone `E` operator: `5 E 3` → `5 × 10^3`.
-            // Qalculate treats uppercase `E` between expressions as
-            // multiplication by a power of ten. Lowercase `e` remains
-            // an identifier (Euler's number / variable name).
+            // Standalone `E`/`e` operator: `5 E 3` and `5 e 3`
+            // both parse as `5 × 10^3`. Lowercase `e` remains an
+            // identifier when it appears outside this infix position.
             if let Some(token) = self.peek() {
-                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E") {
+                if matches!(token.kind, TokenKind::Identifier(ref name) if name == "E" || name == "e")
+                {
                     // The E ten-power operator binds tighter than exponentiation,
                     // so `2E3^2` is `(2E3)^2`, not `2 * 10^(3^2)`.
                     let bp = e_operator_precedence();
@@ -627,7 +682,7 @@ impl Parser {
                 } else if is_known_single_argument_function_name(&name)
                     && self.peek().is_some_and(token_starts_bare_function_argument)
                 {
-                    let arg = self.parse_expression(bare_function_argument_precedence())?;
+                    let arg = self.parse_bare_function_argument()?;
                     Ok(Expression::FunctionCall {
                         function: FunctionRef::new(name),
                         args: vec![arg],
@@ -677,6 +732,32 @@ impl Parser {
                 Err(ParseError::new(ParseErrorKind::UnexpectedToken, token.span))
             }
         }
+    }
+
+    fn parse_bare_function_argument(&mut self) -> Result<Expression, ParseError> {
+        let mut lhs = self.parse_prefix()?;
+
+        loop {
+            if let Some(infix @ InfixOperator::Power) = self.peek_infix_operator()? {
+                let (precedence, associativity) = infix_binding_power(infix);
+                self.advance();
+                let rhs = self.parse_infix_rhs(precedence, associativity)?;
+                lhs = build_infix_expression(infix, lhs, rhs);
+                continue;
+            }
+
+            if let Some((precedence, associativity)) = self.peek_implicit_multiplication() {
+                if precedence == tight_implicit_multiplication_precedence() {
+                    let rhs = self.parse_infix_rhs(precedence, associativity)?;
+                    lhs = merge_nary(NaryOperator::Multiplication, lhs, rhs);
+                    continue;
+                }
+            }
+
+            break;
+        }
+
+        Ok(lhs)
     }
 
     fn parse_function_arguments(&mut self) -> Result<Vec<Expression>, ParseError> {
@@ -926,7 +1007,24 @@ impl Parser {
     fn primary_end_index(&self, index: usize) -> Option<usize> {
         match &self.tokens.get(index)?.kind {
             TokenKind::Number { .. } => Some(index),
-            TokenKind::Identifier(_) | TokenKind::EscapedIdentifier(_) => {
+            TokenKind::Identifier(name) => {
+                if self.tokens.get(index + 1).is_some_and(|next| {
+                    matches!(next.kind, TokenKind::OpenParen)
+                        && self.tokens[index].span.end() == next.span.start()
+                }) {
+                    self.group_end_index(index + 1)
+                } else if is_known_single_argument_function_name(name)
+                    && self
+                        .tokens
+                        .get(index + 1)
+                        .is_some_and(token_starts_bare_function_argument)
+                {
+                    self.bare_function_end_index(index)
+                } else {
+                    Some(index)
+                }
+            }
+            TokenKind::EscapedIdentifier(_) => {
                 if self.tokens.get(index + 1).is_some_and(|next| {
                     matches!(next.kind, TokenKind::OpenParen)
                         && self.tokens[index].span.end() == next.span.start()
@@ -939,6 +1037,48 @@ impl Parser {
             TokenKind::OpenParen => self.group_end_index(index),
             _ => None,
         }
+    }
+
+    fn bare_function_end_index(&self, function_index: usize) -> Option<usize> {
+        self.bare_function_argument_end_index(function_index + 1)
+    }
+
+    fn bare_function_argument_end_index(&self, index: usize) -> Option<usize> {
+        let token = self.tokens.get(index)?;
+        let mut end = match token.kind {
+            TokenKind::Operator(
+                Operator::Plus | Operator::Minus | Operator::LogicalNot | Operator::BitwiseNot,
+            ) => self.bare_function_argument_end_index(index + 1)?,
+            _ => self.primary_end_index(index)?,
+        };
+
+        loop {
+            let next_index = end + 1;
+            let Some(next) = self.tokens.get(next_index) else {
+                break;
+            };
+
+            if matches!(next.kind, TokenKind::Operator(Operator::Power)) {
+                let rhs_index = next_index + 1;
+                if self
+                    .tokens
+                    .get(rhs_index)
+                    .is_some_and(token_starts_bare_function_argument)
+                {
+                    end = self.bare_function_argument_end_index(rhs_index)?;
+                    continue;
+                }
+            }
+
+            if token_starts_primary(next) && self.tokens[end].span.end() == next.span.start() {
+                end = self.bare_function_argument_end_index(next_index)?;
+                continue;
+            }
+
+            break;
+        }
+
+        Some(end)
     }
 
     fn group_end_index(&self, open_index: usize) -> Option<usize> {
@@ -1017,12 +1157,14 @@ fn postfix_precedence() -> u8 {
     15
 }
 
-fn prefix_precedence() -> u8 {
-    15
+fn postfix_function_precedence() -> u8 {
+    // Bare/postfix functions bind tighter than multiplication/division but
+    // lower than exponentiation, so `2^3 sin` is `sin(2^3)`.
+    14
 }
 
-fn bare_function_argument_precedence() -> u8 {
-    infix_binding_power(InfixOperator::Add).0 + 1
+fn prefix_precedence() -> u8 {
+    15
 }
 
 fn tight_implicit_multiplication_precedence() -> u8 {
