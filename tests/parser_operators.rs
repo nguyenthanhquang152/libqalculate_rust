@@ -431,6 +431,18 @@ fn pipe_pipe_between_unit_comparisons_stays_logical_or() {
 }
 
 #[test]
+fn chained_unit_pipe_pipe_detects_every_parallel_operator() {
+    let expr = parse_expression("1 ohm || 2 ohm || 3 ohm").expect("unit parallel chain");
+    let Expression::Parallel { lhs, rhs } = expr else {
+        panic!("expected outer Parallel, got {expr:?}");
+    };
+    assert!(matches!(lhs.as_ref(), Expression::Parallel { .. }));
+    let rhs_terms = children(rhs.as_ref());
+    assert_eq!(number_text(&rhs_terms[0]), "3");
+    assert_eq!(symbol_name(&rhs_terms[1]), "ohm");
+}
+
+#[test]
 fn xor_word_is_bitwise_xor() {
     // Comment 17: `xor` word operator should produce BitwiseXor.
     // Upstream treats `xor` as bitwise XOR at parse time,
@@ -556,6 +568,20 @@ fn percent_spacing_disambiguates_postfix_from_remainder() {
     };
     assert_eq!(number_text(&lhs_signed), "6");
     assert!(matches!(*rhs_signed, Expression::Negate(_)));
+
+    let function_percent = parse_expression("10%-sin(6)%").expect("function percent subtraction");
+    let terms = children(&function_percent);
+    assert!(matches!(terms[0], Expression::Percent(_)));
+    let Expression::Negate(rhs) = &terms[1] else {
+        panic!("expected subtraction term, got {:?}", terms[1]);
+    };
+    let Expression::Percent(percent_rhs) = rhs.as_ref() else {
+        panic!("expected percent function RHS, got {rhs:?}");
+    };
+    assert!(matches!(
+        percent_rhs.as_ref(),
+        Expression::FunctionCall { .. }
+    ));
 }
 
 #[test]
@@ -812,4 +838,48 @@ fn test_code_review_issue_27_function_calls() {
     let spaced_terms = children(&spaced_group);
     assert_eq!(symbol_name(&spaced_terms[0]), "x");
     assert!(matches!(spaced_terms[1], Expression::Addition(_)));
+}
+
+#[test]
+fn bare_and_postfix_single_argument_functions_parse_as_calls() {
+    let sqrt_expr = parse_expression("sqrt 2x").expect("parse bare sqrt argument");
+    let Expression::FunctionCall {
+        function: sqrt_fn,
+        args: sqrt_args,
+    } = sqrt_expr
+    else {
+        panic!("expected FunctionCall, got {sqrt_expr:?}");
+    };
+    assert_eq!(sqrt_fn.id(), "sqrt");
+    assert_eq!(sqrt_args.len(), 1);
+    assert!(matches!(sqrt_args[0], Expression::Multiplication(_)));
+
+    let sum_expr = parse_expression("sqrt 2x + 1").expect("bare function stops before addition");
+    let sum_terms = children(&sum_expr);
+    assert!(matches!(sum_terms[0], Expression::FunctionCall { .. }));
+    assert_eq!(number_text(&sum_terms[1]), "1");
+
+    let sin_expr = parse_expression("sin 0").expect("parse bare sin argument");
+    let Expression::FunctionCall {
+        function: sin_fn,
+        args: sin_args,
+    } = sin_expr
+    else {
+        panic!("expected FunctionCall, got {sin_expr:?}");
+    };
+    assert_eq!(sin_fn.id(), "sin");
+    assert_eq!(number_text(&sin_args[0]), "0");
+
+    let postfix_expr = parse_expression("1 + 2 sin").expect("parse postfix sin");
+    let terms = children(&postfix_expr);
+    assert_eq!(number_text(&terms[0]), "1");
+    let Expression::FunctionCall {
+        function: postfix_fn,
+        args: postfix_args,
+    } = &terms[1]
+    else {
+        panic!("expected postfix FunctionCall, got {:?}", terms[1]);
+    };
+    assert_eq!(postfix_fn.id(), "sin");
+    assert_eq!(number_text(&postfix_args[0]), "2");
 }

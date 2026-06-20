@@ -138,6 +138,20 @@ fn is_parallel_unit_expression(expr: &Expression) -> bool {
     }
 }
 
+fn is_parallel_detection_operand(expr: &Expression) -> bool {
+    if is_parallel_unit_expression(expr) {
+        return true;
+    }
+
+    match expr {
+        Expression::LogicalOr(children) => children
+            .as_slice()
+            .last()
+            .is_some_and(is_parallel_unit_expression),
+        _ => false,
+    }
+}
+
 fn is_unit_symbol_name(name: &str) -> bool {
     // List of base unit symbol/name suffixes.
     // If a name matches one of these directly, or ends with one of these
@@ -345,6 +359,57 @@ fn is_unit_symbol_name(name: &str) -> bool {
     false
 }
 
+fn is_known_single_argument_function_name(name: &str) -> bool {
+    matches!(
+        name,
+        "sin"
+            | "cos"
+            | "tan"
+            | "asin"
+            | "acos"
+            | "atan"
+            | "sinh"
+            | "cosh"
+            | "tanh"
+            | "asinh"
+            | "acosh"
+            | "atanh"
+            | "sqrt"
+            | "cbrt"
+            | "ln"
+            | "log"
+            | "log2"
+            | "log10"
+            | "exp"
+            | "abs"
+            | "sign"
+            | "round"
+            | "floor"
+            | "ceil"
+            | "trunc"
+            | "factorial"
+            | "gamma"
+            | "lnGamma"
+            | "erf"
+            | "erfc"
+            | "zeta"
+            | "csc"
+            | "cot"
+            | "asec"
+            | "acsc"
+            | "acot"
+            | "sech"
+            | "csch"
+            | "coth"
+            | "asech"
+            | "acsch"
+            | "acoth"
+            | "sinc"
+            | "fib"
+            | "fact"
+    )
+}
+
 struct Parser {
     tokens: Vec<Token>,
     position: usize,
@@ -479,12 +544,24 @@ impl Parser {
                 self.advance();
                 let rhs = self.parse_infix_rhs(precedence, associativity)?;
                 if infix == InfixOperator::ParallelOr
-                    && is_parallel_unit_expression(&lhs)
-                    && is_parallel_unit_expression(&rhs)
+                    && is_parallel_detection_operand(&lhs)
+                    && is_parallel_detection_operand(&rhs)
                 {
                     self.detected_parallel_spans.insert(token.span);
                 }
                 lhs = build_infix_expression(infix, lhs, rhs);
+                continue;
+            }
+
+            if let Some(function) = self.peek_postfix_function() {
+                if postfix_precedence() < minimum_precedence {
+                    break;
+                }
+                self.advance();
+                lhs = Expression::FunctionCall {
+                    function,
+                    args: vec![lhs],
+                };
                 continue;
             }
 
@@ -540,14 +617,20 @@ impl Parser {
                 .map(Expression::Number)
                 .map_err(|_| ParseError::new(ParseErrorKind::InvalidNumber, token.span)),
             TokenKind::Identifier(name) => {
-                if self.peek().is_some_and(|t| {
-                    matches!(t.kind, TokenKind::OpenParen) && token.span.end() == t.span.start()
-                }) {
+                if self.adjacent_open_paren_follows(token.span) {
                     self.advance(); // consume OpenParen
                     let args = self.parse_function_arguments()?;
                     Ok(Expression::FunctionCall {
                         function: FunctionRef::new(name),
                         args,
+                    })
+                } else if is_known_single_argument_function_name(&name)
+                    && self.peek().is_some_and(token_starts_bare_function_argument)
+                {
+                    let arg = self.parse_expression(bare_function_argument_precedence())?;
+                    Ok(Expression::FunctionCall {
+                        function: FunctionRef::new(name),
+                        args: vec![arg],
                     })
                 } else {
                     Ok(Expression::Symbolic(Symbol::new(name)))
@@ -555,9 +638,7 @@ impl Parser {
             }
             TokenKind::EscapedIdentifier(name) => {
                 let escaped_name = format!("\\{name}");
-                if self.peek().is_some_and(|t| {
-                    matches!(t.kind, TokenKind::OpenParen) && token.span.end() == t.span.start()
-                }) {
+                if self.adjacent_open_paren_follows(token.span) {
                     self.advance(); // consume OpenParen
                     let args = self.parse_function_arguments()?;
                     Ok(Expression::FunctionCall {
@@ -626,6 +707,11 @@ impl Parser {
             }
         }
         Ok(args)
+    }
+
+    fn adjacent_open_paren_follows(&self, span: Span) -> bool {
+        self.peek()
+            .is_some_and(|t| matches!(t.kind, TokenKind::OpenParen) && span.end() == t.span.start())
     }
 
     fn parse_prefix_operator(
@@ -734,6 +820,21 @@ impl Parser {
         self.tokens.get(self.position)
     }
 
+    fn peek_postfix_function(&self) -> Option<FunctionRef> {
+        let token = self.peek()?;
+        let TokenKind::Identifier(name) = &token.kind else {
+            return None;
+        };
+        if !is_known_single_argument_function_name(name)
+            || self.tokens.get(self.position + 1).is_some_and(|next| {
+                matches!(next.kind, TokenKind::OpenParen) && token.span.end() == next.span.start()
+            })
+        {
+            return None;
+        }
+        Some(FunctionRef::new(name.clone()))
+    }
+
     fn advance(&mut self) -> Option<Token> {
         let token = self.tokens.get(self.position)?.clone();
         self.position += 1;
@@ -823,28 +924,38 @@ impl Parser {
     }
 
     fn primary_end_index(&self, index: usize) -> Option<usize> {
-        match self.tokens.get(index)?.kind {
-            TokenKind::Number { .. }
-            | TokenKind::Identifier(_)
-            | TokenKind::EscapedIdentifier(_) => Some(index),
-            TokenKind::OpenParen => {
-                let mut depth = 1usize;
-                for (offset, token) in self.tokens[index + 1..].iter().enumerate() {
-                    match token.kind {
-                        TokenKind::OpenParen => depth += 1,
-                        TokenKind::CloseParen => {
-                            depth -= 1;
-                            if depth == 0 {
-                                return Some(index + 1 + offset);
-                            }
-                        }
-                        _ => {}
-                    }
+        match &self.tokens.get(index)?.kind {
+            TokenKind::Number { .. } => Some(index),
+            TokenKind::Identifier(_) | TokenKind::EscapedIdentifier(_) => {
+                if self.tokens.get(index + 1).is_some_and(|next| {
+                    matches!(next.kind, TokenKind::OpenParen)
+                        && self.tokens[index].span.end() == next.span.start()
+                }) {
+                    self.group_end_index(index + 1)
+                } else {
+                    Some(index)
                 }
-                None
             }
+            TokenKind::OpenParen => self.group_end_index(index),
             _ => None,
         }
+    }
+
+    fn group_end_index(&self, open_index: usize) -> Option<usize> {
+        let mut depth = 1usize;
+        for (offset, token) in self.tokens[open_index + 1..].iter().enumerate() {
+            match token.kind {
+                TokenKind::OpenParen => depth += 1,
+                TokenKind::CloseParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(open_index + 1 + offset);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 }
 
@@ -908,6 +1019,10 @@ fn postfix_precedence() -> u8 {
 
 fn prefix_precedence() -> u8 {
     15
+}
+
+fn bare_function_argument_precedence() -> u8 {
+    infix_binding_power(InfixOperator::Add).0 + 1
 }
 
 fn tight_implicit_multiplication_precedence() -> u8 {
@@ -1037,4 +1152,14 @@ fn token_starts_primary(token: &Token) -> bool {
             | TokenKind::EscapedIdentifier(_)
             | TokenKind::OpenParen
     )
+}
+
+fn token_starts_bare_function_argument(token: &Token) -> bool {
+    token_starts_primary(token)
+        || matches!(
+            token.kind,
+            TokenKind::Operator(
+                Operator::Plus | Operator::Minus | Operator::LogicalNot | Operator::BitwiseNot
+            )
+        )
 }
