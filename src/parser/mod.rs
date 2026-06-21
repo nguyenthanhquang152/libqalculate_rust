@@ -8,3 +8,6 @@ pub mod names;
 
 /// Operator parser for qalc expression input.
 pub mod operators;
+
+/// Session command parser for qalc command input.
+pub mod commands;

@@ -47,6 +47,11 @@ pub enum BatchError {
         /// Expression that did not have a tab-prefixed expected output.
         expression: String,
     },
+    /// A session command failed to parse.
+    InvalidCommand {
+        /// One-based line number of the invalid command.
+        line: usize,
+    },
 }
 
 impl fmt::Display for BatchError {
@@ -58,6 +63,9 @@ impl fmt::Display for BatchError {
             }
             Self::MissingExpected { expression } => {
                 write!(f, "expression has no expected output: {expression:?}")
+            }
+            Self::InvalidCommand { line } => {
+                write!(f, "session command at line {line} is invalid")
             }
         }
     }
@@ -86,35 +94,14 @@ pub fn parse_batch_cases(input: &str) -> Result<Vec<BatchCase>, BatchError> {
 pub fn parse_batch_cases_with_source_lines(
     input: &str,
 ) -> Result<Vec<LocatedBatchCase>, BatchError> {
-    let mut cases = Vec::new();
-    let mut current_expression: Option<(usize, String)> = None;
-    let mut current_expected = Vec::new();
-
-    for (index, raw_line) in input.lines().enumerate() {
-        let line_number = index + 1;
-        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
-
-        if line.trim().is_empty()
-            || line.trim_start().starts_with('#')
-            || is_session_command(line.trim())
-        {
-            flush_located_case(&mut cases, &mut current_expression, &mut current_expected)?;
-            continue;
-        }
-
-        if let Some(expected) = line.strip_prefix('\t') {
-            if current_expression.is_none() {
-                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
-            }
-            current_expected.push(expected.to_owned());
-            continue;
-        }
-
-        flush_located_case(&mut cases, &mut current_expression, &mut current_expected)?;
-        current_expression = Some((line_number, line.to_owned()));
-    }
-
-    flush_located_case(&mut cases, &mut current_expression, &mut current_expected)?;
+    let items = parse_batch_items(input)?;
+    let cases = items
+        .into_iter()
+        .filter_map(|item| match item {
+            BatchItem::Case(case) => Some(case),
+            _ => None,
+        })
+        .collect();
     Ok(cases)
 }
 
@@ -190,24 +177,6 @@ pub fn render_batch_cases(cases: &[BatchCase]) -> String {
     output
 }
 
-fn flush_located_case(
-    cases: &mut Vec<LocatedBatchCase>,
-    current_expression: &mut Option<(usize, String)>,
-    current_expected: &mut Vec<String>,
-) -> Result<(), BatchError> {
-    let Some((source_line, expression)) = current_expression.take() else {
-        return Ok(());
-    };
-    if current_expected.is_empty() {
-        return Err(BatchError::MissingExpected { expression });
-    }
-    cases.push(LocatedBatchCase {
-        source_line,
-        case: BatchCase::new(expression, std::mem::take(current_expected)),
-    });
-    Ok(())
-}
-
 fn flush_case_id(
     batch_file: &str,
     ids: &mut Vec<String>,
@@ -221,14 +190,118 @@ fn flush_case_id(
     }
 }
 
+/// One parsed item in a `.batch` fixture: either a command or a test case.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BatchItem {
+    /// A parsed session command.
+    Command {
+        /// One-based source line where the command appears.
+        source_line: usize,
+        /// The parsed command.
+        command: crate::parser::commands::SessionCommand,
+    },
+    /// A parsed located batch case.
+    Case(LocatedBatchCase),
+}
+
+/// Parse a libqalculate `.batch` fixture into a sequence of commands and located cases.
+pub fn parse_batch_items(input: &str) -> Result<Vec<BatchItem>, BatchError> {
+    let mut items = Vec::new();
+    let mut current_expression: Option<(usize, String)> = None;
+    let mut current_expected = Vec::new();
+
+    for (index, raw_line) in input.lines().enumerate() {
+        let line_number = index + 1;
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
+            continue;
+        }
+
+        if is_session_command(trimmed) {
+            flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
+            let cmd = crate::parser::commands::parse_command(trimmed)
+                .map_err(|_| BatchError::InvalidCommand { line: line_number })?;
+            items.push(BatchItem::Command {
+                source_line: line_number,
+                command: cmd,
+            });
+            continue;
+        }
+
+        if let Some(expected) = line.strip_prefix('\t') {
+            if current_expression.is_none() {
+                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            }
+            current_expected.push(expected.to_owned());
+            continue;
+        }
+
+        flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
+        current_expression = Some((line_number, line.to_owned()));
+    }
+
+    flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
+    Ok(items)
+}
+
+fn flush_batch_items(
+    items: &mut Vec<BatchItem>,
+    current_expression: &mut Option<(usize, String)>,
+    current_expected: &mut Vec<String>,
+) -> Result<(), BatchError> {
+    let Some((source_line, expression)) = current_expression.take() else {
+        return Ok(());
+    };
+    if current_expected.is_empty() {
+        return Err(BatchError::MissingExpected { expression });
+    }
+    items.push(BatchItem::Case(LocatedBatchCase {
+        source_line,
+        case: BatchCase::new(expression, std::mem::take(current_expected)),
+    }));
+    Ok(())
+}
+
 /// Return true for upstream batch session commands that affect later cases.
 pub fn is_session_command(line: &str) -> bool {
-    line.starts_with("set ") || line.starts_with("/set ") || line.starts_with("/assume ")
+    let line = line.trim_start();
+    if line
+        .get(..4)
+        .map_or(false, |p| p.eq_ignore_ascii_case("set "))
+    {
+        return true;
+    }
+    if line
+        .get(..5)
+        .map_or(false, |p| p.eq_ignore_ascii_case("/set "))
+    {
+        return true;
+    }
+    if line
+        .get(..7)
+        .map_or(false, |p| p.eq_ignore_ascii_case("assume "))
+    {
+        return true;
+    }
+    if line
+        .get(..8)
+        .map_or(false, |p| p.eq_ignore_ascii_case("/assume "))
+    {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_batch_cases, render_batch_cases, BatchCase, BatchError};
+    use super::{
+        parse_batch_cases, parse_batch_items, render_batch_cases, BatchCase, BatchError, BatchItem,
+        LocatedBatchCase,
+    };
+    use crate::parser::commands::{ApproximationMode, SessionCommand, SetCommand, SetSetting};
 
     #[test]
     fn parses_expression_and_expected_output() {
@@ -297,5 +370,52 @@ mod tests {
         let ids = super::batch_case_ids("stats.batch", input).expect("fixture should parse");
 
         assert_eq!(ids, vec!["stats.batch:2"]);
+    }
+
+    #[test]
+    fn test_parse_batch_items_with_commands() {
+        let input = "/set approximation exact\nassume positive\n1 + 1\n\t2\n";
+        let items = parse_batch_items(input).expect("items should parse");
+        assert_eq!(items.len(), 3);
+        match &items[0] {
+            BatchItem::Command {
+                source_line,
+                command,
+            } => {
+                assert_eq!(*source_line, 1);
+                match command {
+                    SessionCommand::Set(SetCommand { setting, .. }) => {
+                        assert_eq!(
+                            *setting,
+                            SetSetting::Approximation(ApproximationMode::Exact)
+                        );
+                    }
+                    _ => panic!("Expected Set command"),
+                }
+            }
+            _ => panic!("Expected Command item"),
+        }
+        match &items[1] {
+            BatchItem::Command {
+                source_line,
+                command,
+            } => {
+                assert_eq!(*source_line, 2);
+                match command {
+                    SessionCommand::Assume(c) => {
+                        assert_eq!(c.kind, crate::parser::commands::AssumeKind::Positive);
+                    }
+                    _ => panic!("Expected Assume command"),
+                }
+            }
+            _ => panic!("Expected Command item"),
+        }
+        match &items[2] {
+            BatchItem::Case(LocatedBatchCase { source_line, case }) => {
+                assert_eq!(*source_line, 3);
+                assert_eq!(case.expression, "1 + 1");
+            }
+            _ => panic!("Expected Case item"),
+        }
     }
 }

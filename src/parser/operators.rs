@@ -28,7 +28,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    fn new(kind: ParseErrorKind, span: Span) -> Self {
+    pub(crate) fn new(kind: ParseErrorKind, span: Span) -> Self {
         Self { kind, span }
     }
 
@@ -60,6 +60,12 @@ pub enum ParseErrorKind {
     UnsupportedOperator(Operator),
     /// The left-hand side of `:=` is not a valid assignment target.
     InvalidAssignmentTarget,
+    /// The command name is not recognized.
+    UnknownCommand,
+    /// The setting name is not recognized.
+    UnknownSetting,
+    /// The setting value is invalid.
+    InvalidSettingValue,
 }
 
 impl fmt::Display for ParseError {

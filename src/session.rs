@@ -1,8 +1,8 @@
-//! Typed session settings supported by fallback-disabled native evidence.
+use crate::parser::commands::{parse_command, ApproximationMode, SessionCommand, SetSetting};
 
 const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
 // Native precision evidence is deliberately bounded so CLI settings cannot
-// request unbounded MPFR allocation through the fallback-disabled scaffold.
+// request MPFR allocation through the fallback-disabled scaffold.
 const MAX_NATIVE_PRECISION_DIGITS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -13,23 +13,55 @@ pub(crate) struct NativeSessionSettings {
     interval_display: Option<u8>,
     interval_calculation: Option<u8>,
     concise_uncertainty: bool,
+    approximation: Option<ApproximationMode>,
+    fraction_format: Option<u32>,
 }
 
 impl NativeSessionSettings {
     pub(crate) fn from_raw(settings: &[&str]) -> Option<Self> {
         let mut state = Self::default();
         for setting in settings {
-            match normalize_session_setting(setting) {
-                "input base 16" => state.input_base = Some(16),
-                "input base 10" => state.input_base = Some(10),
-                "unicode 1" => state.unicode = true,
-                "interval display 2" => state.interval_display = Some(2),
-                "ic 2" => state.interval_calculation = Some(2),
-                "concise uncertainty 1" => state.concise_uncertainty = true,
-                normalized => {
-                    let precision = normalized.strip_prefix("precision ")?;
-                    state.precision_digits = Some(parse_precision_digits(precision)?);
-                }
+            let cmd_str = if setting.trim_start().starts_with("set ")
+                || setting.trim_start().starts_with("/set ")
+                || setting.trim_start().starts_with("assume ")
+                || setting.trim_start().starts_with("/assume ")
+            {
+                setting.to_string()
+            } else {
+                format!("set {}", setting)
+            };
+            let cmd = parse_command(&cmd_str).ok()?;
+            match cmd {
+                SessionCommand::Set(c) => match c.setting {
+                    SetSetting::InputBase(b) if b == 10 || b == 16 => {
+                        state.input_base = Some(b);
+                    }
+                    SetSetting::Unicode(true) => {
+                        state.unicode = true;
+                    }
+                    SetSetting::Precision(p) if p > 0 && p <= MAX_NATIVE_PRECISION_DIGITS => {
+                        state.precision_digits = Some(p);
+                    }
+                    SetSetting::IntervalDisplay(2) => {
+                        state.interval_display = Some(2);
+                    }
+                    SetSetting::IntervalCalculation(2) => {
+                        state.interval_calculation = Some(2);
+                    }
+                    SetSetting::ConciseUncertainty(true) => {
+                        state.concise_uncertainty = true;
+                    }
+                    SetSetting::Approximation(a)
+                        if a == ApproximationMode::Exact || a == ApproximationMode::TryExact =>
+                    {
+                        state.approximation = Some(a);
+                    }
+                    SetSetting::FractionFormat(2) => {
+                        state.fraction_format = Some(2);
+                    }
+                    _ => return None,
+                },
+                SessionCommand::Assume(_) => {}
             }
         }
         Some(state)
@@ -57,6 +89,8 @@ impl NativeSessionSettings {
             && self.interval_display.is_none()
             && self.interval_calculation.is_none()
             && !self.concise_uncertainty
+            && self.approximation.is_none()
+            && self.fraction_format.is_none()
     }
 
     /// Returns true when settings can be applied to the vetted numeric
@@ -80,22 +114,26 @@ impl NativeSessionSettings {
     pub(crate) const fn has_concise_uncertainty(self) -> bool {
         self.concise_uncertainty
     }
-}
 
-fn normalize_session_setting(setting: &str) -> &str {
-    let trimmed = setting.trim();
-    trimmed
-        .strip_prefix("/set ")
-        .or_else(|| trimmed.strip_prefix("set "))
-        .unwrap_or(trimmed)
-        .trim()
-}
+    #[allow(dead_code)]
+    pub(crate) const fn approximation(self) -> Option<ApproximationMode> {
+        self.approximation
+    }
 
-fn parse_precision_digits(value: &str) -> Option<usize> {
-    let digits = value.trim().parse::<usize>().ok()?;
-    (1..=MAX_NATIVE_PRECISION_DIGITS)
-        .contains(&digits)
-        .then_some(digits)
+    #[allow(dead_code)]
+    pub(crate) const fn fraction_format(self) -> Option<u32> {
+        self.fraction_format
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn has_approximation(self) -> bool {
+        self.approximation.is_some()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn has_fraction_format(self) -> bool {
+        self.fraction_format.is_some()
+    }
 }
 
 #[cfg(test)]
@@ -121,6 +159,21 @@ mod tests {
                 interval_display: Some(2),
                 interval_calculation: Some(2),
                 concise_uncertainty: true,
+                approximation: None,
+                fraction_format: None,
+            })
+        );
+        assert_eq!(
+            NativeSessionSettings::from_raw(&["set approximation exact", "set fr 2",]),
+            Some(NativeSessionSettings {
+                input_base: None,
+                unicode: false,
+                precision_digits: None,
+                interval_display: None,
+                interval_calculation: None,
+                concise_uncertainty: false,
+                approximation: Some(ApproximationMode::Exact),
+                fraction_format: Some(2),
             })
         );
     }
