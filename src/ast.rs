@@ -84,6 +84,10 @@ pub enum StructureKind {
     LogicalNot,
     /// Comparison operation node.
     Comparison,
+    /// Unit or expression conversion node.
+    Conversion,
+    /// Variable assignment node.
+    Assignment,
     /// Undefined value node.
     Undefined,
     /// Aborted calculation sentinel node.
@@ -149,6 +153,10 @@ pub enum PrecedenceClass {
     LogicalXor,
     /// Logical or.
     LogicalOr,
+    /// Conversion (lowest operator precedence).
+    Conversion,
+    /// Assignment (even lower than conversion).
+    Assignment,
 }
 
 /// Shape metadata for an operator-backed expression node.
@@ -377,6 +385,11 @@ impl Symbol {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// Consumes the symbol and returns the owned name.
+    pub fn into_name(self) -> String {
+        self.name
+    }
 }
 
 /// Date/time literal carried by an AST leaf before full date semantics are ported.
@@ -566,6 +579,20 @@ pub enum Expression {
         /// Right-hand side expression.
         rhs: Box<Expression>,
     },
+    /// Unit or expression conversion (`5 m to ft`, `100 USD to EUR`).
+    Conversion {
+        /// Expression being converted.
+        expr: Box<Expression>,
+        /// Target unit or expression to convert to.
+        target: Box<Expression>,
+    },
+    /// Variable assignment (`x := 5`).
+    Assignment {
+        /// Variable name being assigned.
+        variable: String,
+        /// Value expression being assigned.
+        value: Box<Expression>,
+    },
     /// Undefined value sentinel.
     Undefined,
     /// Aborted calculation sentinel.
@@ -615,6 +642,8 @@ impl Expression {
             Self::Parallel { .. } => StructureKind::Parallel,
             Self::LogicalNot(_) => StructureKind::LogicalNot,
             Self::Comparison { .. } => StructureKind::Comparison,
+            Self::Conversion { .. } => StructureKind::Conversion,
+            Self::Assignment { .. } => StructureKind::Assignment,
             Self::Undefined => StructureKind::Undefined,
             Self::Aborted => StructureKind::Aborted,
             Self::DateTime(_) => StructureKind::DateTime,
@@ -731,6 +760,16 @@ impl Expression {
                 Associativity::None,
                 PrecedenceClass::Comparison,
             )),
+            Self::Conversion { .. } => Some(OperatorMetadata::new(
+                OperatorArity::Exact(2),
+                Associativity::Left,
+                PrecedenceClass::Conversion,
+            )),
+            Self::Assignment { .. } => Some(OperatorMetadata::new(
+                OperatorArity::Exact(2),
+                Associativity::Right,
+                PrecedenceClass::Assignment,
+            )),
             Self::Number(_)
             | Self::Unit { .. }
             | Self::Symbolic(_)
@@ -755,6 +794,7 @@ impl Expression {
             Self::Vector(children) => children.len(),
             Self::FunctionCall { args, .. } => args.len(),
             Self::Inverse(_) | Self::Negate(_) | Self::BitwiseNot(_) | Self::LogicalNot(_) => 1,
+            Self::Conversion { .. } | Self::Assignment { .. } => 2,
             Self::Factorial(_)
             | Self::DoubleFactorial(_)
             | Self::MultiFactorial { .. }
@@ -829,6 +869,15 @@ impl Expression {
             Self::Comparison { lhs, rhs, .. } => match index {
                 0 => Some(lhs.as_ref()),
                 1 => Some(rhs.as_ref()),
+                _ => None,
+            },
+            Self::Conversion { expr, target } => match index {
+                0 => Some(expr.as_ref()),
+                1 => Some(target.as_ref()),
+                _ => None,
+            },
+            Self::Assignment { value, .. } => match index {
+                0 => Some(value.as_ref()),
                 _ => None,
             },
             Self::Number(_)

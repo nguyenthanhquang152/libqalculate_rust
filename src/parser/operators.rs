@@ -566,6 +566,10 @@ enum InfixOperator {
     /// only when no units are present.
     Parallel,
     ParallelOr,
+    /// Unit/expression conversion, written `to`, `->`, or `→`.
+    Conversion,
+    /// Variable assignment, written `:=` or `=:`.
+    Assignment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -600,6 +604,7 @@ impl NaryOperator {
 }
 
 impl Parser {
+    #[allow(clippy::while_let_loop)]
     fn parse_expression(&mut self, minimum_precedence: u8) -> Result<Expression, ParseError> {
         let mut lhs = self.parse_prefix()?;
 
@@ -1029,6 +1034,7 @@ impl Parser {
             .is_some_and(token_is_known_unit_primary)
     }
 
+    #[allow(clippy::while_let_loop)]
     fn parse_unit_division_chain(&mut self) -> Result<Expression, ParseError> {
         let mut lhs = self.parse_unit_product()?;
 
@@ -1147,6 +1153,8 @@ impl Parser {
                 }
             }
             Operator::Percent | Operator::Factorial => return Ok(None),
+            Operator::Conversion => InfixOperator::Conversion,
+            Operator::Assignment => InfixOperator::Assignment,
             unsupported => {
                 return Err(ParseError::new(
                     ParseErrorKind::UnsupportedOperator(unsupported),
@@ -1602,6 +1610,7 @@ fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
     // Logical XOR (loosest) < OR < NOR < NAND < AND (tightest among logicals)
     // Then: bitwise OR < XOR < AND < comparison < shift < add < parallel < mul < power
     match operator {
+        InfixOperator::Conversion => (0, Associativity::Left),
         InfixOperator::LogicalXor => (1, Associativity::Left),
         InfixOperator::LogicalOr => (2, Associativity::Left),
         InfixOperator::LogicalNor => (3, Associativity::Left),
@@ -1621,6 +1630,10 @@ fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
         | InfixOperator::Modulo
         | InfixOperator::IntegerDivision => (13, Associativity::Left),
         InfixOperator::Power => (15, Associativity::Right),
+        // Assignment is the weakest binding: `x := 2 + 3 to m` means `x := ((2+3) to m)`,
+        // i.e. conversion already happened inside the RHS before assignment picks it up.
+        // We use a special sentinel precedence below Conversion (0).
+        InfixOperator::Assignment => (0, Associativity::Right),
     }
 }
 
@@ -1686,6 +1699,24 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
             rhs: Box::new(rhs),
         },
         InfixOperator::ParallelOr => merge_nary(NaryOperator::LogicalOr, lhs, rhs),
+        InfixOperator::Conversion => Expression::Conversion {
+            expr: Box::new(lhs),
+            target: Box::new(rhs),
+        },
+        InfixOperator::Assignment => {
+            let variable = match lhs {
+                Expression::Symbolic(symbol) => symbol.into_name(),
+                _ => {
+                    // In the future this could be a ParseError, but for now
+                    // we fall back to a symbolic assignment target name.
+                    String::from("?")
+                }
+            };
+            Expression::Assignment {
+                variable,
+                value: Box::new(rhs),
+            }
+        }
     }
 }
 

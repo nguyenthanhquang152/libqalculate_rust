@@ -371,11 +371,12 @@ fn returns_structured_errors_for_invalid_operator_syntax() {
     assert_eq!(wrong_close.kind(), ParseErrorKind::UnclosedGroup);
     assert_eq!(wrong_close.span().range(), 0..1);
 
-    let unsupported = parse_expression("1 -> m").expect_err("conversion is not task 3.3");
-    assert!(matches!(
-        unsupported.kind(),
-        ParseErrorKind::UnsupportedOperator(_)
-    ));
+    // Arrow `->` is now a supported conversion operator (Issue #19).
+    let arrow = parse_expression("1 -> m").expect("arrow conversion should parse");
+    assert!(
+        matches!(arrow, Expression::Conversion { .. }),
+        "expected Conversion, got {arrow:?}"
+    );
 }
 
 // ============================================================================
@@ -1598,4 +1599,174 @@ fn bare_function_can_be_remainder_rhs() {
     };
     assert_eq!(function.id(), "sqrt");
     assert_eq!(number_text(&args[0]), "4");
+}
+
+// ===== Conversion parsing tests =====
+
+#[test]
+fn parses_simple_conversion_with_to() {
+    let expr = parse_expression("5 m to ft").expect("parse conversion");
+    let Expression::Conversion { expr: lhs, target } = expr else {
+        panic!("expected Conversion, got {expr:?}");
+    };
+    let factors = children(&lhs);
+    assert_eq!(number_text(&factors[0]), "5");
+    assert_eq!(symbol_name(&factors[1]), "m");
+    assert_eq!(symbol_name(&target), "ft");
+}
+
+#[test]
+fn parses_conversion_with_arrow_operator() {
+    // The lexer emits Conversion for both `to` and `->`
+    let expr = parse_expression("100 USD -> EUR").expect("parse arrow conversion");
+    let Expression::Conversion { expr: lhs, target } = expr else {
+        panic!("expected Conversion, got {expr:?}");
+    };
+    let factors = children(&lhs);
+    assert_eq!(number_text(&factors[0]), "100");
+    assert_eq!(symbol_name(&factors[1]), "USD");
+    assert_eq!(symbol_name(&target), "EUR");
+}
+
+#[test]
+fn conversion_has_lower_precedence_than_addition() {
+    // `2 + 3 to m` should parse as `(2 + 3) to m`, not `2 + (3 to m)`
+    let expr = parse_expression("2 + 3 to m").expect("parse conversion precedence");
+    let Expression::Conversion { expr: lhs, target } = expr else {
+        panic!("expected Conversion at top, got {expr:?}");
+    };
+    let terms = children(&lhs);
+    assert_eq!(number_text(&terms[0]), "2");
+    assert_eq!(number_text(&terms[1]), "3");
+    assert_eq!(symbol_name(&target), "m");
+}
+
+#[test]
+fn conversion_has_lower_precedence_than_multiplication() {
+    // `5 m to ft` should parse as `(5 * m) to ft`
+    let expr = parse_expression("5 m to ft").expect("parse mul-conversion");
+    let Expression::Conversion { expr: lhs, target } = expr else {
+        panic!("expected Conversion, got {expr:?}");
+    };
+    let factors = children(&lhs);
+    assert_eq!(factors.len(), 2);
+    assert_eq!(number_text(&factors[0]), "5");
+    assert_eq!(symbol_name(&factors[1]), "m");
+    assert_eq!(symbol_name(&target), "ft");
+}
+
+#[test]
+fn conversion_chains_left_to_right() {
+    // `5 m to ft to in` should parse as `(5 m to ft) to in`
+    let expr = parse_expression("5 m to ft to in").expect("parse chained conversion");
+    let Expression::Conversion {
+        expr: inner,
+        target: outer_target,
+    } = expr
+    else {
+        panic!("expected outer Conversion, got {expr:?}");
+    };
+    assert_eq!(symbol_name(&outer_target), "in");
+
+    let Expression::Conversion {
+        expr: lhs,
+        target: inner_target,
+    } = inner.as_ref()
+    else {
+        panic!("expected inner Conversion, got {inner:?}");
+    };
+    let factors = children(lhs);
+    assert_eq!(number_text(&factors[0]), "5");
+    assert_eq!(symbol_name(&factors[1]), "m");
+    assert_eq!(symbol_name(inner_target), "ft");
+}
+
+#[test]
+fn conversion_with_complex_expression() {
+    // `2^3 + 1 to m` should parse as `(2^3 + 1) to m`
+    let expr = parse_expression("2^3 + 1 to m").expect("parse complex conversion");
+    let Expression::Conversion { expr: lhs, target } = expr else {
+        panic!("expected Conversion, got {expr:?}");
+    };
+    assert_eq!(symbol_name(&target), "m");
+    let terms = children(&lhs);
+    assert_eq!(terms.len(), 2);
+    assert!(matches!(&terms[0], Expression::Power { .. }));
+    assert_eq!(number_text(&terms[1]), "1");
+}
+
+// ===== Assignment parsing tests =====
+
+#[test]
+fn parses_simple_assignment() {
+    let expr = parse_expression("x := 5").expect("parse assignment");
+    let Expression::Assignment { variable, value } = expr else {
+        panic!("expected Assignment, got {expr:?}");
+    };
+    assert_eq!(variable, "x");
+    assert_eq!(number_text(&value), "5");
+}
+
+#[test]
+fn assignment_captures_full_expression_rhs() {
+    // `x := 2 + 3` should parse as `x := (2 + 3)`
+    let expr = parse_expression("x := 2 + 3").expect("parse assignment with expression");
+    let Expression::Assignment { variable, value } = expr else {
+        panic!("expected Assignment, got {expr:?}");
+    };
+    assert_eq!(variable, "x");
+    let terms = children(&value);
+    assert_eq!(number_text(&terms[0]), "2");
+    assert_eq!(number_text(&terms[1]), "3");
+}
+
+#[test]
+fn assignment_with_conversion_rhs() {
+    // `x := 5 m to ft` should parse as `x := (5 m to ft)`
+    let expr = parse_expression("x := 5 m to ft").expect("parse assignment with conversion");
+    let Expression::Assignment { variable, value } = expr else {
+        panic!("expected Assignment, got {expr:?}");
+    };
+    assert_eq!(variable, "x");
+    let Expression::Conversion {
+        expr: conv_lhs,
+        target,
+    } = value.as_ref()
+    else {
+        panic!("expected Conversion in RHS, got {value:?}");
+    };
+    let factors = children(conv_lhs);
+    assert_eq!(number_text(&factors[0]), "5");
+    assert_eq!(symbol_name(&factors[1]), "m");
+    assert_eq!(symbol_name(target), "ft");
+}
+
+#[test]
+fn chained_assignment_is_right_associative() {
+    // `x := y := 5` should parse as `x := (y := 5)`
+    let expr = parse_expression("x := y := 5").expect("parse chained assignment");
+    let Expression::Assignment { variable, value } = expr else {
+        panic!("expected outer Assignment, got {expr:?}");
+    };
+    assert_eq!(variable, "x");
+    let Expression::Assignment {
+        variable: inner_var,
+        value: inner_val,
+    } = value.as_ref()
+    else {
+        panic!("expected inner Assignment, got {value:?}");
+    };
+    assert_eq!(inner_var, "y");
+    assert_eq!(number_text(inner_val), "5");
+}
+
+#[test]
+fn conversion_has_lower_precedence_than_logical_operators() {
+    // `a && b to m` should parse as `(a && b) to m`
+    let expr = parse_expression("a && b to m").expect("parse logical conversion");
+    let Expression::Conversion { expr: lhs, target } = expr else {
+        panic!("expected Conversion at top, got {expr:?}");
+    };
+    assert_eq!(symbol_name(&target), "m");
+    assert!(matches!(lhs.as_ref(), Expression::LogicalAnd(_)));
 }
