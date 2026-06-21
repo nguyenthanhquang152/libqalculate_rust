@@ -1,6 +1,6 @@
 //! Name resolution for functions, units, variables, and prefixes.
 //!
-//! This module provides the [`NameRegistry`] trait and supporting types
+//! This module provides the [`NameRegistry`](crate::parser::names::NameRegistry) trait and supporting types
 //! for parser name resolution.  The registry interface is intentionally
 //! thin — it supports lookup by name and returns classification metadata,
 //! but does **not** own full definition semantics (evaluation, conversion,

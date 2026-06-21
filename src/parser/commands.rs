@@ -1,7 +1,7 @@
 //! Session command parser for qalc commands (`/set`, `/assume`).
 //!
 //! This module parses command strings (optionally prefixed with `/`)
-//! into a typed [`SessionCommand`] AST model with validation and source span tracking.
+//! into a typed [`SessionCommand`](crate::parser::commands::SessionCommand) AST model with validation and source span tracking.
 
 use crate::parser::lexer::Span;
 use crate::parser::operators::{ParseError, ParseErrorKind};
