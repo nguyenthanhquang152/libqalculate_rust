@@ -58,6 +58,8 @@ pub enum ParseErrorKind {
     InvalidNumber,
     /// The lexer recognizes this operator, but task 3.3 does not parse it.
     UnsupportedOperator(Operator),
+    /// The left-hand side of `:=` is not a valid assignment target.
+    InvalidAssignmentTarget,
 }
 
 impl fmt::Display for ParseError {
@@ -680,7 +682,7 @@ impl Parser {
                 {
                     self.detected_parallel_spans.insert(token.span);
                 }
-                lhs = build_infix_expression(infix, lhs, rhs);
+                lhs = build_infix_expression(infix, lhs, rhs, token.span)?;
                 continue;
             }
 
@@ -883,10 +885,11 @@ impl Parser {
             }
 
             if let Some(infix @ InfixOperator::Power) = self.peek_infix_operator()? {
+                let op_span = self.peek().map(|t| t.span).unwrap_or(Span::new(0, 0));
                 let (precedence, associativity) = infix_binding_power(infix);
                 self.advance();
                 let rhs = self.parse_infix_rhs(precedence, associativity)?;
-                lhs = build_infix_expression(infix, lhs, rhs);
+                lhs = build_infix_expression(infix, lhs, rhs, op_span)?;
                 continue;
             }
 
@@ -1099,11 +1102,12 @@ impl Parser {
         if !matches!(token.kind, TokenKind::Operator(Operator::Power)) {
             return Ok(lhs);
         }
+        let op_span = token.span;
 
         let (precedence, associativity) = infix_binding_power(InfixOperator::Power);
         self.advance();
         let rhs = self.parse_infix_rhs(precedence, associativity)?;
-        Ok(build_infix_expression(InfixOperator::Power, lhs, rhs))
+        build_infix_expression(InfixOperator::Power, lhs, rhs, op_span)
     }
 
     fn peek_infix_operator(&self) -> Result<Option<InfixOperator>, ParseError> {
@@ -1578,17 +1582,17 @@ fn duodecimal_digit(ch: char) -> Option<u32> {
 fn postfix_precedence() -> u8 {
     // Postfix is checked before binary infix, so sharing power's binding
     // bucket still attaches `!` and postfix `%` before another `^` can bind.
-    15
+    16
 }
 
 fn postfix_function_precedence() -> u8 {
     // Bare/postfix functions bind tighter than multiplication/division but
     // lower than exponentiation, so `2^3 sin` is `sin(2^3)`.
-    14
+    15
 }
 
 fn prefix_precedence() -> u8 {
-    15
+    16
 }
 
 fn logical_prefix_precedence() -> u8 {
@@ -1596,49 +1600,50 @@ fn logical_prefix_precedence() -> u8 {
 }
 
 fn tight_implicit_multiplication_precedence() -> u8 {
-    14
+    15
 }
 
 /// The standalone `E` ten-power operator binds tighter than exponentiation
-/// so `2E3^2` is `(2E3)^2`. Placed above Power (15) in the precedence table.
+/// so `2E3^2` is `(2E3)^2`. Placed above Power (16) in the precedence table.
 fn e_operator_precedence() -> u8 {
-    16
+    17
 }
 
 fn infix_binding_power(operator: InfixOperator) -> (u8, Associativity) {
     // Qalculate precedence (https://qalculate.github.io/manual/qalculate-expressions.html):
-    // Logical XOR (loosest) < OR < NOR < NAND < AND (tightest among logicals)
+    // Assignment (weakest, 0) < Conversion (1) < Logical XOR < OR < NOR < NAND < AND
     // Then: bitwise OR < XOR < AND < comparison < shift < add < parallel < mul < power
     match operator {
-        InfixOperator::Conversion => (0, Associativity::Left),
-        InfixOperator::LogicalXor => (1, Associativity::Left),
-        InfixOperator::LogicalOr => (2, Associativity::Left),
-        InfixOperator::LogicalNor => (3, Associativity::Left),
-        InfixOperator::LogicalNand => (4, Associativity::Left),
-        InfixOperator::LogicalAnd => (5, Associativity::Left),
-        InfixOperator::BitwiseOr => (6, Associativity::Left),
-        InfixOperator::BitwiseXor => (7, Associativity::Left),
-        InfixOperator::BitwiseAnd => (8, Associativity::Left),
-        InfixOperator::Comparison(_) => (9, Associativity::Left),
-        InfixOperator::ShiftLeft | InfixOperator::ShiftRight => (10, Associativity::Left),
-        InfixOperator::Add | InfixOperator::Subtract => (11, Associativity::Left),
-        InfixOperator::Parallel => (12, Associativity::Left),
-        InfixOperator::ParallelOr => (2, Associativity::Left),
+        InfixOperator::Assignment => (0, Associativity::Right),
+        InfixOperator::Conversion => (1, Associativity::Left),
+        InfixOperator::LogicalXor => (2, Associativity::Left),
+        InfixOperator::LogicalOr | InfixOperator::ParallelOr => (3, Associativity::Left),
+        InfixOperator::LogicalNor => (4, Associativity::Left),
+        InfixOperator::LogicalNand => (5, Associativity::Left),
+        InfixOperator::LogicalAnd => (6, Associativity::Left),
+        InfixOperator::BitwiseOr => (7, Associativity::Left),
+        InfixOperator::BitwiseXor => (8, Associativity::Left),
+        InfixOperator::BitwiseAnd => (9, Associativity::Left),
+        InfixOperator::Comparison(_) => (10, Associativity::Left),
+        InfixOperator::ShiftLeft | InfixOperator::ShiftRight => (11, Associativity::Left),
+        InfixOperator::Add | InfixOperator::Subtract => (12, Associativity::Left),
+        InfixOperator::Parallel => (13, Associativity::Left),
         InfixOperator::Multiply
         | InfixOperator::Divide
         | InfixOperator::Remainder
         | InfixOperator::Modulo
-        | InfixOperator::IntegerDivision => (13, Associativity::Left),
-        InfixOperator::Power => (15, Associativity::Right),
-        // Assignment is the weakest binding: `x := 2 + 3 to m` means `x := ((2+3) to m)`,
-        // i.e. conversion already happened inside the RHS before assignment picks it up.
-        // We use a special sentinel precedence below Conversion (0).
-        InfixOperator::Assignment => (0, Associativity::Right),
+        | InfixOperator::IntegerDivision => (14, Associativity::Left),
+        InfixOperator::Power => (16, Associativity::Right),
     }
 }
 
-fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Expression) -> Expression {
-    match operator {
+fn build_infix_expression(
+    operator: InfixOperator,
+    lhs: Expression,
+    rhs: Expression,
+    operator_span: Span,
+) -> Result<Expression, ParseError> {
+    Ok(match operator {
         InfixOperator::Add => merge_nary(NaryOperator::Addition, lhs, rhs),
         InfixOperator::Subtract => merge_nary(
             NaryOperator::Addition,
@@ -1707,9 +1712,10 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
             let variable = match lhs {
                 Expression::Symbolic(symbol) => symbol.into_name(),
                 _ => {
-                    // In the future this could be a ParseError, but for now
-                    // we fall back to a symbolic assignment target name.
-                    String::from("?")
+                    return Err(ParseError::new(
+                        ParseErrorKind::InvalidAssignmentTarget,
+                        operator_span,
+                    ));
                 }
             };
             Expression::Assignment {
@@ -1717,7 +1723,7 @@ fn build_infix_expression(operator: InfixOperator, lhs: Expression, rhs: Express
                 value: Box::new(rhs),
             }
         }
-    }
+    })
 }
 
 fn merge_nary(operator: NaryOperator, lhs: Expression, rhs: Expression) -> Expression {

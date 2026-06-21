@@ -120,6 +120,21 @@ enum StaticEntryKind {
     Prefix,
 }
 
+impl StaticEntryKind {
+    /// Priority for disambiguation when multiple entries match.
+    ///
+    /// Higher values win.  Order matches upstream:
+    /// Function (3) > Unit (2) > Variable (1) > Prefix (0).
+    fn priority(&self) -> u8 {
+        match self {
+            Self::Function { .. } => 3,
+            Self::Unit => 2,
+            Self::Variable => 1,
+            Self::Prefix => 0,
+        }
+    }
+}
+
 impl StaticRegistry {
     /// Creates an empty static registry.
     pub fn new() -> Self {
@@ -169,16 +184,11 @@ impl NameRegistry for StaticRegistry {
         // Priority order per upstream: function > unit > variable > prefix.
         // Longest match wins, but since StaticRegistry entries are exact-match,
         // we just search in priority order.
-        let mut best: Option<(&StaticEntry, usize)> = None;
+        let mut best: Option<(&StaticEntry, u8)> = None;
 
         for entry in &self.entries {
             if name == entry.name {
-                let priority = match entry.kind {
-                    StaticEntryKind::Function { .. } => 3,
-                    StaticEntryKind::Unit => 2,
-                    StaticEntryKind::Variable => 1,
-                    StaticEntryKind::Prefix => 0,
-                };
+                let priority = entry.kind.priority();
                 if best.as_ref().is_none_or(|(_, p)| priority > *p) {
                     best = Some((entry, priority));
                 }

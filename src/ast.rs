@@ -766,7 +766,7 @@ impl Expression {
                 PrecedenceClass::Conversion,
             )),
             Self::Assignment { .. } => Some(OperatorMetadata::new(
-                OperatorArity::Exact(2),
+                OperatorArity::Exact(1),
                 Associativity::Right,
                 PrecedenceClass::Assignment,
             )),
@@ -794,7 +794,8 @@ impl Expression {
             Self::Vector(children) => children.len(),
             Self::FunctionCall { args, .. } => args.len(),
             Self::Inverse(_) | Self::Negate(_) | Self::BitwiseNot(_) | Self::LogicalNot(_) => 1,
-            Self::Conversion { .. } | Self::Assignment { .. } => 2,
+            Self::Conversion { .. } => 2,
+            Self::Assignment { .. } => 1,
             Self::Factorial(_)
             | Self::DoubleFactorial(_)
             | Self::MultiFactorial { .. }

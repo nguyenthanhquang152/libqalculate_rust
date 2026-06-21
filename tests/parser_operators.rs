@@ -1770,3 +1770,14 @@ fn conversion_has_lower_precedence_than_logical_operators() {
     assert_eq!(symbol_name(&target), "m");
     assert!(matches!(lhs.as_ref(), Expression::LogicalAnd(_)));
 }
+
+#[test]
+fn assignment_with_numeric_lhs_is_error() {
+    // `42 := 5` is not a valid assignment — the LHS is not symbolic.
+    let err = parse_expression("42 := 5").expect_err("expected parse error for numeric LHS");
+    let err_msg = format!("{err:?}");
+    assert!(
+        err_msg.contains("InvalidAssignmentTarget"),
+        "unexpected error: {err_msg}",
+    );
+}
