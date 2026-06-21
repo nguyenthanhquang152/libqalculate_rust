@@ -270,25 +270,25 @@ pub fn is_session_command(line: &str) -> bool {
     let line = line.trim_start();
     if line
         .get(..4)
-        .map_or(false, |p| p.eq_ignore_ascii_case("set "))
+        .is_some_and(|p| p.eq_ignore_ascii_case("set "))
     {
         return true;
     }
     if line
         .get(..5)
-        .map_or(false, |p| p.eq_ignore_ascii_case("/set "))
+        .is_some_and(|p| p.eq_ignore_ascii_case("/set "))
     {
         return true;
     }
     if line
         .get(..7)
-        .map_or(false, |p| p.eq_ignore_ascii_case("assume "))
+        .is_some_and(|p| p.eq_ignore_ascii_case("assume "))
     {
         return true;
     }
     if line
         .get(..8)
-        .map_or(false, |p| p.eq_ignore_ascii_case("/assume "))
+        .is_some_and(|p| p.eq_ignore_ascii_case("/assume "))
     {
         return true;
     }
