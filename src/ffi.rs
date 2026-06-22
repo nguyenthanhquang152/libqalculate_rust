@@ -115,6 +115,13 @@ enum PrintProfile {
     Qalc,
 }
 
+impl Drop for Calculator {
+    fn drop(&mut self) {
+        let _guard = FFI_LOCK.lock().unwrap();
+        let _ = std::mem::replace(&mut self.inner, UniquePtr::null());
+    }
+}
+
 impl Calculator {
     /// Create a new `Calculator` instance.
     pub fn new() -> Self {

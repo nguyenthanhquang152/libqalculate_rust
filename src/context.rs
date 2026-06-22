@@ -265,11 +265,7 @@ impl CalculatorContext {
         };
 
         // 2. Evaluation stage
-        let res = if self.precision_digits != 8 {
-            crate::number::evaluate_expr_with_precision_digits(input, self.precision_digits)
-        } else {
-            crate::number::evaluate_expr(input)
-        };
+        let res = crate::number::evaluate_expr_with_precision_digits(input, self.precision_digits);
 
         match res {
             Ok(num) => {
