@@ -88,6 +88,8 @@ pub struct CalculatorContext {
     pub messages: MessageQueue,
     /// Name registry for definitions.
     pub definitions: StaticRegistry,
+    /// Active user-defined variables.
+    pub variables: std::collections::HashMap<String, crate::ast::Expression>,
 }
 
 impl Default for CalculatorContext {
@@ -103,6 +105,7 @@ impl Default for CalculatorContext {
             assumptions: Assumptions::default(),
             messages: MessageQueue::new(),
             definitions: StaticRegistry::default(),
+            variables: std::collections::HashMap::new(),
         }
     }
 }
@@ -250,7 +253,7 @@ impl CalculatorContext {
         input: &str,
     ) -> Result<crate::number::Number, String> {
         // 1. Parse stage
-        let _expr = match crate::parser::operators::parse_expression(input) {
+        let expr = match crate::parser::operators::parse_expression(input) {
             Ok(expr) => expr,
             Err(err) => {
                 let msg = crate::messages::CalculatorMessage::new(
@@ -265,21 +268,31 @@ impl CalculatorContext {
         };
 
         // 2. Evaluation stage
-        let res = crate::number::evaluate_expr_with_precision_digits(input, self.precision_digits);
+        let res = crate::eval::evaluate_ast(&expr, self);
 
         match res {
-            Ok(num) => {
-                if num.is_nan() {
-                    let msg = crate::messages::CalculatorMessage::new(
-                        "Calculation resulted in NaN".to_string(),
-                        crate::messages::MessageType::Warning,
-                        crate::messages::MessageCategory::None,
-                        crate::messages::MessageStage::Calculation,
-                    );
-                    self.messages.push(msg);
+            Ok(expr_res) => match expr_res {
+                crate::ast::Expression::Number(num) => {
+                    if num.is_nan() {
+                        let has_calc_warning = self
+                            .messages
+                            .get_messages()
+                            .iter()
+                            .any(|m| m.stage() == crate::messages::MessageStage::Calculation);
+                        if !has_calc_warning {
+                            let msg = crate::messages::CalculatorMessage::new(
+                                "Calculation resulted in NaN".to_string(),
+                                crate::messages::MessageType::Warning,
+                                crate::messages::MessageCategory::None,
+                                crate::messages::MessageStage::Calculation,
+                            );
+                            self.messages.push(msg);
+                        }
+                    }
+                    Ok(num)
                 }
-                Ok(num)
-            }
+                other => Err(format!("Symbolic result: {:?}", other)),
+            },
             Err(err_str) => {
                 let msg = crate::messages::CalculatorMessage::new(
                     err_str.clone(),

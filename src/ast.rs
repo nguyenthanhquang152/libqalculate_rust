@@ -203,6 +203,18 @@ impl ArityError {
     }
 }
 
+impl std::fmt::Display for ArityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "arity error: minimum {} children required, but {} provided",
+            self.minimum, self.actual
+        )
+    }
+}
+
+impl std::error::Error for ArityError {}
+
 /// Owned children for operators that require two or more operands.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NaryChildren {
