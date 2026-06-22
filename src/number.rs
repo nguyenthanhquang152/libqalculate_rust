@@ -392,6 +392,11 @@ impl Float {
         self.value.to_f64()
     }
 
+    /// Returns the internal rug::Float reference.
+    pub fn rug_float(&self) -> &rug::Float {
+        &self.value
+    }
+
     /// Returns the precision in bits.
     pub fn prec(&self) -> u32 {
         self.value.prec()
@@ -2897,6 +2902,17 @@ impl Number {
         real.includes_infinity() || imag.includes_infinity()
     }
 
+    /// Creates a new `Number` representing NaN.
+    pub fn nan() -> Self {
+        Self {
+            value: NumberValue::NaN,
+            imaginary: None,
+            precision: 0,
+            approximate: true,
+            is_imaginary: false,
+        }
+    }
+
     /// Returns true if either the real or the imaginary part is NaN.
     pub fn is_nan(&self) -> bool {
         let (real, imag) = self.to_canonical_ref();
@@ -2957,6 +2973,60 @@ impl Number {
             real_num
         } else {
             Number::new_complex(real_num, imag_num)
+        }
+    }
+
+    /// Returns the absolute value of the number.
+    pub fn abs(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.abs();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            let r_num = Self::from_real_value(real);
+            let i_num = Self::from_real_value(imag);
+            let sum_sq = r_num.mul(&r_num).add(&i_num.mul(&i_num));
+            sum_sq.sqrt()
+        }
+    }
+
+    /// Returns the square root of the number.
+    pub fn sqrt(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.sqrt();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            self.pow(&Number::from_rational(Rational::new(1, 2)))
+        }
+    }
+
+    /// Returns the natural logarithm of the number.
+    pub fn ln(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.ln();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            Self::from_real_value(NumberValue::NaN)
         }
     }
 

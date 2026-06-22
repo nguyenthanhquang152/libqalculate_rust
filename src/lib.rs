@@ -14,6 +14,9 @@ pub mod ast;
 /// Parser and lexer modules for the Rust port.
 pub mod parser;
 
+/// Native AST evaluator module.
+pub mod eval;
+
 /// FFI bindings to C++ Calculator.
 ///
 /// This is the **only** module that uses `#![allow(unsafe_code)]` to override

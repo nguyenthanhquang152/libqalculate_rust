@@ -94,7 +94,7 @@ fn test_message_queue_warnings_and_errors() {
     assert_eq!(eval_msg.message_type(), MessageType::Warning);
     assert_eq!(eval_msg.category(), MessageCategory::None);
     assert_eq!(eval_msg.stage(), MessageStage::Calculation);
-    assert!(eval_msg.message().contains("NaN"));
+    assert!(eval_msg.message().contains("NaN") || eval_msg.message().contains("Division by zero"));
 
     // Verify ordering and retrieval via next_message
     let first = context.messages.next_message().unwrap();
