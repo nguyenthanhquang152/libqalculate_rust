@@ -271,28 +271,34 @@ impl CalculatorContext {
         let res = crate::eval::evaluate_ast(&expr, self);
 
         match res {
-            Ok(expr_res) => match expr_res {
-                crate::ast::Expression::Number(num) => {
-                    if num.is_nan() {
-                        let has_calc_warning = self
-                            .messages
-                            .get_messages()
-                            .iter()
-                            .any(|m| m.stage() == crate::messages::MessageStage::Calculation);
-                        if !has_calc_warning {
-                            let msg = crate::messages::CalculatorMessage::new(
-                                "Calculation resulted in NaN".to_string(),
-                                crate::messages::MessageType::Warning,
-                                crate::messages::MessageCategory::None,
-                                crate::messages::MessageStage::Calculation,
-                            );
-                            self.messages.push(msg);
+            Ok(expr_res) => {
+                let simplified = match &expr_res {
+                    crate::ast::Expression::Number(_) => expr_res,
+                    _ => crate::simplify::simplify_ast(&expr_res, self),
+                };
+                match simplified {
+                    crate::ast::Expression::Number(num) => {
+                        if num.is_nan() {
+                            let has_calc_warning = self
+                                .messages
+                                .get_messages()
+                                .iter()
+                                .any(|m| m.stage() == crate::messages::MessageStage::Calculation);
+                            if !has_calc_warning {
+                                let msg = crate::messages::CalculatorMessage::new(
+                                    "Calculation resulted in NaN".to_string(),
+                                    crate::messages::MessageType::Warning,
+                                    crate::messages::MessageCategory::None,
+                                    crate::messages::MessageStage::Calculation,
+                                );
+                                self.messages.push(msg);
+                            }
                         }
+                        Ok(num)
                     }
-                    Ok(num)
+                    other => Err(format!("Symbolic result: {:?}", other)),
                 }
-                other => Err(format!("Symbolic result: {:?}", other)),
-            },
+            }
             Err(err_str) => {
                 let msg = crate::messages::CalculatorMessage::new(
                     err_str.clone(),
