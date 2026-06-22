@@ -41,6 +41,19 @@ private:
     std::string comma;
 };
 
+class CalculatorFfiGuard {
+public:
+    explicit CalculatorFfiGuard(Calculator &calculator_ref)
+        : prev_calculator(calculator) {
+        calculator = &calculator_ref;
+    }
+    ~CalculatorFfiGuard() noexcept {
+        calculator = prev_calculator;
+    }
+private:
+    Calculator *prev_calculator;
+};
+
 } // namespace
 
 std::unique_ptr<Calculator> new_calculator() {
@@ -49,6 +62,7 @@ std::unique_ptr<Calculator> new_calculator() {
 
 bool load_exchange_rates(Calculator &calc) {
     try {
+        CalculatorFfiGuard ffi_guard(calc);
         return calc.loadExchangeRates();
     } catch (...) {
         return false;
@@ -57,6 +71,7 @@ bool load_exchange_rates(Calculator &calc) {
 
 bool load_global_definitions(Calculator &calc) {
     try {
+        CalculatorFfiGuard ffi_guard(calc);
         return calc.loadGlobalDefinitions();
     } catch (...) {
         return false;
@@ -65,6 +80,7 @@ bool load_global_definitions(Calculator &calc) {
 
 bool load_local_definitions(Calculator &calc) {
     try {
+        CalculatorFfiGuard ffi_guard(calc);
         return calc.loadLocalDefinitions();
     } catch (...) {
         return false;
@@ -81,6 +97,7 @@ rust::String calculate_and_print(
     int32_t timeout_ms
 ) {
     try {
+        CalculatorFfiGuard ffi_guard(calc);
         std::string expr_str(expr.data(), expr.size());
         return rust::String(calc.calculateAndPrint(expr_str, timeout_ms));
     } catch (const std::exception&) {
@@ -96,6 +113,7 @@ rust::String calculate_and_print_qalc(
     int32_t timeout_ms
 ) {
     try {
+        CalculatorFfiGuard ffi_guard(calc);
         std::string expr_str(expr.data(), expr.size());
         CalculatorStateGuard state_guard(calc);
 

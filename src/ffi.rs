@@ -3,6 +3,9 @@
 
 use cxx::UniquePtr;
 use std::marker::PhantomData;
+use std::sync::Mutex;
+
+static FFI_LOCK: Mutex<()> = Mutex::new(());
 
 #[cxx::bridge]
 #[allow(missing_docs)]
@@ -117,6 +120,7 @@ impl Calculator {
     pub fn new() -> Self {
         // SAFETY: Calling C++ factory function to instantiate a new Calculator on the C++ heap.
         // The returned UniquePtr safely manages the lifetime of the object.
+        let _guard = FFI_LOCK.lock().unwrap();
         let inner = sys::new_calculator();
         Self {
             inner,
@@ -130,6 +134,7 @@ impl Calculator {
         if self.inner.is_null() {
             return false;
         }
+        let _guard = FFI_LOCK.lock().unwrap();
         let pin = self.inner.pin_mut();
         // SAFETY: Passing a pinned mutable reference of the Calculator to the FFI function.
         // The pinned reference ensures the C++ object is not moved and is valid.
@@ -142,6 +147,7 @@ impl Calculator {
         if self.inner.is_null() {
             return false;
         }
+        let _guard = FFI_LOCK.lock().unwrap();
         let pin = self.inner.pin_mut();
         // SAFETY: Passing a pinned mutable reference of the Calculator to the FFI function.
         // The pinned reference ensures the C++ object is not moved and is valid.
@@ -154,6 +160,7 @@ impl Calculator {
         if self.inner.is_null() {
             return false;
         }
+        let _guard = FFI_LOCK.lock().unwrap();
         let pin = self.inner.pin_mut();
         // SAFETY: Passing a pinned mutable reference of the Calculator to the FFI function.
         // The pinned reference ensures the C++ object is not moved and is valid.
@@ -286,6 +293,7 @@ impl Calculator {
         }
 
         let output = {
+            let _guard = FFI_LOCK.lock().unwrap();
             let pin = self.inner.pin_mut();
             match profile {
                 PrintProfile::Api => sys::calculate_and_print(pin, expr, timeout_ms),
