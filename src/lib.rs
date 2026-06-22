@@ -24,6 +24,15 @@ pub mod ffi;
 mod numberbase;
 mod session;
 
+/// Calculator options module.
+pub mod options;
+
+/// Warning and error messages module.
+pub mod messages;
+
+/// Session context module.
+pub mod context;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.
