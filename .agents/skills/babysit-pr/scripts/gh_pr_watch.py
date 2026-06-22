@@ -263,16 +263,82 @@ def default_state_file_for(pr):
 
 def get_pr_checks(pr_spec, repo):
     parsed = parse_pr_spec(pr_spec)
-    cmd = ["pr", "checks"]
-    if parsed["value"] is not None:
-        cmd.append(parsed["value"])
-    cmd.extend(["--json", checks_fields()])
-    data = gh_json(cmd, repo=repo)
-    if data is None:
-        return []
-    if not isinstance(data, list):
-        raise GhCommandError("Unexpected payload from `gh pr checks`")
-    return data
+    try:
+        cmd = ["pr", "checks"]
+        if parsed["value"] is not None:
+            cmd.append(parsed["value"])
+        cmd.extend(["--json", checks_fields()])
+        data = gh_json(cmd, repo=repo)
+        if data is None:
+            return []
+        if not isinstance(data, list):
+            raise GhCommandError("Unexpected payload from `gh pr checks`")
+        return data
+    except GhCommandError as e:
+        err_msg = str(e).lower()
+        if "no checks reported" in err_msg or "no checks" in err_msg:
+            return []
+        if "unknown flag: --json" in err_msg or "unknown flag" in err_msg:
+            try:
+                pr_info_cmd = ["pr", "view"]
+                if parsed["value"] is not None:
+                    pr_info_cmd.append(parsed["value"])
+                pr_info_cmd.extend(["--json", "headRefOid"])
+                pr_info = gh_json(pr_info_cmd, repo=repo)
+                if not pr_info or "headRefOid" not in pr_info:
+                    return []
+                head_sha = pr_info["headRefOid"]
+
+                cr_data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/check-runs"])
+                st_data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/statuses"])
+
+                checks = []
+                if isinstance(cr_data, dict) and "check_runs" in cr_data and isinstance(cr_data["check_runs"], list):
+                    for run in cr_data["check_runs"]:
+                        conclusion = run.get("conclusion")
+                        status = run.get("status")
+                        if status != "completed":
+                            bucket = "pending"
+                        elif conclusion == "success":
+                            bucket = "pass"
+                        elif conclusion in ["failure", "cancelled", "timed_out", "action_required"]:
+                            bucket = "fail"
+                        else:
+                            bucket = "pending"
+                        
+                        checks.append({
+                            "name": run.get("name") or "",
+                            "state": (conclusion or status or "").upper(),
+                            "bucket": bucket,
+                            "link": run.get("html_url") or "",
+                            "workflow": (run.get("check_suite") or {}).get("workflow_name") or "",
+                            "event": "",
+                            "startedAt": run.get("started_at") or "",
+                            "completedAt": run.get("completed_at") or ""
+                        })
+                if isinstance(st_data, list):
+                    for status in st_data:
+                        st_state = (status.get("state") or "").lower()
+                        if st_state == "success":
+                            bucket = "pass"
+                        elif st_state in ["failure", "error"]:
+                            bucket = "fail"
+                        else:
+                            bucket = "pending"
+                        checks.append({
+                            "name": status.get("context") or "",
+                            "state": (status.get("state") or "").upper(),
+                            "bucket": bucket,
+                            "link": status.get("target_url") or "",
+                            "workflow": "",
+                            "event": "",
+                            "startedAt": status.get("created_at") or "",
+                            "completedAt": status.get("updated_at") or ""
+                        })
+                return checks
+            except Exception:
+                return []
+        raise
 
 
 def is_pending_check(check):
