@@ -311,4 +311,59 @@ impl CalculatorContext {
             }
         }
     }
+
+    /// Parse and evaluate an expression, returning the result as a formatted string.
+    ///
+    /// This handles both numeric and symbolic results (e.g., from base conversions).
+    pub fn parse_and_evaluate_to_string(
+        &mut self,
+        input: &str,
+    ) -> Result<String, String> {
+        // 1. Parse stage
+        let expr = match crate::parser::operators::parse_expression(input) {
+            Ok(expr) => expr,
+            Err(err) => {
+                let msg = crate::messages::CalculatorMessage::new(
+                    err.to_string(),
+                    crate::messages::MessageType::Error,
+                    crate::messages::MessageCategory::Parsing,
+                    crate::messages::MessageStage::Parsing,
+                );
+                self.messages.push(msg);
+                return Err(err.to_string());
+            }
+        };
+
+        // 2. Evaluation stage
+        let res = crate::eval::evaluate_ast(&expr, self);
+
+        match res {
+            Ok(expr_res) => {
+                let simplified = match &expr_res {
+                    crate::ast::Expression::Number(_) => expr_res,
+                    crate::ast::Expression::Symbolic(_) => expr_res,
+                    _ => crate::simplify::simplify_ast(&expr_res, self),
+                };
+                match simplified {
+                    crate::ast::Expression::Number(num) => {
+                        Ok(num.to_string())
+                    }
+                    crate::ast::Expression::Symbolic(sym) => {
+                        Ok(sym.name().to_string())
+                    }
+                    other => Err(format!("Unevaluated expression: {:?}", other)),
+                }
+            }
+            Err(err_str) => {
+                let msg = crate::messages::CalculatorMessage::new(
+                    err_str.clone(),
+                    crate::messages::MessageType::Error,
+                    crate::messages::MessageCategory::None,
+                    crate::messages::MessageStage::Calculation,
+                );
+                self.messages.push(msg);
+                Err(err_str)
+            }
+        }
+    }
 }

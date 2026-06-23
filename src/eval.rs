@@ -674,6 +674,18 @@ fn evaluate_ast_rec(
                 if let Expression::Number(num) = &args_eval[0] {
                     return Ok(Expression::Number(num.ln()));
                 }
+            } else if fid == "hex" && args_eval.len() == 1 {
+                if let Some(res) = crate::numberbase::builtin_hex(&args_eval[0]) {
+                    return Ok(res);
+                }
+            } else if fid == "float" && args_eval.len() == 1 {
+                if let Some(res) = crate::numberbase::builtin_float(&args_eval[0]) {
+                    return Ok(res);
+                }
+            } else if fid == "floatError" && args_eval.len() == 1 {
+                if let Some(res) = crate::numberbase::builtin_float_error(&args_eval[0]) {
+                    return Ok(res);
+                }
             }
 
             if let Some(NameMatch::Function {
@@ -769,7 +781,82 @@ fn evaluate_ast_rec(
                 }),
             }
         }
+        Expression::Conversion { expr, target } => {
+            let expr_eval = evaluate_ast_rec(expr, context)?;
+            evaluate_conversion(expr_eval, target, context)
+        }
         other => Ok(other.clone()),
+    }
+}
+
+/// Extract the target keyword from a conversion target expression.
+/// Returns the lowercase keyword and any trailing argument expression.
+fn extract_target_keyword(target: &Expression) -> Option<(String, Option<&Expression>)> {
+    match target {
+        Expression::Symbolic(sym) => Some((sym.name().to_lowercase(), None)),
+        // Handle implicit multiplication: "base 8" parses as
+        // ImplicitMultiply [Symbolic("base"), Number(8)]
+        Expression::Multiplication(children) if children.len() == 2 => {
+            if let Expression::Symbolic(sym) = &children[0] {
+                Some((sym.name().to_lowercase(), Some(&children[1])))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Evaluate a Conversion expression into a formatted result using numberbase.rs.
+fn evaluate_conversion(
+    expr_eval: Expression,
+    target: &Expression,
+    _context: &mut CalculatorContext,
+) -> Result<Expression, String> {
+    let (keyword, arg) = match extract_target_keyword(target) {
+        Some(kw) => kw,
+        None => {
+            // Unknown conversion target — return unevaluated
+            return Ok(Expression::Conversion {
+                expr: Box::new(expr_eval),
+                target: Box::new(target.clone()),
+            });
+        }
+    };
+
+    let num = match &expr_eval {
+        Expression::Number(n) => n,
+        _ => {
+            return Ok(Expression::Conversion {
+                expr: Box::new(expr_eval),
+                target: Box::new(target.clone()),
+            });
+        }
+    };
+
+    // Only convert if it's a known keyword
+    match keyword.as_str() {
+        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float" | "fp32" | "ieee754" | "sexa" | "sexagesimal" => {
+            let base_arg = if let Some(arg_expr) = arg {
+                if let Expression::Number(base_num) = arg_expr {
+                    crate::numberbase::number_to_u128(base_num)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            match crate::numberbase::convert_number(num, &keyword, base_arg) {
+                Ok(formatted) => Ok(Expression::Symbolic(Symbol::new(formatted))),
+                Err(err) => Err(err),
+            }
+        }
+        _ => {
+            Ok(Expression::Conversion {
+                expr: Box::new(expr_eval),
+                target: Box::new(target.clone()),
+            })
+        }
     }
 }
 

@@ -168,14 +168,14 @@ fn strip_function_call<'a>(expr: &'a str, name: &str) -> Option<&'a str> {
         .map(str::trim)
 }
 
-fn parse_radix_u128(digits: &str, radix: u32) -> Option<u128> {
+pub(crate) fn parse_radix_u128(digits: &str, radix: u32) -> Option<u128> {
     let compact: String = digits.chars().filter(|ch| !ch.is_whitespace()).collect();
     (!compact.is_empty())
         .then_some(compact)
         .and_then(|value| u128::from_str_radix(&value, radix).ok())
 }
 
-fn parse_bit_string_u32(bits: &str) -> Option<u32> {
+pub(crate) fn parse_bit_string_u32(bits: &str) -> Option<u32> {
     let compact: String = bits.chars().filter(|ch| !ch.is_whitespace()).collect();
     (compact.len() == 32 && compact.chars().all(|ch| matches!(ch, '0' | '1')))
         .then_some(())
@@ -202,14 +202,14 @@ fn eval_native_shift(expr: &str) -> Option<u128> {
     expr.trim().parse::<u128>().ok()
 }
 
-fn format_binary(value: u128, width: Option<usize>) -> String {
+pub(crate) fn format_binary(value: u128, width: Option<usize>) -> String {
     let raw = format!("{value:b}");
     let width = width.unwrap_or_else(|| raw.len().div_ceil(8) * 8).max(8);
     let padded = format!("{raw:0>width$}");
     group_bits_4(&padded)
 }
 
-fn group_bits_4(bits: &str) -> String {
+pub(crate) fn group_bits_4(bits: &str) -> String {
     bits.as_bytes()
         .chunks(4)
         .map(|chunk| std::str::from_utf8(chunk).expect("binary digits are valid UTF-8"))
@@ -217,7 +217,7 @@ fn group_bits_4(bits: &str) -> String {
         .join(" ")
 }
 
-fn format_integer_base(mut value: u128, base: u32) -> String {
+pub(crate) fn format_integer_base(mut value: u128, base: u32) -> String {
     const DIGITS: &[u8; 36] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     if value == 0 {
         return "0".to_string();
@@ -259,7 +259,7 @@ fn parse_sqrt_radicand(expr: &str) -> Option<u128> {
         .ok()
 }
 
-fn float_error_decimal(decimal: &str) -> Option<String> {
+pub(crate) fn float_error_decimal(decimal: &str) -> Option<String> {
     let (decimal_num, decimal_den) = parse_decimal_rational(decimal)?;
     let (float_num, float_den) = f32_rational_parts(decimal.parse::<f32>().ok()?)?;
     let lhs = float_num.checked_mul(decimal_den as i128)?;
@@ -269,7 +269,7 @@ fn float_error_decimal(decimal: &str) -> Option<String> {
     terminating_decimal(diff_num, diff_den)
 }
 
-fn parse_decimal_rational(decimal: &str) -> Option<(u128, u128)> {
+pub(crate) fn parse_decimal_rational(decimal: &str) -> Option<(u128, u128)> {
     let trimmed = decimal.trim();
     let (whole, fractional) = trimmed.split_once('.').unwrap_or((trimmed, ""));
     if whole.is_empty() && fractional.is_empty() {
@@ -287,7 +287,7 @@ fn parse_decimal_rational(decimal: &str) -> Option<(u128, u128)> {
     Some((numerator, denominator))
 }
 
-fn f32_rational_parts(value: f32) -> Option<(i128, u128)> {
+pub(crate) fn f32_rational_parts(value: f32) -> Option<(i128, u128)> {
     if !value.is_finite() {
         return None;
     }
@@ -313,7 +313,7 @@ fn f32_rational_parts(value: f32) -> Option<(i128, u128)> {
     Some((if negative { -numerator } else { numerator }, denominator))
 }
 
-fn terminating_decimal(mut numerator: u128, mut denominator: u128) -> Option<String> {
+pub(crate) fn terminating_decimal(mut numerator: u128, mut denominator: u128) -> Option<String> {
     if denominator == 0 {
         return None;
     }
@@ -354,7 +354,7 @@ fn terminating_decimal(mut numerator: u128, mut denominator: u128) -> Option<Str
     Some(format!("{}.{}", &digits[..split], &digits[split..]))
 }
 
-fn gcd_u128(mut lhs: u128, mut rhs: u128) -> u128 {
+pub(crate) fn gcd_u128(mut lhs: u128, mut rhs: u128) -> u128 {
     while rhs != 0 {
         let rem = lhs % rhs;
         lhs = rhs;
@@ -363,7 +363,7 @@ fn gcd_u128(mut lhs: u128, mut rhs: u128) -> u128 {
     lhs
 }
 
-fn roman_numeral(mut value: u128) -> Option<String> {
+pub(crate) fn roman_numeral(mut value: u128) -> Option<String> {
     if !(1..=3999).contains(&value) {
         return None;
     }
@@ -391,6 +391,183 @@ fn roman_numeral(mut value: u128) -> Option<String> {
     }
     Some(output)
 }
+
+/// Convert a Number to a target base or format.
+///
+/// `keyword` is the lowercase target name (e.g. "bin", "hex", "roman", "float", "sexa").
+/// `base_arg` is the optional base argument for "base N" conversion.
+///
+/// Returns the formatted string or an error message.
+pub(crate) fn convert_number(
+    num: &crate::number::Number,
+    keyword: &str,
+    base_arg: Option<u128>,
+) -> Result<String, String> {
+    match keyword {
+        "bin" | "binary" => {
+            if let Some(val) = number_to_u128(num) {
+                Ok(format_binary(val, None))
+            } else {
+                Err("Cannot convert to binary: value is not a non-negative integer".to_string())
+            }
+        }
+        "oct" | "octal" => {
+            if let Some(val) = number_to_u128(num) {
+                Ok(format!("{:o}", val))
+            } else {
+                Err("Cannot convert to octal: value is not a non-negative integer".to_string())
+            }
+        }
+        "hex" | "hexadecimal" => {
+            if let Some(val) = number_to_u128(num) {
+                Ok(format_integer_base(val, 16))
+            } else {
+                Err("Cannot convert to hexadecimal: value is not a non-negative integer".to_string())
+            }
+        }
+        "roman" => {
+            if let Some(val) = number_to_u128(num) {
+                if let Some(formatted) = roman_numeral(val) {
+                    Ok(formatted)
+                } else {
+                    Err("Cannot convert to Roman numerals: value must be 1–3999".to_string())
+                }
+            } else {
+                Err("Cannot convert to Roman numerals: value is not a non-negative integer".to_string())
+            }
+        }
+        "base" => {
+            let base_val = base_arg.ok_or_else(|| {
+                "Invalid base for conversion: must be 2–36".to_string()
+            })?;
+            if !(2..=36).contains(&base_val) {
+                return Err("Invalid base for conversion: must be 2–36".to_string());
+            }
+            if let Some(val) = number_to_u128(num) {
+                Ok(format_integer_base(val, base_val as u32))
+            } else {
+                Err("Cannot convert to base: value is not a non-negative integer".to_string())
+            }
+        }
+        "float" | "fp32" | "ieee754" => {
+            let decimal_str = number_to_decimal_string(num);
+            let f: f32 = decimal_str
+                .parse()
+                .map_err(|_| "Cannot parse as f32".to_string())?;
+            let bits = f.to_bits();
+            Ok(format_binary(u128::from(bits), Some(32)))
+        }
+        "sexa" | "sexagesimal" => {
+            let decimal_str = number_to_decimal_string(num);
+            let f64_val: f64 = decimal_str
+                .parse()
+                .map_err(|_| "Cannot parse value for sexagesimal conversion".to_string())?;
+            let negative = f64_val < 0.0;
+            let abs_val = f64_val.abs();
+            let degrees = abs_val as u64;
+            let remainder = (abs_val - degrees as f64) * 60.0;
+            let minutes = remainder as u64;
+            let seconds = (remainder - minutes as f64) * 60.0;
+            let sign = if negative { "−" } else { "" };
+            Ok(format!("{sign}{degrees}°{minutes}′{seconds:.0}″"))
+        }
+        _ => Err(format!("Unknown conversion target: {keyword}")),
+    }
+}
+
+/// Convert a Number to a plain decimal string for formatters.
+pub(crate) fn number_to_decimal_string(num: &crate::number::Number) -> String {
+    use crate::number::NumberValue;
+    let (real, _) = num.to_canonical_ref();
+    match &*real {
+        NumberValue::Rational(r) => {
+            if r.value.denom() == &1 {
+                r.value.numer().to_string()
+            } else {
+                let float_val = rug::Float::with_val(53, &r.value);
+                format!("{}", float_val.to_f64())
+            }
+        }
+        NumberValue::Float(f) => format!("{}", f.rug_float().to_f64()),
+        _ => "NaN".to_string(),
+    }
+}
+
+/// Try to convert a Number to u128 (non-negative integer).
+pub(crate) fn number_to_u128(num: &crate::number::Number) -> Option<u128> {
+    use crate::number::NumberValue;
+    let (real, _) = num.to_canonical_ref();
+    let int = match &*real {
+        NumberValue::Rational(r) => {
+            if r.value.denom() == &1 {
+                let numer = r.value.numer();
+                numer.to_i128()
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }?;
+    if int < 0 {
+        return None;
+    }
+    u128::try_from(int).ok()
+}
+
+/// Interpret hex digits in an Expression and return a decimal Number Expression.
+pub(crate) fn builtin_hex(arg: &crate::ast::Expression) -> Option<crate::ast::Expression> {
+    let hex_str = match arg {
+        crate::ast::Expression::Number(num) => {
+            number_to_u128(num).map(|val| val.to_string())
+        }
+        crate::ast::Expression::Symbolic(sym) => Some(sym.name().to_string()),
+        _ => None,
+    };
+    if let Some(hex_digits) = hex_str {
+        if let Some(parsed) = parse_radix_u128(&hex_digits, 16) {
+            return Some(crate::ast::Expression::Number(crate::number::Number::from_rational(
+                crate::number::Rational::new(parsed as i128, 1),
+            )));
+        }
+    }
+    None
+}
+
+/// Interpret bits in an Expression as IEEE 754 float representation.
+pub(crate) fn builtin_float(arg: &crate::ast::Expression) -> Option<crate::ast::Expression> {
+    if let crate::ast::Expression::Number(num) = arg {
+        if let Some(val) = number_to_u128(num) {
+            // Zero-pad to 32 digits since parser may strip leading zeros
+            let bit_str = format!("{:0>32}", val);
+            if let Some(bits) = parse_bit_string_u32(&bit_str) {
+                let float_val = f32::from_bits(bits);
+                // If the result is an exact integer, return as Rational
+                if float_val.fract() == 0.0 && float_val.is_finite() {
+                    let int_val = float_val as i128;
+                    return Some(crate::ast::Expression::Number(crate::number::Number::from_rational(
+                        crate::number::Rational::new(int_val, 1),
+                    )));
+                }
+                // Otherwise return as a formatted string
+                let result_str = format!("{}", float_val);
+                return Some(crate::ast::Expression::Symbolic(crate::ast::Symbol::new(result_str)));
+            }
+        }
+    }
+    None
+}
+
+/// Compute IEEE 754 single-precision float representation error.
+pub(crate) fn builtin_float_error(arg: &crate::ast::Expression) -> Option<crate::ast::Expression> {
+    if let crate::ast::Expression::Number(num) = arg {
+        let decimal_str = number_to_decimal_string(num);
+        if let Some(error_str) = float_error_decimal(&decimal_str) {
+            return Some(crate::ast::Expression::Symbolic(crate::ast::Symbol::new(error_str)));
+        }
+    }
+    None
+}
+
 
 fn is_vetted_native_numberbase_expr(expr: &str) -> bool {
     let trimmed = expr.trim();
