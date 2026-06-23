@@ -240,3 +240,16 @@ fn double_factorial_seven() {
     // 7!! = 7 * 5 * 3 * 1 = 105
     assert_eq!(eval("7!!"), "105");
 }
+
+#[test]
+fn double_factorial_zero() {
+    // 0!! = 1 (empty product)
+    assert_eq!(eval("0!!"), "1");
+}
+
+#[test]
+fn double_factorial_one() {
+    // 1!! = 1
+    assert_eq!(eval("1!!"), "1");
+}
+

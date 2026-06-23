@@ -5273,10 +5273,16 @@ impl std::ops::Shr<usize> for U256 {
     }
 }
 
+/// Maximum input value for factorial computation.
+/// Values above this threshold return NaN to prevent excessive memory/CPU usage.
+/// 10000! has ~35,660 digits which is a reasonable upper bound.
+const MAX_FACTORIAL_INPUT: u32 = 10_000;
+
 impl Number {
     /// Computes the factorial of a non-negative integer.
     ///
-    /// Returns NaN for negative numbers, non-integers, and complex numbers.
+    /// Returns NaN for negative numbers, non-integers, complex numbers,
+    /// and values exceeding [`MAX_FACTORIAL_INPUT`].
     /// Uses `rug::Integer::factorial()` for efficient computation.
     pub fn factorial(&self) -> Self {
         let (real, imag) = self.to_canonical_ref();
@@ -5293,7 +5299,7 @@ impl Number {
                     return Self::nan();
                 }
                 if let Some(n_u32) = n.to_u32() {
-                    if n_u32 > 10_000 {
+                    if n_u32 > MAX_FACTORIAL_INPUT {
                         return Self::nan();
                     }
                     let result = rug::Integer::factorial(n_u32);
@@ -5313,7 +5319,7 @@ impl Number {
                         return Self::nan();
                     }
                     if let Some(n_u32) = n.to_u32() {
-                        if n_u32 > 10_000 {
+                        if n_u32 > MAX_FACTORIAL_INPUT {
                             return Self::nan();
                         }
                         let result = rug::Integer::factorial(n_u32);
@@ -5333,7 +5339,8 @@ impl Number {
 
     /// Computes the double factorial n!! = n * (n-2) * (n-4) * ...
     ///
-    /// Returns NaN for negative numbers, non-integers, and complex numbers.
+    /// Returns NaN for negative numbers, non-integers, complex numbers,
+    /// and values exceeding [`MAX_FACTORIAL_INPUT`].
     pub fn double_factorial(&self) -> Self {
         let (real, imag) = self.to_canonical_ref();
         if !imag.is_real_zero() {
@@ -5349,13 +5356,36 @@ impl Number {
                     return Self::nan();
                 }
                 if let Some(n_u32) = n.to_u32() {
-                    if n_u32 > 10_000 {
+                    if n_u32 > MAX_FACTORIAL_INPUT {
                         return Self::nan();
                     }
                     let result = rug::Integer::factorial_2(n_u32);
                     Self::from_rational(Rational {
                         value: rug::Rational::from(result),
                     })
+                } else {
+                    Self::nan()
+                }
+            }
+            NumberValue::Float(f) => {
+                if !f.rug_float().is_integer() {
+                    return Self::nan();
+                }
+                if let Some(n) = f.rug_float().to_integer() {
+                    if n < 0 {
+                        return Self::nan();
+                    }
+                    if let Some(n_u32) = n.to_u32() {
+                        if n_u32 > MAX_FACTORIAL_INPUT {
+                            return Self::nan();
+                        }
+                        let result = rug::Integer::factorial_2(n_u32);
+                        Self::from_rational(Rational {
+                            value: rug::Rational::from(result),
+                        })
+                    } else {
+                        Self::nan()
+                    }
                 } else {
                     Self::nan()
                 }
@@ -5392,7 +5422,7 @@ impl Number {
                     return Self::nan();
                 }
                 if let Some(n_u32) = n.to_u32() {
-                    if n_u32 > 10_000 {
+                    if n_u32 > MAX_FACTORIAL_INPUT {
                         return Self::nan();
                     }
                     let mut result = rug::Integer::from(1);
@@ -5407,6 +5437,37 @@ impl Number {
                     Self::from_rational(Rational {
                         value: rug::Rational::from(result),
                     })
+                } else {
+                    Self::nan()
+                }
+            }
+            NumberValue::Float(f) => {
+                if !f.rug_float().is_integer() {
+                    return Self::nan();
+                }
+                if let Some(n) = f.rug_float().to_integer() {
+                    if n < 0 {
+                        return Self::nan();
+                    }
+                    if let Some(n_u32) = n.to_u32() {
+                        if n_u32 > MAX_FACTORIAL_INPUT {
+                            return Self::nan();
+                        }
+                        let mut result = rug::Integer::from(1);
+                        let mut current = n_u32;
+                        while current > 0 {
+                            result *= current;
+                            if current <= k {
+                                break;
+                            }
+                            current -= k;
+                        }
+                        Self::from_rational(Rational {
+                            value: rug::Rational::from(result),
+                        })
+                    } else {
+                        Self::nan()
+                    }
                 } else {
                     Self::nan()
                 }
