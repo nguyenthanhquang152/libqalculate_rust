@@ -526,6 +526,34 @@ impl NumberValue {
         }
     }
 
+    /// Check if the value is non-zero, using interval rules.
+    pub fn is_nonzero(&self) -> bool {
+        match self {
+            NumberValue::Rational(r) => !r.is_zero(),
+            NumberValue::Float(f) => !f.is_zero() && !f.is_nan(),
+            NumberValue::Interval { lower, upper } => {
+                if lower.is_zero() || upper.is_zero() || lower.is_nan() || upper.is_nan() {
+                    false
+                } else {
+                    lower.value.is_sign_negative() == upper.value.is_sign_negative()
+                }
+            }
+            NumberValue::Uncertainty { .. } => {
+                if let Some((lower, upper)) = to_interval(self) {
+                    if lower.is_zero() || upper.is_zero() || lower.is_nan() || upper.is_nan() {
+                        false
+                    } else {
+                        lower.value.is_sign_negative() == upper.value.is_sign_negative()
+                    }
+                } else {
+                    false
+                }
+            }
+            NumberValue::PlusInfinity | NumberValue::MinusInfinity => true,
+            _ => false,
+        }
+    }
+
     /// Check if rational is 1/1, float is 1.0, interval point bounds are 1.0, or uncertainty is 1.0 and zero.
     pub fn is_real_one(&self) -> bool {
         match self {
@@ -2864,6 +2892,26 @@ impl Number {
     pub fn is_zero(&self) -> bool {
         let (real, imag) = self.to_canonical_ref();
         real.is_real_zero() && imag.is_real_zero()
+    }
+
+    /// Returns true if the number is non-zero (using interval rules).
+    pub fn is_nonzero(&self) -> bool {
+        if self.is_nan() {
+            return false;
+        }
+        let (real, imag) = self.to_canonical_ref();
+        real.is_nonzero() || imag.is_nonzero()
+    }
+
+    /// Returns 1 if true (non-zero), 0 if false (zero), and -1 if unknown (e.g. NaN or interval containing zero).
+    pub fn get_boolean(&self) -> i32 {
+        if self.is_nonzero() {
+            1
+        } else if self.is_zero() {
+            0
+        } else {
+            -1
+        }
     }
 
     /// Returns true if the real part of the number is zero.

@@ -104,7 +104,7 @@ impl Default for CalculatorContext {
             evaluation_options: EvaluationOptions::default(),
             assumptions: Assumptions::default(),
             messages: MessageQueue::new(),
-            definitions: StaticRegistry::default(),
+            definitions: StaticRegistry::with_builtins(),
             variables: std::collections::HashMap::new(),
         }
     }
