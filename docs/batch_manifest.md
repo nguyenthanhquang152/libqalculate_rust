@@ -54,7 +54,7 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | `numberbase.batch` | 15 | 3 | — |
 | `operators.batch` | 30 | 0 | — |
 | `parser.batch` | 27 | 0 | — |
-| `percentages.batch` | 26 | 0 | — |
+| `percentages.batch` | 26 | 24 | — |
 | `polynomial.batch` | 49 | 4 | — |
 | `solver.batch` | 25 | 4 | — |
 | `stats.batch` | 39 | 0 | `tests/vectordata.csv`, `tests/vectordata2.csv` |
@@ -718,30 +718,30 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `percentages.batch:1` | `0%` | `0` | — | inventory-only |
-| 2 | `percentages.batch:3` | `1%` | `0.01` | — | inventory-only |
-| 3 | `percentages.batch:5` | `.000123 %` | `0.00000123` | — | inventory-only |
-| 4 | `percentages.batch:7` | `-15%` | `-0.15` | — | inventory-only |
-| 5 | `percentages.batch:9` | `1234%` | `12.34` | — | inventory-only |
-| 6 | `percentages.batch:11` | `1e-3%` | `0.00001` | — | inventory-only |
-| 7 | `percentages.batch:14` | `10% + 5%` | `0.15` | — | inventory-only |
-| 8 | `percentages.batch:16` | `10%-6%` | `0.04` | — | inventory-only |
-| 9 | `percentages.batch:18` | `123% - 3% + 10%` | `1.3` | — | inventory-only |
-| 10 | `percentages.batch:20` | `10% - 10%` | `0` | — | inventory-only |
-| 11 | `percentages.batch:22` | `10% - 20%` | `-0.1` | — | inventory-only |
-| 12 | `percentages.batch:24` | `10% * 2%` | `0.002` | — | inventory-only |
-| 13 | `percentages.batch:26` | `10% / 2%` | `5` | — | inventory-only |
-| 14 | `percentages.batch:28` | `10%*20%-30%/15%` | `-1.98` | — | inventory-only |
-| 15 | `percentages.batch:31` | `100 + 10%` | `110` | — | inventory-only |
-| 16 | `percentages.batch:33` | `100 + 10% + 10%` | `121` | — | inventory-only |
-| 17 | `percentages.batch:35` | `100 + (10 + 10)%` | `120` | — | inventory-only |
-| 18 | `percentages.batch:39` | `100	-	10%` | `90` | — | inventory-only |
-| 19 | `percentages.batch:41` | `100 - 10% - 10%` | `81` | — | inventory-only |
-| 20 | `percentages.batch:45` | `100 - (10-5) %` | `95` | — | inventory-only |
-| 21 | `percentages.batch:48` | `10% + 100` | `100.1` | — | inventory-only |
-| 22 | `percentages.batch:50` | `10% - 100` | `-99.9` | — | inventory-only |
-| 23 | `percentages.batch:53` | `100 * 10%` | `10` | — | inventory-only |
-| 24 | `percentages.batch:55` | `100 / 10%` | `1000` | — | inventory-only |
+| 1 | `percentages.batch:1` | `0%` | `0` | — | native-pass |
+| 2 | `percentages.batch:3` | `1%` | `0.01` | — | native-pass |
+| 3 | `percentages.batch:5` | `.000123 %` | `0.00000123` | — | native-pass |
+| 4 | `percentages.batch:7` | `-15%` | `-0.15` | — | native-pass |
+| 5 | `percentages.batch:9` | `1234%` | `12.34` | — | native-pass |
+| 6 | `percentages.batch:11` | `1e-3%` | `0.00001` | — | native-pass |
+| 7 | `percentages.batch:14` | `10% + 5%` | `0.15` | — | native-pass |
+| 8 | `percentages.batch:16` | `10%-6%` | `0.04` | — | native-pass |
+| 9 | `percentages.batch:18` | `123% - 3% + 10%` | `1.3` | — | native-pass |
+| 10 | `percentages.batch:20` | `10% - 10%` | `0` | — | native-pass |
+| 11 | `percentages.batch:22` | `10% - 20%` | `-0.1` | — | native-pass |
+| 12 | `percentages.batch:24` | `10% * 2%` | `0.002` | — | native-pass |
+| 13 | `percentages.batch:26` | `10% / 2%` | `5` | — | native-pass |
+| 14 | `percentages.batch:28` | `10%*20%-30%/15%` | `-1.98` | — | native-pass |
+| 15 | `percentages.batch:31` | `100 + 10%` | `110` | — | native-pass |
+| 16 | `percentages.batch:33` | `100 + 10% + 10%` | `121` | — | native-pass |
+| 17 | `percentages.batch:35` | `100 + (10 + 10)%` | `120` | — | native-pass |
+| 18 | `percentages.batch:39` | `100	-	10%` | `90` | — | native-pass |
+| 19 | `percentages.batch:41` | `100 - 10% - 10%` | `81` | — | native-pass |
+| 20 | `percentages.batch:45` | `100 - (10-5) %` | `95` | — | native-pass |
+| 21 | `percentages.batch:48` | `10% + 100` | `100.1` | — | native-pass |
+| 22 | `percentages.batch:50` | `10% - 100` | `-99.9` | — | native-pass |
+| 23 | `percentages.batch:53` | `100 * 10%` | `10` | — | native-pass |
+| 24 | `percentages.batch:55` | `100 / 10%` | `1000` | — | native-pass |
 | 25 | `percentages.batch:58` | `10 meters + 20%` | `12 m` | — | inventory-only |
 | 26 | `percentages.batch:61` | `10 - x% = 8` | `x = 20` | — | inventory-only |
 

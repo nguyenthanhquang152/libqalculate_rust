@@ -52,14 +52,129 @@ fn is_truthy(expr: &Expression) -> Option<bool> {
     }
 }
 
+/// Returns the inner percent value if this unevaluated expression is a percent-bearing
+/// additive term. Handles `Percent(x)` (positive) and `Negate(Percent(x))` (negative).
+/// Returns `Some((inner_expr, is_negated))` if the child is a percent term.
+fn unwrap_percent_additive(expr: &Expression) -> Option<(&Expression, bool)> {
+    match expr {
+        Expression::Percent(inner) => Some((inner, false)),
+        Expression::Negate(inner) => match inner.as_ref() {
+            Expression::Percent(p) => Some((p, true)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Evaluates nested addition terms by flattening and folding numerical constants.
+///
+/// Implements relative percent semantics matching upstream qalculate:
+/// - `100 + 10%` → `100 * (1 + 10/100)` = `110`
+/// - `100 - 10%` → `100 * (1 - 10/100)` = `90`
+/// - `100 + 10% + 10%` → `121` (each percent applied to running result)
+/// - `10% + 5%` → `0.15` (percent+percent = normal addition of percentages)
+/// - `10% + 100` → `100.1` (percent on left, non-percent on right = normal addition)
 fn evaluate_addition(
     nary: &NaryChildren,
     context: &mut CalculatorContext,
 ) -> Result<Expression, String> {
+    let children = nary.as_slice();
+
+    // Check if any child is a raw percent term (before evaluation).
+    // Also check if there is at least one non-percent term, which triggers relative percent.
+    let has_any_percent = children.iter().any(|c| unwrap_percent_additive(c).is_some());
+    let has_any_non_percent = children.iter().any(|c| unwrap_percent_additive(c).is_none());
+
+    if !has_any_percent || !has_any_non_percent {
+        // Fast path: no percent children, or ALL children are percent.
+        // In both cases, use the standard flat-sum logic.
+        return evaluate_addition_flat(children, context);
+    }
+
+    // Relative percent path: process left-to-right.
+    // When the accumulator is a non-percent Number and the next child is Percent(x),
+    // compute: accumulator * (1 + x/100) for addition, or accumulator * (1 - x/100) for subtraction.
+    let hundred = Number::from_i32(100);
+    let one = Number::from_i32(1);
+
+    let mut accumulator: Option<Expression> = None;
+    // Track whether the accumulator was established by a non-percent term.
+    // Relative percent only applies after a non-percent base is set.
+    let mut has_non_percent_base = false;
+
+    for child in children {
+        if let Some((inner_pct, is_negated)) = unwrap_percent_additive(child) {
+            // This child is a percent term.
+            let pct_inner_eval = evaluate_ast_rec(inner_pct, context)?;
+
+            if has_non_percent_base {
+                // We have a non-percent base: apply relative percent.
+                match (&accumulator, &pct_inner_eval) {
+                    (Some(Expression::Number(acc_num)), Expression::Number(pct_num)) => {
+                        // Relative percent: acc * (1 ± pct/100)
+                        let pct_fraction = pct_num.div(&hundred);
+                        let multiplier = if is_negated {
+                            one.sub(&pct_fraction)
+                        } else {
+                            one.add(&pct_fraction)
+                        };
+                        accumulator = Some(Expression::Number(acc_num.mul(&multiplier)));
+                        continue;
+                    }
+                    _ => {} // Fall through to normal handling
+                }
+            }
+
+            // No non-percent base: evaluate the percent normally (pct/100)
+            // and add/subtract to accumulator.
+            let pct_value = match pct_inner_eval {
+                Expression::Number(n) => Expression::Number(n.div(&hundred)),
+                other => Expression::Percent(Box::new(other)),
+            };
+            let term = if is_negated {
+                match pct_value {
+                    Expression::Number(n) => Expression::Number(n.negate()),
+                    other => Expression::Negate(Box::new(other)),
+                }
+            } else {
+                pct_value
+            };
+            accumulator = Some(add_to_accumulator(accumulator, term));
+        } else {
+            // Non-percent child: evaluate and add normally.
+            let child_eval = evaluate_ast_rec(child, context)?;
+            accumulator = Some(add_to_accumulator(accumulator, child_eval));
+            has_non_percent_base = true;
+        }
+    }
+
+    Ok(accumulator.unwrap_or(Expression::Number(Number::from_i32(0))))
+}
+
+/// Add an expression to an optional accumulator, handling numeric folding.
+fn add_to_accumulator(accumulator: Option<Expression>, term: Expression) -> Expression {
+    match (accumulator, term) {
+        (None, t) => t,
+        (Some(Expression::Number(a)), Expression::Number(b)) => Expression::Number(a.add(&b)),
+        (Some(acc), t) => {
+            Expression::Addition(
+                NaryChildren::new(vec![acc, t]).unwrap_or_else(|_| {
+                    // Fallback: should not happen with 2 elements
+                    NaryChildren::new(vec![Expression::Number(Number::from_i32(0))]).unwrap()
+                }),
+            )
+        }
+    }
+}
+
+/// Standard flat-sum evaluation (no relative percent).
+fn evaluate_addition_flat(
+    children: &[Expression],
+    context: &mut CalculatorContext,
+) -> Result<Expression, String> {
     let mut numbers = Vec::new();
     let mut other_terms = Vec::new();
-    for child in nary.as_slice() {
+    for child in children {
         let eval_child = evaluate_ast_rec(child, context)?;
         match eval_child {
             Expression::Number(num) => {
