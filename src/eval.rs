@@ -8,15 +8,20 @@ use crate::context::CalculatorContext;
 use crate::number::{ComparisonResult, Number, NumberValue};
 use crate::parser::names::{NameMatch, NameRegistry};
 
-/// Helper to convert a `Number` to `rug::Integer` by truncating the real part.
+/// Helper to convert a `Number` to `rug::Integer` if it represents an exact integer.
+///
+/// Handles both `Rational` integers and `Float` values that represent exact
+/// integers (e.g. `5.0`), which is important for bitwise operations.
 fn to_integer(num: &Number) -> Option<rug::Integer> {
-    let (real, imag) = num.to_canonical_ref();
-    if !imag.is_real_zero() {
-        return None;
-    }
+    let (real, _) = num.to_canonical_ref();
     match &*real {
-        NumberValue::Rational(r) => Some(r.value.clone().trunc().numer().clone()),
-        NumberValue::Float(f) => f.rug_float().clone().to_integer(),
+        NumberValue::Rational(r) if r.value.is_integer() => Some(r.value.numer().clone()),
+        NumberValue::Float(f) if f.rug_float().is_integer() => {
+            f.rug_float()
+                .clone()
+                .to_integer_round(rug::float::Round::Nearest)
+                .map(|(int, _)| int)
+        }
         _ => None,
     }
 }
@@ -327,68 +332,12 @@ fn evaluate_ast_rec(
         Expression::ShiftLeft { lhs, rhs } => {
             let lhs_eval = evaluate_ast_rec(lhs, context)?;
             let rhs_eval = evaluate_ast_rec(rhs, context)?;
-            match (lhs_eval, rhs_eval) {
-                (Expression::Number(l), Expression::Number(r)) => {
-                    if let (Some(l_int), Some(r_int)) = (to_integer(&l), to_integer(&r)) {
-                        if r_int >= 0 && r_int <= 100_000 {
-                            let shift_amount = r_int.to_u32().unwrap();
-                            let res = l_int << shift_amount;
-                            Ok(Expression::Number(Number::from_rational(
-                                crate::number::Rational {
-                                    value: rug::Rational::from(res),
-                                },
-                            )))
-                        } else {
-                            Ok(Expression::ShiftLeft {
-                                lhs: Box::new(Expression::Number(l)),
-                                rhs: Box::new(Expression::Number(r)),
-                            })
-                        }
-                    } else {
-                        Ok(Expression::ShiftLeft {
-                            lhs: Box::new(Expression::Number(l)),
-                            rhs: Box::new(Expression::Number(r)),
-                        })
-                    }
-                }
-                (l, r) => Ok(Expression::ShiftLeft {
-                    lhs: Box::new(l),
-                    rhs: Box::new(r),
-                }),
-            }
+            evaluate_shift_logic(lhs_eval, rhs_eval, false)
         }
         Expression::ShiftRight { lhs, rhs } => {
             let lhs_eval = evaluate_ast_rec(lhs, context)?;
             let rhs_eval = evaluate_ast_rec(rhs, context)?;
-            match (lhs_eval, rhs_eval) {
-                (Expression::Number(l), Expression::Number(r)) => {
-                    if let (Some(l_int), Some(r_int)) = (to_integer(&l), to_integer(&r)) {
-                        if r_int >= 0 && r_int <= 100_000 {
-                            let shift_amount = r_int.to_u32().unwrap();
-                            let res = l_int >> shift_amount;
-                            Ok(Expression::Number(Number::from_rational(
-                                crate::number::Rational {
-                                    value: rug::Rational::from(res),
-                                },
-                            )))
-                        } else {
-                            Ok(Expression::ShiftRight {
-                                lhs: Box::new(Expression::Number(l)),
-                                rhs: Box::new(Expression::Number(r)),
-                            })
-                        }
-                    } else {
-                        Ok(Expression::ShiftRight {
-                            lhs: Box::new(Expression::Number(l)),
-                            rhs: Box::new(Expression::Number(r)),
-                        })
-                    }
-                }
-                (l, r) => Ok(Expression::ShiftRight {
-                    lhs: Box::new(l),
-                    rhs: Box::new(r),
-                }),
-            }
+            evaluate_shift_logic(lhs_eval, rhs_eval, true)
         }
         Expression::BitwiseAnd(nary) => {
             let mut eval_children = Vec::new();
@@ -693,6 +642,10 @@ fn evaluate_ast_rec(
                 if let Some(res) = evaluate_logical_if(&args_eval, context)? {
                     return Ok(res);
                 }
+            } else if fid == "shift" && (args_eval.len() == 2 || args_eval.len() == 3) {
+                if let Some(res) = evaluate_builtin_shift(&args_eval)? {
+                    return Ok(res);
+                }
             }
 
             if let Some(NameMatch::Function {
@@ -842,28 +795,31 @@ fn evaluate_conversion(
     };
 
     // Only convert if it's a known keyword
-    match keyword.as_str() {
-        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float" | "fp32" | "ieee754" | "sexa" | "sexagesimal" => {
-            let base_arg = if let Some(arg_expr) = arg {
-                if let Expression::Number(base_num) = arg_expr {
-                    crate::numberbase::number_to_u128(base_num)
-                } else {
-                    None
-                }
+    let is_supported_keyword = match keyword.as_str() {
+        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float" | "fp32" | "ieee754" | "sexa" | "sexagesimal" => true,
+        other if other.starts_with("bin") && other[3..].chars().all(|c| c.is_ascii_digit()) => true,
+        _ => false,
+    };
+
+    if is_supported_keyword {
+        let base_arg = if let Some(arg_expr) = arg {
+            if let Expression::Number(base_num) = arg_expr {
+                crate::numberbase::number_to_u128(base_num)
             } else {
                 None
-            };
-            match crate::numberbase::convert_number(num, &keyword, base_arg) {
-                Ok(formatted) => Ok(Expression::Symbolic(Symbol::new(formatted))),
-                Err(err) => Err(err),
             }
+        } else {
+            None
+        };
+        match crate::numberbase::convert_number(num, &keyword, base_arg) {
+            Ok(formatted) => Ok(Expression::Symbolic(Symbol::new(formatted))),
+            Err(err) => Err(err),
         }
-        _ => {
-            Ok(Expression::Conversion {
-                expr: Box::new(expr_eval),
-                target: Box::new(target.clone()),
-            })
-        }
+    } else {
+        Ok(Expression::Conversion {
+            expr: Box::new(expr_eval),
+            target: Box::new(target.clone()),
+        })
     }
 }
 
@@ -916,5 +872,62 @@ fn evaluate_logical_if(
             None if assume_false == Some(true) => Ok(Some(else_branch.clone())),
             None => Ok(None),
         },
+    }
+}
+
+fn evaluate_shift_logic(
+    lhs_eval: Expression,
+    rhs_eval: Expression,
+    shift_right: bool,
+) -> Result<Expression, String> {
+    if let (Expression::Number(l), Expression::Number(r)) = (&lhs_eval, &rhs_eval) {
+        if let (Some(l_int), Some(mut r_int)) = (to_integer(l), to_integer(r)) {
+            if shift_right {
+                r_int = -r_int;
+            }
+            let abs_val = r_int.clone().abs();
+            if abs_val <= 100_000 {
+                let res = if r_int >= 0 {
+                    let shift_amount = r_int.to_u32().unwrap();
+                    l_int << shift_amount
+                } else {
+                    let shift_amount = (-r_int).to_u32().unwrap();
+                    l_int >> shift_amount
+                };
+                return Ok(Expression::Number(Number::from_rational(
+                    crate::number::Rational {
+                        value: rug::Rational::from(res),
+                    },
+                )));
+            }
+        }
+    }
+
+    Ok(if shift_right {
+        Expression::ShiftRight {
+            lhs: Box::new(lhs_eval),
+            rhs: Box::new(rhs_eval),
+        }
+    } else {
+        Expression::ShiftLeft {
+            lhs: Box::new(lhs_eval),
+            rhs: Box::new(rhs_eval),
+        }
+    })
+}
+
+fn evaluate_builtin_shift(
+    args: &[Expression],
+) -> Result<Option<Expression>, String> {
+    // The upstream `shift` function accepts 2 or 3 arguments where the
+    // optional third is a boolean direction flag.  We only handle the
+    // common 2-argument form natively; 3-arg calls fall through to the
+    // C++ fallback.
+    if args.len() != 2 {
+        return Ok(None);
+    }
+    match evaluate_shift_logic(args[0].clone(), args[1].clone(), false)? {
+        Expression::ShiftLeft { .. } => Ok(None),
+        res => Ok(Some(res)),
     }
 }

@@ -152,6 +152,7 @@ impl StaticRegistry {
         reg.add_function("floatError", 1, Some(1));
         reg.add_function("lxor", 2, Some(2));
         reg.add_function("if", 3, Some(4));
+        reg.add_function("shift", 2, Some(3));
         reg
     }
 

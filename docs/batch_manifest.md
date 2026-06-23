@@ -76,30 +76,30 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `bitwise.batch:1` | `¬1` | `-2` | — | inventory-only |
-| 2 | `bitwise.batch:3` | `~0` | `-1` | — | inventory-only |
-| 3 | `bitwise.batch:5` | `~-1` | `0` | — | inventory-only |
-| 4 | `bitwise.batch:7` | `~ -812` | `811` | — | inventory-only |
-| 5 | `bitwise.batch:11` | `0 >> 0` | `0` | — | inventory-only |
-| 6 | `bitwise.batch:13` | `0 >> 1` | `0` | — | inventory-only |
-| 7 | `bitwise.batch:15` | `18 >> 2` | `4` | — | inventory-only |
-| 8 | `bitwise.batch:17` | `11 >> 0` | `11` | — | inventory-only |
-| 9 | `bitwise.batch:19` | `-11 >> 0` | `-11` | — | inventory-only |
-| 10 | `bitwise.batch:21` | `-18 >> 1` | `-9` | — | inventory-only |
-| 11 | `bitwise.batch:25` | `0 << 0` | `0` | — | inventory-only |
-| 12 | `bitwise.batch:27` | `0 << 1` | `0` | — | inventory-only |
-| 13 | `bitwise.batch:29` | `18 << 0` | `18` | — | inventory-only |
-| 14 | `bitwise.batch:31` | `18 << 1` | `36` | — | inventory-only |
-| 15 | `bitwise.batch:33` | `-18 << 2` | `-72` | — | inventory-only |
-| 16 | `bitwise.batch:37` | `0b1011 0010 ∨ 0b0111 0001 to bin8` | `1111 0011` | — | inventory-only |
-| 17 | `bitwise.batch:40` | `0b0101 \| 0b1001 to bin4` | `1101` | — | inventory-only |
-| 18 | `bitwise.batch:44` | `0b1011 0010 ∧ 0b0111 0001 to bin8` | `0011 0000` | — | inventory-only |
-| 19 | `bitwise.batch:47` | `0b1011 0010 & 0b0111 0001 to bin8` | `0011 0000` | — | inventory-only |
-| 20 | `bitwise.batch:51` | `0b1011 0010 xor 0b0111 0001 to bin8` | `1100 0011` | — | inventory-only |
-| 21 | `bitwise.batch:54` | `0b1011 0010 ^^ 0b0111 0001 to bin8` | `1100 0011` | — | inventory-only |
-| 22 | `bitwise.batch:57` | `0b1011 0010 ⊻ 0b0111 0001 to bin8` | `1100 0011` | — | inventory-only |
-| 23 | `bitwise.batch:61` | `0b0101 \| 0b1001 xor 0b0101 & 0b0111` | `13` | — | inventory-only |
-| 24 | `bitwise.batch:64` | `0b0101 & 0b0111 xor 0b1001 \| 0b0101` | `13` | — | inventory-only |
+| 1 | `bitwise.batch:1` | `¬1` | `-2` | — | native-pass |
+| 2 | `bitwise.batch:3` | `~0` | `-1` | — | native-pass |
+| 3 | `bitwise.batch:5` | `~-1` | `0` | — | native-pass |
+| 4 | `bitwise.batch:7` | `~ -812` | `811` | — | native-pass |
+| 5 | `bitwise.batch:11` | `0 >> 0` | `0` | — | native-pass |
+| 6 | `bitwise.batch:13` | `0 >> 1` | `0` | — | native-pass |
+| 7 | `bitwise.batch:15` | `18 >> 2` | `4` | — | native-pass |
+| 8 | `bitwise.batch:17` | `11 >> 0` | `11` | — | native-pass |
+| 9 | `bitwise.batch:19` | `-11 >> 0` | `-11` | — | native-pass |
+| 10 | `bitwise.batch:21` | `-18 >> 1` | `-9` | — | native-pass |
+| 11 | `bitwise.batch:25` | `0 << 0` | `0` | — | native-pass |
+| 12 | `bitwise.batch:27` | `0 << 1` | `0` | — | native-pass |
+| 13 | `bitwise.batch:29` | `18 << 0` | `18` | — | native-pass |
+| 14 | `bitwise.batch:31` | `18 << 1` | `36` | — | native-pass |
+| 15 | `bitwise.batch:33` | `-18 << 2` | `-72` | — | native-pass |
+| 16 | `bitwise.batch:37` | `0b1011 0010 ∨ 0b0111 0001 to bin8` | `1111 0011` | — | native-pass |
+| 17 | `bitwise.batch:40` | `0b0101 \| 0b1001 to bin4` | `1101` | — | native-pass |
+| 18 | `bitwise.batch:44` | `0b1011 0010 ∧ 0b0111 0001 to bin8` | `0011 0000` | — | native-pass |
+| 19 | `bitwise.batch:47` | `0b1011 0010 & 0b0111 0001 to bin8` | `0011 0000` | — | native-pass |
+| 20 | `bitwise.batch:51` | `0b1011 0010 xor 0b0111 0001 to bin8` | `1100 0011` | — | native-pass |
+| 21 | `bitwise.batch:54` | `0b1011 0010 ^^ 0b0111 0001 to bin8` | `1100 0011` | — | native-pass |
+| 22 | `bitwise.batch:57` | `0b1011 0010 ⊻ 0b0111 0001 to bin8` | `1100 0011` | — | native-pass |
+| 23 | `bitwise.batch:61` | `0b0101 \| 0b1001 xor 0b0101 & 0b0111` | `13` | — | native-pass |
+| 24 | `bitwise.batch:64` | `0b0101 & 0b0111 xor 0b1001 \| 0b0101` | `13` | — | native-pass |
 
 ---
 

@@ -320,62 +320,158 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
-    let settings = crate::session::NativeSessionSettings::from_raw(settings)?;
+fn contains_bitwise_ops(expr: &crate::ast::Expression) -> bool {
+    use crate::ast::Expression;
+    match expr {
+        Expression::ShiftLeft { .. } | Expression::ShiftRight { .. } => true,
+        Expression::BitwiseAnd(_) | Expression::BitwiseOr(_) | Expression::BitwiseXor(_) => true,
+        Expression::BitwiseNot(_) => true,
+        Expression::Conversion { expr, target } => {
+            contains_bitwise_ops(expr) || contains_bitwise_ops(target)
+        }
+        Expression::Multiplication(children)
+        | Expression::Addition(children)
+        | Expression::LogicalAnd(children)
+        | Expression::LogicalOr(children) => {
+            children.as_slice().iter().any(contains_bitwise_ops)
+        }
+        Expression::Division { numerator, denominator } => {
+            contains_bitwise_ops(numerator) || contains_bitwise_ops(denominator)
+        }
+        Expression::Power { base, exponent } => {
+            contains_bitwise_ops(base) || contains_bitwise_ops(exponent)
+        }
+        Expression::Remainder { lhs, rhs }
+        | Expression::Modulo { lhs, rhs }
+        | Expression::IntegerDivision { lhs, rhs }
+        | Expression::LogicalXor { lhs, rhs }
+        | Expression::Parallel { lhs, rhs }
+        | Expression::Comparison { lhs, rhs, .. } => {
+            contains_bitwise_ops(lhs) || contains_bitwise_ops(rhs)
+        }
+        Expression::Inverse(child)
+        | Expression::Negate(child)
+        | Expression::Factorial(child)
+        | Expression::DoubleFactorial(child)
+        | Expression::MultiFactorial { expr: child, .. }
+        | Expression::Percent(child)
+        | Expression::LogicalNot(child)
+        | Expression::Assignment { value: child, .. } => {
+            contains_bitwise_ops(child)
+        }
+        Expression::FunctionCall { args, .. } => {
+            args.iter().any(contains_bitwise_ops)
+        }
+        Expression::Vector(elems) => {
+            elems.iter().any(contains_bitwise_ops)
+        }
+        // Leaf variants that never contain nested bitwise operations.
+        Expression::Number(_)
+        | Expression::Unit { .. }
+        | Expression::Symbolic(_)
+        | Expression::Variable(_)
+        | Expression::Undefined
+        | Expression::Aborted
+        | Expression::DateTime(_) => false,
+    }
+}
 
-    if !settings.has_interval_display() {
-        if let Some(output) = crate::numberbase::native_output(expr, settings) {
+fn evaluate_general_expression_natively(
+    parsed: &crate::ast::Expression,
+    context: &mut crate::context::CalculatorContext,
+) -> Option<String> {
+    let evaluated = crate::eval::evaluate_ast(parsed, context).ok()?;
+    match evaluated {
+        crate::ast::Expression::Number(num) => {
+            let output = if num.is_integer() {
+                let (real, _) = num.to_canonical_ref();
+                match &*real {
+                    crate::number::NumberValue::Rational(r) => r.value.numer().to_string(),
+                    _ => num.to_string(),
+                }
+            } else {
+                num.to_string()
+            };
+            Some(output.replace('-', "\u{2212}"))
+        }
+        crate::ast::Expression::Symbolic(sym) => {
+            Some(sym.name().to_string().replace('-', "\u{2212}"))
+        }
+        _ => None,
+    }
+}
+
+fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
+    let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
+
+    let parsed = crate::parser::operators::parse_expression(expr).ok();
+    if let Some(ref ast) = parsed {
+        if contains_bitwise_ops(ast) {
+            // Build a context from session settings so native evaluation
+            // respects user configuration (precision, base, etc.).
+            let mut context = crate::context::CalculatorContext::default();
+            for cmd in settings {
+                let _ = context.apply_command(cmd);
+            }
+            if let Some(output) = evaluate_general_expression_natively(ast, &mut context) {
+                return Some(output);
+            }
+        }
+    }
+
+    if !parsed_settings.has_interval_display() {
+        if let Some(output) = crate::numberbase::native_output(expr, parsed_settings) {
             return Some(output);
         }
     }
 
-    if !settings.is_numeric_scaffold_compatible() {
+    if !parsed_settings.is_numeric_scaffold_compatible() {
         return None;
     }
 
     if expr == "native-scaffold-test" {
-        if settings.has_interval_display() {
+        if parsed_settings.has_interval_display() {
             return None;
         }
         return Some("native-scaffold-test-success".to_string());
     }
 
-    if let Some(output) = native_boolean_evidence(expr, settings) {
+    if let Some(output) = native_boolean_evidence(expr, parsed_settings) {
         return Some(output);
     }
 
-    if let Some(output) = native_interval_set_evidence(expr, settings) {
+    if let Some(output) = native_interval_set_evidence(expr, parsed_settings) {
         return Some(output);
     }
 
     let evidence = native_numeric_evidence(expr)?;
-    if settings.has_precision() && !evidence.supports_precision() {
+    if parsed_settings.has_precision() && !evidence.supports_precision() {
         return None;
     }
-    if evidence.requires_precision() && !settings.has_precision() {
+    if evidence.requires_precision() && !parsed_settings.has_precision() {
         return None;
     }
-    if settings.has_interval_calculation() && !evidence.allows_interval_calculation() {
+    if parsed_settings.has_interval_calculation() && !evidence.allows_interval_calculation() {
         return None;
     }
-    if evidence.requires_interval_display() && !settings.has_interval_display() {
+    if evidence.requires_interval_display() && !parsed_settings.has_interval_display() {
         return None;
     }
-    if evidence.requires_interval_calculation() && !settings.has_interval_calculation() {
+    if evidence.requires_interval_calculation() && !parsed_settings.has_interval_calculation() {
         return None;
     }
-    if settings.has_interval_display() && !evidence.requires_interval_display() {
+    if parsed_settings.has_interval_display() && !evidence.requires_interval_display() {
         return None;
     }
-    if evidence.requires_concise_uncertainty() && !settings.has_concise_uncertainty() {
+    if evidence.requires_concise_uncertainty() && !parsed_settings.has_concise_uncertainty() {
         return None;
     }
-    if settings.has_concise_uncertainty() && !evidence.requires_concise_uncertainty() {
+    if parsed_settings.has_concise_uncertainty() && !evidence.requires_concise_uncertainty() {
         return None;
     }
 
-    let evaluated = if settings.has_precision() {
-        crate::number::evaluate_expr_with_precision_digits(expr, settings.precision_digits())
+    let evaluated = if parsed_settings.has_precision() {
+        crate::number::evaluate_expr_with_precision_digits(expr, parsed_settings.precision_digits())
     } else {
         crate::number::evaluate_expr(expr)
     };
@@ -385,14 +481,14 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
             let output = match profile {
                 PrintProfile::Api => num.to_string(),
                 PrintProfile::Qalc if evidence.formats_interval_output() => {
-                    num.to_qalc_interval_display_string(settings.precision_digits())?
+                    num.to_qalc_interval_display_string(parsed_settings.precision_digits())?
                 }
                 PrintProfile::Qalc if evidence.preserves_float_uncertainty_precision() => num
                     .to_qalc_string_preserving_float_uncertainty_precision(
-                        settings.precision_digits(),
+                        parsed_settings.precision_digits(),
                     ),
                 PrintProfile::Qalc => {
-                    num.to_qalc_string_with_precision(settings.precision_digits())
+                    num.to_qalc_string_with_precision(parsed_settings.precision_digits())
                 }
             };
             Some(match profile {
