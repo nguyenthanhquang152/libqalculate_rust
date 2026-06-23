@@ -554,6 +554,14 @@ impl NumberValue {
         }
     }
 
+    /// Check if the value is an exact integer.
+    pub fn is_integer(&self) -> bool {
+        match self {
+            NumberValue::Rational(r) => r.value.denom() == &1,
+            _ => false,
+        }
+    }
+
     /// Check if rational is 1/1, float is 1.0, interval point bounds are 1.0, or uncertainty is 1.0 and zero.
     pub fn is_real_one(&self) -> bool {
         match self {
@@ -2918,6 +2926,15 @@ impl Number {
     pub fn is_real_zero(&self) -> bool {
         let (real, _) = self.to_canonical_ref();
         real.is_real_zero()
+    }
+
+    /// Returns true if the number has no imaginary part and represents an exact integer.
+    pub fn is_integer(&self) -> bool {
+        if self.is_nan() {
+            return false;
+        }
+        let (real, imag) = self.to_canonical_ref();
+        imag.is_real_zero() && real.is_integer()
     }
 
     /// Returns true if the number is exactly one.

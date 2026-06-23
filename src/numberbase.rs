@@ -204,7 +204,7 @@ fn eval_native_shift(expr: &str) -> Option<u128> {
 
 pub(crate) fn format_binary(value: u128, width: Option<usize>) -> String {
     let raw = format!("{value:b}");
-    let width = width.unwrap_or_else(|| raw.len().div_ceil(8) * 8).max(8);
+    let width = width.unwrap_or_else(|| (raw.len().div_ceil(8) * 8).max(8));
     let padded = format!("{raw:0>width$}");
     group_bits_4(&padded)
 }
@@ -403,14 +403,26 @@ pub(crate) fn convert_number(
     keyword: &str,
     base_arg: Option<u128>,
 ) -> Result<String, String> {
-    match keyword {
-        "bin" | "binary" => {
-            if let Some(val) = number_to_u128(num) {
-                Ok(format_binary(val, None))
-            } else {
-                Err("Cannot convert to binary: value is not a non-negative integer".to_string())
-            }
+    let bin_width = if keyword == "bin" || keyword == "binary" {
+        Some(None)
+    } else if let Some(width_str) = keyword.strip_prefix("bin") {
+        match width_str.parse::<usize>() {
+            Ok(w) if w <= 256 => Some(Some(w)),
+            _ => None,
         }
+    } else {
+        None
+    };
+
+    if let Some(width) = bin_width {
+        if let Some(val) = number_to_u128(num) {
+            return Ok(format_binary(val, width));
+        } else {
+            return Err("Cannot convert to binary: value is not a non-negative integer".to_string());
+        }
+    }
+
+    match keyword {
         "oct" | "octal" => {
             if let Some(val) = number_to_u128(num) {
                 Ok(format!("{:o}", val))

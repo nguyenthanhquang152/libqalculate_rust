@@ -137,11 +137,11 @@ mod tests {
 
         assert_eq!(
             status_for_case(&statuses, "bitwise.batch:40"),
-            "inventory-only"
+            "native-pass"
         );
         assert_eq!(
             status_for_case(&statuses, "bitwise.batch:61"),
-            "inventory-only"
+            "native-pass"
         );
     }
 
