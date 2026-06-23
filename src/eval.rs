@@ -706,6 +706,69 @@ fn evaluate_ast_rec(
             }
             Ok(Expression::Vector(eval_elems))
         }
+        Expression::Factorial(child) => {
+            let child_eval = evaluate_ast_rec(child, context)?;
+            match child_eval {
+                Expression::Number(num) => {
+                    let result = num.factorial();
+                    if result.is_nan() {
+                        let msg = crate::messages::CalculatorMessage::new(
+                            "Factorial requires a non-negative integer".to_string(),
+                            crate::messages::MessageType::Warning,
+                            crate::messages::MessageCategory::None,
+                            crate::messages::MessageStage::Calculation,
+                        );
+                        context.messages.push(msg);
+                    }
+                    Ok(Expression::Number(result))
+                }
+                other => Ok(Expression::Factorial(Box::new(other))),
+            }
+        }
+        Expression::DoubleFactorial(child) => {
+            let child_eval = evaluate_ast_rec(child, context)?;
+            match child_eval {
+                Expression::Number(num) => {
+                    let result = num.double_factorial();
+                    if result.is_nan() {
+                        let msg = crate::messages::CalculatorMessage::new(
+                            "Double factorial requires a non-negative integer".to_string(),
+                            crate::messages::MessageType::Warning,
+                            crate::messages::MessageCategory::None,
+                            crate::messages::MessageStage::Calculation,
+                        );
+                        context.messages.push(msg);
+                    }
+                    Ok(Expression::Number(result))
+                }
+                other => Ok(Expression::DoubleFactorial(Box::new(other))),
+            }
+        }
+        Expression::MultiFactorial { expr, count } => {
+            let child_eval = evaluate_ast_rec(expr, context)?;
+            match child_eval {
+                Expression::Number(num) => {
+                    let result = num.multi_factorial(*count);
+                    if result.is_nan() {
+                        let msg = crate::messages::CalculatorMessage::new(
+                            format!(
+                                "Multi-factorial({}) requires a non-negative integer",
+                                count
+                            ),
+                            crate::messages::MessageType::Warning,
+                            crate::messages::MessageCategory::None,
+                            crate::messages::MessageStage::Calculation,
+                        );
+                        context.messages.push(msg);
+                    }
+                    Ok(Expression::Number(result))
+                }
+                other => Ok(Expression::MultiFactorial {
+                    expr: Box::new(other),
+                    count: *count,
+                }),
+            }
+        }
         other => Ok(other.clone()),
     }
 }
