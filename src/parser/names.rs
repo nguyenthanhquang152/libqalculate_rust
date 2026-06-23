@@ -141,6 +141,20 @@ impl StaticRegistry {
         Self::default()
     }
 
+    /// Creates a static registry pre-populated with standard built-in functions.
+    pub fn with_builtins() -> Self {
+        let mut reg = Self { entries: Vec::new() };
+        reg.add_function("abs", 1, Some(1));
+        reg.add_function("sqrt", 1, Some(1));
+        reg.add_function("ln", 1, Some(1));
+        reg.add_function("hex", 1, Some(1));
+        reg.add_function("float", 1, Some(1));
+        reg.add_function("floatError", 1, Some(1));
+        reg.add_function("lxor", 2, Some(2));
+        reg.add_function("if", 3, Some(4));
+        reg
+    }
+
     /// Registers a function name with argument bounds.
     pub fn add_function(
         &mut self,

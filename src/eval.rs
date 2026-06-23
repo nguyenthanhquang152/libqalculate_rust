@@ -38,13 +38,11 @@ fn handle_division_by_zero(context: &mut CalculatorContext) -> Expression {
 /// Returns `Some(true)` if truthy, `Some(false)` if falsy, and `None` if unknown.
 fn is_truthy(expr: &Expression) -> Option<bool> {
     match expr {
-        Expression::Number(num) => {
-            if num.is_zero() || num.is_nan() {
-                Some(false)
-            } else {
-                Some(true)
-            }
-        }
+        Expression::Number(num) => match num.get_boolean() {
+            1 => Some(true),
+            0 => Some(false),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -686,6 +684,15 @@ fn evaluate_ast_rec(
                 if let Some(res) = crate::numberbase::builtin_float_error(&args_eval[0]) {
                     return Ok(res);
                 }
+            } else if fid == "lxor" && args_eval.len() == 2 {
+                return evaluate_ast_rec(&Expression::LogicalXor {
+                    lhs: Box::new(args_eval[0].clone()),
+                    rhs: Box::new(args_eval[1].clone()),
+                }, context);
+            } else if fid == "if" && (args_eval.len() == 3 || args_eval.len() == 4) {
+                if let Some(res) = evaluate_logical_if(&args_eval, context)? {
+                    return Ok(res);
+                }
             }
 
             if let Some(NameMatch::Function {
@@ -866,4 +873,48 @@ pub fn evaluate_ast(
     context: &mut CalculatorContext,
 ) -> Result<Expression, String> {
     evaluate_ast_rec(expr, context)
+}
+
+/// Safely retrieves the indexed element from the then_branch if it is a non-empty vector,
+/// wrapping around using modulo. Otherwise, returns the entire branch.
+fn get_then_element(then_branch: &Expression, index: usize) -> Expression {
+    match then_branch {
+        Expression::Vector(then_elems) if !then_elems.is_empty() => {
+            then_elems[index % then_elems.len()].clone()
+        }
+        _ => then_branch.clone(),
+    }
+}
+
+fn evaluate_logical_if(
+    args: &[Expression],
+    _context: &mut CalculatorContext,
+) -> Result<Option<Expression>, String> {
+    let cond = &args[0];
+    let then_branch = &args[1];
+    let else_branch = &args[2];
+    let assume_false = if args.len() == 4 {
+        is_truthy(&args[3])
+    } else {
+        Some(false)
+    };
+
+    match cond {
+        Expression::Vector(elems) => {
+            for (i, elem) in elems.iter().enumerate() {
+                match is_truthy(elem) {
+                    Some(true) => return Ok(Some(get_then_element(then_branch, i))),
+                    None if assume_false != Some(true) => return Ok(None),
+                    _ => {}
+                }
+            }
+            Ok(Some(else_branch.clone()))
+        }
+        _ => match is_truthy(cond) {
+            Some(true) => Ok(Some(then_branch.clone())),
+            Some(false) => Ok(Some(else_branch.clone())),
+            None if assume_false == Some(true) => Ok(Some(else_branch.clone())),
+            None => Ok(None),
+        },
+    }
 }
