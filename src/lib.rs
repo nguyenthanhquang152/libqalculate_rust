@@ -46,6 +46,12 @@ pub mod context;
 /// `Number` API surface is ported incrementally.
 pub mod number;
 
+/// Built-in function catalog.
+///
+/// Upstream oracle: `../libqalculate/libqalculate/BuiltinFunctions*.cc` and
+/// `../libqalculate/data/functions.xml.in`.
+pub mod functions;
+
 #[cfg(test)]
 mod tests {
     use super::UPSTREAM_LIBQALCULATE_VERSION;

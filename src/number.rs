@@ -1870,6 +1870,274 @@ impl NumberValue {
         }
     }
 
+    /// Returns e^x for this value.
+    pub fn exp_value(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(1));
+                }
+                let prec = 53u32;
+                let value = rug::Float::with_val(prec, &r.value).exp();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Float(f) => {
+                let prec = f.prec().max(53);
+                let value = rug::Float::with_val(prec, &f.value).exp();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Interval { lower, upper } => NumberValue::Interval {
+                lower: Float {
+                    value: lower.value.clone().exp(),
+                },
+                upper: Float {
+                    value: upper.value.clone().exp(),
+                },
+            },
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => {
+                let val_exp = value.exp_value();
+                // d(e^x)/dx = e^x, so propagated uncertainty = e^x * u
+                let new_uncertainty = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    val_exp.mul(uncertainty)
+                };
+                NumberValue::Uncertainty {
+                    value: Box::new(val_exp),
+                    uncertainty: Box::new(new_uncertainty),
+                    is_relative: *is_relative,
+                }
+            }
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::Rational(Rational::from_i32(0)),
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the cube root of this value.
+    ///
+    /// For real x: cbrt(x) = sign(x) * |x|^(1/3).
+    pub fn cbrt_value(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let prec = 53u32;
+                let f_val = rug::Float::with_val(prec, &r.value);
+                let result = f_val.cbrt();
+                // Check if result is exact integer
+                if result.is_integer() {
+                    let int_val = result
+                        .to_integer_round(rug::float::Round::Nearest)
+                        .map(|(i, _)| i);
+                    if let Some(iv) = int_val {
+                        return NumberValue::Rational(Rational {
+                            value: rug::Rational::from(iv),
+                        });
+                    }
+                }
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, result),
+                })
+            }
+            NumberValue::Float(f) => {
+                let prec = f.prec().max(53);
+                let value = rug::Float::with_val(prec, &f.value).cbrt();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                // cbrt is monotonically increasing
+                NumberValue::Interval {
+                    lower: Float {
+                        value: lower.value.clone().cbrt(),
+                    },
+                    upper: Float {
+                        value: upper.value.clone().cbrt(),
+                    },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => {
+                let val_cbrt = value.cbrt_value();
+                // d(cbrt(x))/dx = 1/(3 * x^(2/3)) = cbrt(x) / (3*x)
+                let new_uncertainty = if uncertainty.is_real_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    let three = NumberValue::Rational(Rational::from_i32(3));
+                    let denom = three.mul(value);
+                    let deriv = val_cbrt.div(&denom);
+                    uncertainty.mul(&deriv).abs()
+                };
+                NumberValue::Uncertainty {
+                    value: Box::new(val_cbrt),
+                    uncertainty: Box::new(new_uncertainty),
+                    is_relative: *is_relative,
+                }
+            }
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::MinusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns cos(self) for this value.
+    pub fn cos_value(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(1));
+                }
+                let prec = 53u32;
+                let value = rug::Float::with_val(prec, &r.value).cos();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Float(f) => {
+                let prec = f.prec().max(53);
+                let value = rug::Float::with_val(prec, &f.value).cos();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                // cos has extrema at k*π. We must check if any lie within [lo, hi]
+                // and clamp the result bounds accordingly.
+                let prec = lower.prec().max(upper.prec()).max(53);
+                let lo = &lower.value;
+                let hi = &upper.value;
+                let l_cos = rug::Float::with_val(prec, lo).cos();
+                let u_cos = rug::Float::with_val(prec, hi).cos();
+
+                let mut min_val = l_cos.clone().min(&u_cos);
+                let mut max_val = l_cos.max(&u_cos);
+
+                let pi = rug::Float::with_val(prec, rug::float::Constant::Pi);
+
+                // Check for cos extrema: cos(kπ) = ±1
+                // First multiple of π ≥ lo: k = ceil(lo/π)
+                let k_start_f = rug::Float::with_val(prec, lo / &pi).ceil();
+                if let Some(k_start) = k_start_f.to_integer() {
+                    // Check at most a few multiples within the interval
+                    let mut k = k_start;
+                    for _ in 0..4 {
+                        let extremum = rug::Float::with_val(prec, &k * &pi);
+                        if extremum > *hi {
+                            break;
+                        }
+                        // cos(kπ) = (-1)^k
+                        let k_mod2 = k.clone() % 2i32;
+                        if k_mod2 == 0 {
+                            // cos = 1
+                            let one = rug::Float::with_val(prec, 1.0);
+                            max_val = max_val.max(&one);
+                        } else {
+                            // cos = -1
+                            let neg_one = rug::Float::with_val(prec, -1.0);
+                            min_val = min_val.min(&neg_one);
+                        }
+                        k += 1;
+                    }
+                }
+
+                NumberValue::Interval {
+                    lower: Float { value: min_val },
+                    upper: Float { value: max_val },
+                }
+            }
+            _ => {
+                let f = to_float_val_rnd(self, 53, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(f.prec().max(53), f.value.cos()),
+                })
+            }
+        }
+    }
+
+    /// Returns sin(self) for this value.
+    pub fn sin_value(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = 53u32;
+                let value = rug::Float::with_val(prec, &r.value).sin();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Float(f) => {
+                let prec = f.prec().max(53);
+                let value = rug::Float::with_val(prec, &f.value).sin();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, value),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                // sin has extrema at π/2 + kπ. We must check if any lie within [lo, hi].
+                let prec = lower.prec().max(upper.prec()).max(53);
+                let lo = &lower.value;
+                let hi = &upper.value;
+                let l_sin = rug::Float::with_val(prec, lo).sin();
+                let u_sin = rug::Float::with_val(prec, hi).sin();
+
+                let mut min_val = l_sin.clone().min(&u_sin);
+                let mut max_val = l_sin.max(&u_sin);
+
+                let pi = rug::Float::with_val(prec, rug::float::Constant::Pi);
+                let half_pi = rug::Float::with_val(prec, &pi / 2u32);
+
+                // Check for sin extrema: sin(π/2 + kπ) = ±1
+                // First (π/2 + kπ) ≥ lo: k = ceil((lo - π/2) / π)
+                let k_start_f = rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi).ceil();
+                if let Some(k_start) = k_start_f.to_integer() {
+                    let mut k = k_start;
+                    for _ in 0..4 {
+                        let extremum = rug::Float::with_val(prec, &half_pi + rug::Float::with_val(prec, &k * &pi));
+                        if extremum > *hi {
+                            break;
+                        }
+                        // sin(π/2 + kπ) = (-1)^k
+                        let k_mod2 = k.clone() % 2i32;
+                        if k_mod2 == 0 {
+                            // sin = 1
+                            let one = rug::Float::with_val(prec, 1.0);
+                            max_val = max_val.max(&one);
+                        } else {
+                            // sin = -1
+                            let neg_one = rug::Float::with_val(prec, -1.0);
+                            min_val = min_val.min(&neg_one);
+                        }
+                        k += 1;
+                    }
+                }
+
+                NumberValue::Interval {
+                    lower: Float { value: min_val },
+                    upper: Float { value: max_val },
+                }
+            }
+            _ => {
+                let f = to_float_val_rnd(self, 53, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(f.prec().max(53), f.value.sin()),
+                })
+            }
+        }
+    }
+
     /// Converts the value to interval bounds (lower, upper). Returns None if the value is NaN.
     pub fn to_interval_bounds(&self) -> Option<(f64, f64)> {
         match self {
@@ -2569,7 +2837,7 @@ impl Number {
         }
     }
 
-    fn from_real_value(value: NumberValue) -> Self {
+    pub(crate) fn from_real_value(value: NumberValue) -> Self {
         Self {
             precision: value.precision(),
             approximate: value.approximate(),
@@ -2713,6 +2981,170 @@ impl Number {
             precision: 53,
             approximate: true,
             is_imaginary: false,
+        }
+    }
+
+    /// Creates a rational `Number` from an `i64`.
+    pub fn from_i64(val: i64) -> Self {
+        Self::from_rational(Rational {
+            value: rug::Rational::from(val),
+        })
+    }
+
+    /// Returns the number 1.
+    pub fn one() -> Self {
+        Self::from_i32(1)
+    }
+
+    /// Returns Euler's number e as a high-precision float.
+    pub fn e() -> Self {
+        let prec = 256u32;
+        let one = rug::Float::with_val(prec, 1.0);
+        let e_val = one.exp();
+        Self {
+            value: NumberValue::Float(Float {
+                value: rug::Float::with_val(prec, e_val),
+            }),
+            imaginary: None,
+            precision: prec as i32,
+            approximate: true,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns π as a high-precision float.
+    pub fn pi() -> Self {
+        let prec = 256u32;
+        let pi_val = rug::Float::with_val(prec, rug::float::Constant::Pi);
+        Self {
+            value: NumberValue::Float(Float { value: pi_val }),
+            imaginary: None,
+            precision: prec as i32,
+            approximate: true,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns negative infinity.
+    pub fn minus_infinity() -> Self {
+        Self {
+            value: NumberValue::MinusInfinity,
+            imaginary: None,
+            precision: 0,
+            approximate: false,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns e^self (exponential function).
+    ///
+    /// For complex numbers: e^(a+bi) = e^a * (cos(b) + i*sin(b)).
+    pub fn exp(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.exp_value();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            // e^(a+bi) = e^a * (cos(b) + i*sin(b))
+            let exp_a = Self::from_real_value(real.exp_value());
+            let cos_b = Self::from_real_value(imag.cos_value());
+            let sin_b = Self::from_real_value(imag.sin_value());
+            let re_part = exp_a.mul(&cos_b);
+            let im_part = exp_a.mul(&sin_b);
+            Number::new_complex(re_part, im_part)
+        }
+    }
+
+    /// Returns the cube root of the number.
+    ///
+    /// For real x: cbrt(x) = sign(x) * |x|^(1/3).
+    /// For complex: delegates to pow(x, 1/3).
+    pub fn cbrt(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.cbrt_value();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            // For complex: use x^(1/3)
+            let third = Number::from_rational(Rational {
+                value: rug::Rational::from((1, 3)),
+            });
+            self.pow(&third)
+        }
+    }
+
+    /// Returns cos(self) for real numbers.
+    pub fn cos(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.cos_value();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: true,
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            // cos(a+bi) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
+            Self::from_real_value(NumberValue::NaN) // TODO: implement complex cos
+        }
+    }
+
+    /// Returns sin(self) for real numbers.
+    pub fn sin(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = real.sin_value();
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: true,
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            // sin(a+bi) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
+            Self::from_real_value(NumberValue::NaN) // TODO: implement complex sin
+        }
+    }
+
+    /// Converts this number to an i64 if it is an exact integer that fits.
+    pub fn to_i64(&self) -> Option<i64> {
+        if self.has_imaginary_part() {
+            return None;
+        }
+        match &self.value {
+            NumberValue::Rational(r) if r.value.is_integer() => {
+                r.value.numer().to_i64()
+            }
+            NumberValue::Float(f) if f.rug_float().is_integer() => {
+                f.rug_float()
+                    .to_integer_round(rug::float::Round::Nearest)
+                    .and_then(|(int, _)| int.to_i64())
+            }
+            _ => None,
+        }
+    }
+
+    /// Creates a complex number from separate real and imaginary `Number` parts.
+    pub fn new_complex_from_re_im(re: &Number, im: &Number) -> Self {
+        if im.is_zero() {
+            re.clone()
+        } else {
+            Number::new_complex(re.clone(), im.clone())
         }
     }
 
