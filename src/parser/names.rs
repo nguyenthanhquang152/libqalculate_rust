@@ -153,6 +153,30 @@ impl StaticRegistry {
         reg.add_function("lxor", 2, Some(2));
         reg.add_function("if", 3, Some(4));
         reg.add_function("shift", 2, Some(3));
+        // Dynamically register trig catalog functions and aliases
+        for func in crate::functions::trig_catalog() {
+            reg.add_function(func.name, func.min_args, func.max_args);
+            for alias in func.aliases {
+                reg.add_function(*alias, func.min_args, func.max_args);
+            }
+        }
+
+        // Dynamically register explog catalog functions and aliases
+        for func in crate::functions::explog_catalog() {
+            reg.add_function(func.name, func.min_args, func.max_args);
+            for alias in func.aliases {
+                reg.add_function(*alias, func.min_args, func.max_args);
+            }
+        }
+
+        // Dynamically register algebra, number, and special catalog functions and aliases
+        for func in crate::functions::algebra_number_special_catalog() {
+            reg.add_function(func.name, func.min_args, func.max_args);
+            for alias in func.aliases {
+                reg.add_function(*alias, func.min_args, func.max_args);
+            }
+        }
+
         reg
     }
 

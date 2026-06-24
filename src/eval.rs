@@ -763,6 +763,10 @@ fn evaluate_ast_rec(
                 }
             }
 
+            if let Some(res) = crate::functions::dispatch_builtin(fid, &args_eval, context) {
+                return res.map_err(|e| e.message);
+            }
+
             if let Some(NameMatch::Function {
                 min_args, max_args, ..
             }) = context.definitions.lookup(fid, true)

@@ -2700,6 +2700,503 @@ impl NumberValue {
     pub fn is_less_than(&self, other: &Self) -> bool {
         matches!(self.compare(other), ComparisonResult::Greater)
     }
+
+    /// Returns true if the value is strictly positive (> 0).
+    pub fn is_positive(&self) -> bool {
+        match self {
+            NumberValue::Rational(r) => {
+                !r.is_zero() && r.value.cmp0() == std::cmp::Ordering::Greater
+            }
+            NumberValue::Float(f) => !f.is_nan() && f.value.is_sign_positive() && !f.is_zero(),
+            NumberValue::Interval { lower, upper } => {
+                !lower.is_nan() && !upper.is_nan() && lower.value.is_sign_positive() && !lower.value.is_zero()
+            }
+            NumberValue::Uncertainty { value, .. } => value.is_positive(),
+            NumberValue::PlusInfinity => true,
+            NumberValue::MinusInfinity | NumberValue::NaN => false,
+        }
+    }
+
+    /// Returns true if the value is strictly negative (< 0).
+    pub fn is_negative(&self) -> bool {
+        match self {
+            NumberValue::Rational(r) => {
+                !r.is_zero() && r.value.cmp0() == std::cmp::Ordering::Less
+            }
+            NumberValue::Float(f) => !f.is_nan() && f.value.is_sign_negative() && !f.is_zero(),
+            NumberValue::Interval { lower, upper } => {
+                !lower.is_nan() && !upper.is_nan() && upper.value.is_sign_negative() && !upper.value.is_zero()
+            }
+            NumberValue::Uncertainty { value, .. } => value.is_negative(),
+            NumberValue::MinusInfinity => true,
+            NumberValue::PlusInfinity | NumberValue::NaN => false,
+        }
+    }
+
+    /// Returns the signum of the value: -1, 0, or +1 as a Rational.
+    ///
+    /// For intervals that span zero, returns NaN (sign is indeterminate).
+    pub fn signum(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let s = r.value.cmp0();
+                NumberValue::Rational(Rational::from_i32(match s {
+                    std::cmp::Ordering::Greater => 1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Less => -1,
+                }))
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() {
+                    NumberValue::NaN
+                } else if f.is_zero() {
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else if f.value.is_sign_positive() {
+                    NumberValue::Rational(Rational::from_i32(1))
+                } else {
+                    NumberValue::Rational(Rational::from_i32(-1))
+                }
+            }
+            NumberValue::Interval { lower, upper } => {
+                if lower.value.is_sign_positive() && !lower.value.is_zero() {
+                    // Strictly positive
+                    NumberValue::Rational(Rational::from_i32(1))
+                } else if upper.value.is_sign_negative() && !upper.value.is_zero() {
+                    // Strictly negative
+                    NumberValue::Rational(Rational::from_i32(-1))
+                } else if lower.value.is_zero() && upper.value.is_zero() {
+                    // Exactly zero
+                    NumberValue::Rational(Rational::from_i32(0))
+                } else {
+                    // Spans or touches zero
+                    NumberValue::NaN
+                }
+            }
+            NumberValue::Uncertainty { value, .. } => value.signum(),
+            NumberValue::PlusInfinity => NumberValue::Rational(Rational::from_i32(1)),
+            NumberValue::MinusInfinity => NumberValue::Rational(Rational::from_i32(-1)),
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the floor of the value (greatest integer ≤ x).
+    pub fn floor(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let floored = r.value.numer().clone().div_floor(r.value.denom());
+                NumberValue::Rational(Rational {
+                    value: rug::Rational::from(floored),
+                })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() || f.is_infinite() {
+                    return self.clone();
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).floor(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec_l, &lower.value).floor(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec_u, &upper.value).floor(),
+                    },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.floor()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::MinusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the ceiling of the value (least integer ≥ x).
+    pub fn ceil(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let ceiled = r.value.numer().clone().div_ceil(r.value.denom());
+                NumberValue::Rational(Rational {
+                    value: rug::Rational::from(ceiled),
+                })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() || f.is_infinite() {
+                    return self.clone();
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).ceil(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec_l, &lower.value).ceil(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec_u, &upper.value).ceil(),
+                    },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.ceil()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::MinusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the truncation of the value (round toward zero).
+    pub fn trunc(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let truncated = r.value.numer().clone().div_trunc(r.value.denom());
+                NumberValue::Rational(Rational {
+                    value: rug::Rational::from(truncated),
+                })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() || f.is_infinite() {
+                    return self.clone();
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).trunc(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec_l, &lower.value).trunc(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec_u, &upper.value).trunc(),
+                    },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.trunc()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::MinusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the nearest integer value (half away from zero).
+    pub fn round(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                // round(p/q): compute as (2*|p| + |q|) / (2*|q|), then apply sign
+                let p = r.value.numer();
+                let q = r.value.denom();
+                let two_abs_p = p.clone().abs() * 2;
+                let abs_q = q.clone().abs();
+                let rounded_abs: rug::Integer = (two_abs_p + &abs_q) / (abs_q * 2);
+                let result = if p.cmp0() == std::cmp::Ordering::Less {
+                    -rounded_abs
+                } else {
+                    rounded_abs
+                };
+                NumberValue::Rational(Rational {
+                    value: rug::Rational::from(result),
+                })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() || f.is_infinite() {
+                    return self.clone();
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).round(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec_l, &lower.value).round(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec_u, &upper.value).round(),
+                    },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.round()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::MinusInfinity,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the gamma function Γ(x).
+    ///
+    /// For non-positive integers, the gamma function has poles and returns NaN.
+    /// For exact rationals, promotes to float for evaluation.
+    pub fn gamma(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                // Check for non-positive integers (poles of gamma)
+                if r.value.denom() == &1 && r.value.numer().cmp0() != std::cmp::Ordering::Greater {
+                    return NumberValue::NaN;
+                }
+                let prec = 53u32;
+                let f = rug::Float::with_val(prec, &r.value);
+                NumberValue::Float(Float {
+                    value: f.gamma(),
+                })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() {
+                    return NumberValue::NaN;
+                }
+                // Check for non-positive integer poles
+                if !f.is_infinite() {
+                    let truncated = rug::Float::with_val(f.prec(), &f.value).trunc();
+                    if f.value == truncated
+                        && f.value.cmp0() != Some(std::cmp::Ordering::Greater)
+                    {
+                        return NumberValue::NaN;
+                    }
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).gamma(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                
+                // Reject intervals containing zero or negative values due to poles and oscillations
+                if lower.value <= 0.0 {
+                    return NumberValue::NaN;
+                }
+                
+                // Gamma minimum point: x_min ≈ 1.4616321449683623
+                // Min value: g_min ≈ 0.8856031944108887
+                let x_min = 1.4616321449683623;
+                let g_l = rug::Float::with_val(prec_l, &lower.value).gamma();
+                let g_u = rug::Float::with_val(prec_u, &upper.value).gamma();
+                
+                if g_l.is_nan() || g_u.is_nan() {
+                    return NumberValue::NaN;
+                }
+                
+                let (new_l, new_u) = if upper.value <= x_min {
+                    // Decreasing
+                    (g_u, g_l)
+                } else if lower.value >= x_min {
+                    // Increasing
+                    (g_l, g_u)
+                } else {
+                    // Spans the minimum
+                    let max_val = if g_l >= g_u { g_l } else { g_u };
+                    let min_prec = std::cmp::max(prec_l, prec_u);
+                    let min_val = rug::Float::with_val(min_prec, 0.8856031944108887f64);
+                    (min_val, max_val)
+                };
+                
+                NumberValue::Interval {
+                    lower: Float { value: new_l },
+                    upper: Float { value: new_u },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.gamma()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::PlusInfinity,
+            NumberValue::MinusInfinity => NumberValue::NaN,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the error function erf(x).
+    pub fn erf(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = 53u32;
+                let f = rug::Float::with_val(prec, &r.value);
+                NumberValue::Float(Float { value: f.erf() })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() {
+                    return NumberValue::NaN;
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).erf(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                // erf is monotonically increasing
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec_l, &lower.value).erf(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec_u, &upper.value).erf(),
+                    },
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.erf()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::Rational(Rational::from_i32(1)),
+            NumberValue::MinusInfinity => NumberValue::Rational(Rational::from_i32(-1)),
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the Riemann zeta function ζ(x).
+    pub fn zeta(&self) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let prec = 53u32;
+                let f = rug::Float::with_val(prec, &r.value);
+                NumberValue::Float(Float { value: f.zeta() })
+            }
+            NumberValue::Float(f) => {
+                if f.is_nan() {
+                    return NumberValue::NaN;
+                }
+                let prec = f.prec();
+                NumberValue::Float(Float {
+                    value: rug::Float::with_val(prec, &f.value).zeta(),
+                })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec_l = lower.prec();
+                let prec_u = upper.prec();
+                
+                // Pole at x = 1
+                if lower.value <= 1.0 && upper.value >= 1.0 {
+                    return NumberValue::NaN;
+                }
+                
+                if lower.value >= -2.0 {
+                    // zeta(x) is monotonically decreasing for x >= -2 (excluding x=1)
+                    let z_l = rug::Float::with_val(prec_l, &lower.value).zeta();
+                    let z_u = rug::Float::with_val(prec_u, &upper.value).zeta();
+                    if z_l.is_nan() || z_u.is_nan() {
+                        return NumberValue::NaN;
+                    }
+                    NumberValue::Interval {
+                        lower: Float { value: z_u },
+                        upper: Float { value: z_l },
+                    }
+                } else {
+                    // x < -2 is not properly supported as interval (zeta is oscillatory / non-monotonic here)
+                    NumberValue::NaN
+                }
+            }
+            NumberValue::Uncertainty {
+                value,
+                uncertainty,
+                is_relative,
+            } => NumberValue::Uncertainty {
+                value: Box::new(value.zeta()),
+                uncertainty: uncertainty.clone(),
+                is_relative: *is_relative,
+            },
+            NumberValue::PlusInfinity => NumberValue::Rational(Rational::from_i32(1)),
+            NumberValue::MinusInfinity => NumberValue::NaN,
+            NumberValue::NaN => NumberValue::NaN,
+        }
+    }
+
+    /// Returns the upper incomplete gamma function Γ(self, x).
+    ///
+    /// Uses `rug::Float::gamma_inc` where `self` is the `a` parameter
+    /// and `x` is the integration lower bound.
+    pub fn gamma_inc(&self, x: &Self) -> Self {
+        // Promote both to float for the computation
+        let a_float = match self {
+            NumberValue::Rational(r) => {
+                let prec = 53u32;
+                rug::Float::with_val(prec, &r.value)
+            }
+            NumberValue::Float(f) => rug::Float::with_val(f.prec(), &f.value),
+            NumberValue::NaN => return NumberValue::NaN,
+            NumberValue::PlusInfinity | NumberValue::MinusInfinity => return NumberValue::NaN,
+            _ => return NumberValue::NaN,
+        };
+        let x_float = match x {
+            NumberValue::Rational(r) => {
+                let prec = a_float.prec();
+                rug::Float::with_val(prec, &r.value)
+            }
+            NumberValue::Float(f) => rug::Float::with_val(f.prec(), &f.value),
+            NumberValue::NaN => return NumberValue::NaN,
+            NumberValue::PlusInfinity => return NumberValue::Rational(Rational::from_i32(0)),
+            NumberValue::MinusInfinity => return NumberValue::NaN,
+            _ => return NumberValue::NaN,
+        };
+        let prec = std::cmp::max(a_float.prec(), x_float.prec());
+        let result = rug::Float::with_val(prec, a_float).gamma_inc(&x_float);
+        if result.is_nan() {
+            NumberValue::NaN
+        } else {
+            NumberValue::Float(Float { value: result })
+        }
+    }
 }
 
 fn get_infinity_sign(val: &NumberValue) -> Option<bool> {
@@ -4488,6 +4985,240 @@ impl Number {
             imaginary: None,
             precision: self.precision,
             approximate: is_approx,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns the signum of the number: -1, 0, or +1 for real numbers.
+    ///
+    /// For complex numbers z, returns z / |z| (projected onto the unit circle).
+    pub fn signum(&self) -> Self {
+        if self.is_nan() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        if self.is_complex() {
+            if self.is_zero() {
+                Self::from_i32(0)
+            } else {
+                self.div(&self.abs())
+            }
+        } else {
+            let s = self.value.signum();
+            Self {
+                precision: self.precision,
+                approximate: self.approximate,
+                value: s,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        }
+    }
+
+    /// Returns the floor of the number (greatest integer ≤ x).
+    ///
+    /// For complex numbers, applies floor to both real and imaginary parts.
+    pub fn floor(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        let r = real.floor();
+        if imag.is_real_zero() {
+            Self {
+                precision: self.precision,
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            let i = imag.floor();
+            let real_num = Self::from_real_value(r);
+            let imag_num = Self::from_real_value(i);
+            Number::new_complex(real_num, imag_num)
+        }
+    }
+
+    /// Returns the ceiling of the number (least integer ≥ x).
+    ///
+    /// For complex numbers, applies ceil to both real and imaginary parts.
+    pub fn ceil(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        let r = real.ceil();
+        if imag.is_real_zero() {
+            Self {
+                precision: self.precision,
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            let i = imag.ceil();
+            let real_num = Self::from_real_value(r);
+            let imag_num = Self::from_real_value(i);
+            Number::new_complex(real_num, imag_num)
+        }
+    }
+
+    /// Returns the truncation of the number (round toward zero).
+    ///
+    /// For complex numbers, applies trunc to both real and imaginary parts.
+    pub fn trunc(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        let r = real.trunc();
+        if imag.is_real_zero() {
+            Self {
+                precision: self.precision,
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            let i = imag.trunc();
+            let real_num = Self::from_real_value(r);
+            let imag_num = Self::from_real_value(i);
+            Number::new_complex(real_num, imag_num)
+        }
+    }
+
+    /// Returns the nearest integer value (half away from zero).
+    ///
+    /// For complex numbers, applies round to both real and imaginary parts.
+    pub fn round(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        let r = real.round();
+        if imag.is_real_zero() {
+            Self {
+                precision: self.precision,
+                approximate: self.approximate || r.approximate(),
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            let i = imag.round();
+            let real_num = Self::from_real_value(r);
+            let imag_num = Self::from_real_value(i);
+            Number::new_complex(real_num, imag_num)
+        }
+    }
+
+    /// Returns the real part of the number.
+    ///
+    /// For real numbers, returns the number itself.
+    /// For complex numbers a + bi, returns a.
+    pub fn real_part(&self) -> Self {
+        let (real, _imag) = self.to_canonical_real_imag();
+        Self {
+            precision: self.precision,
+            approximate: self.approximate,
+            value: real,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns the imaginary part of the number (as a real coefficient).
+    ///
+    /// For real numbers, returns 0.
+    /// For complex numbers a + bi, returns b (not bi).
+    pub fn imaginary_part(&self) -> Self {
+        let (_real, imag) = self.to_canonical_real_imag();
+        Self {
+            precision: self.precision,
+            approximate: self.approximate,
+            value: imag,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns the argument (phase angle) of the number in radians.
+    ///
+    /// For positive real numbers, returns 0.
+    /// For negative real numbers, returns π.
+    /// For complex numbers a + bi, returns atan2(b, a).
+    pub fn arg(&self) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            // Real number
+            if real.is_positive() || real.is_zero() {
+                Self::from_i32(0)
+            } else {
+                Self::pi()
+            }
+        } else {
+            // Complex: atan2(imag, real)
+            let y = Self::from_real_value(imag);
+            let x = Self::from_real_value(real);
+            Number::atan2(&y, &x)
+        }
+    }
+
+    /// Returns the gamma function Γ(x).
+    ///
+    /// For complex numbers, returns NaN (not supported in this implementation).
+    pub fn gamma(&self) -> Self {
+        if self.is_complex() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        let r = self.value.gamma();
+        Self {
+            precision: std::cmp::max(self.precision, r.precision()),
+            approximate: true,
+            value: r,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns the error function erf(x).
+    ///
+    /// For complex numbers, returns NaN (not supported in this implementation).
+    pub fn erf(&self) -> Self {
+        if self.is_complex() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        let r = self.value.erf();
+        Self {
+            precision: std::cmp::max(self.precision, r.precision()),
+            approximate: true,
+            value: r,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns the Riemann zeta function ζ(x).
+    ///
+    /// For complex numbers, returns NaN (not supported in this implementation).
+    pub fn zeta(&self) -> Self {
+        if self.is_complex() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        let r = self.value.zeta();
+        Self {
+            precision: std::cmp::max(self.precision, r.precision()),
+            approximate: true,
+            value: r,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns the upper incomplete gamma function Γ(a, x).
+    ///
+    /// `self` is the `a` parameter and `x` is the integration lower bound.
+    /// For complex numbers, returns NaN (not supported in this implementation).
+    pub fn gamma_inc(&self, x: &Self) -> Self {
+        if self.is_complex() || x.is_complex() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        let r = self.value.gamma_inc(&x.value);
+        Self {
+            precision: std::cmp::max(self.precision, r.precision()),
+            approximate: true,
+            value: r,
+            imaginary: None,
             is_imaginary: false,
         }
     }
