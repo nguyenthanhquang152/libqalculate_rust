@@ -10,6 +10,7 @@
 //! - `../libqalculate/libqalculate/BuiltinFunctions.h`
 //! - `../libqalculate/data/functions.xml.in`
 
+pub mod algebra_number_special;
 pub mod explog;
 pub mod trig;
 
@@ -88,6 +89,11 @@ pub fn dispatch_builtin(
         return Some(func.evaluate(args, context));
     }
 
+    // Try algebra/number/special family
+    if let Some(func) = algebra_number_special::lookup(name) {
+        return Some(func.evaluate(args, context));
+    }
+
     None
 }
 
@@ -95,6 +101,7 @@ pub fn dispatch_builtin(
 pub fn builtin_info(name: &str) -> Option<&'static BuiltinFunctionInfo> {
     explog::lookup(name)
         .or_else(|| trig::lookup(name))
+        .or_else(|| algebra_number_special::lookup(name))
         .map(|f| f.info())
 }
 
@@ -106,4 +113,67 @@ pub fn explog_catalog() -> Vec<&'static BuiltinFunctionInfo> {
 /// Returns all registered built-in function infos for the trig family.
 pub fn trig_catalog() -> Vec<&'static BuiltinFunctionInfo> {
     trig::catalog()
+}
+
+/// Returns all registered built-in function infos for the algebra/number/special family.
+pub fn algebra_number_special_catalog() -> Vec<&'static BuiltinFunctionInfo> {
+    algebra_number_special::catalog()
+}
+
+/// Validates argument count and returns an error if out of range.
+pub(crate) fn validate_arity(
+    name: &str,
+    args: &[Expression],
+    min: usize,
+    max: Option<usize>,
+) -> Result<(), FunctionError> {
+    if args.len() < min || max.is_some_and(|m| args.len() > m) {
+        return Err(FunctionError {
+            function_name: name.to_string(),
+            message: format!(
+                "Expected {} argument(s), got {}",
+                if max == Some(min) {
+                    min.to_string()
+                } else if let Some(m) = max {
+                    format!("{min}-{m}")
+                } else {
+                    format!("at least {min}")
+                },
+                args.len()
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Creates an unevaluated function call expression (for symbolic args).
+pub(crate) fn make_unevaluated(name: &str, args: &[Expression]) -> Expression {
+    use crate::ast::FunctionRef;
+    Expression::FunctionCall {
+        function: FunctionRef::new(name),
+        args: args.to_vec(),
+    }
+}
+
+/// Pushes a warning message to the context.
+pub(crate) fn push_warning(context: &mut CalculatorContext, func_name: &str, message: &str) {
+    let msg = crate::messages::CalculatorMessage::new(
+        format!("{func_name}: {message}"),
+        crate::messages::MessageType::Warning,
+        crate::messages::MessageCategory::None,
+        crate::messages::MessageStage::Calculation,
+    );
+    context.messages.push(msg);
+}
+
+/// Pushes an error message to the context.
+#[allow(dead_code)]
+pub(crate) fn push_error(context: &mut CalculatorContext, func_name: &str, message: &str) {
+    let msg = crate::messages::CalculatorMessage::new(
+        format!("{func_name}: {message}"),
+        crate::messages::MessageType::Error,
+        crate::messages::MessageCategory::None,
+        crate::messages::MessageStage::Calculation,
+    );
+    context.messages.push(msg);
 }
