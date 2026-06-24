@@ -116,6 +116,16 @@ impl CalculatorContext {
         Self::default()
     }
 
+    /// Returns the target evaluation precision in bits.
+    pub fn min_precision_bits(&self) -> u32 {
+        let bits = self.precision_digits
+            .max(1)
+            .saturating_mul(4)
+            .saturating_add(16)
+            .max(128);
+        u32::try_from(bits).unwrap_or(u32::MAX)
+    }
+
     /// Clear all warning and error messages in the context.
     pub fn clear_messages(&mut self) {
         self.messages.clear();

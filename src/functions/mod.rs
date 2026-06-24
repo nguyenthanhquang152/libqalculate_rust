@@ -11,6 +11,7 @@
 //! - `../libqalculate/data/functions.xml.in`
 
 pub mod explog;
+pub mod trig;
 
 use crate::ast::Expression;
 use crate::context::CalculatorContext;
@@ -82,15 +83,27 @@ pub fn dispatch_builtin(
         return Some(func.evaluate(args, context));
     }
 
+    // Try trig family
+    if let Some(func) = trig::lookup(name) {
+        return Some(func.evaluate(args, context));
+    }
+
     None
 }
 
 /// Returns the [`BuiltinFunctionInfo`] for a built-in function name, if known.
 pub fn builtin_info(name: &str) -> Option<&'static BuiltinFunctionInfo> {
-    explog::lookup(name).map(|f| f.info())
+    explog::lookup(name)
+        .or_else(|| trig::lookup(name))
+        .map(|f| f.info())
 }
 
 /// Returns all registered built-in function infos for the explog family.
 pub fn explog_catalog() -> Vec<&'static BuiltinFunctionInfo> {
     explog::catalog()
+}
+
+/// Returns all registered built-in function infos for the trig family.
+pub fn trig_catalog() -> Vec<&'static BuiltinFunctionInfo> {
+    trig::catalog()
 }
