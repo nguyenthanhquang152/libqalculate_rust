@@ -370,6 +370,10 @@ impl Float {
             value: rug::Float::with_val(p, val),
         }
     }
+    /// Create a float from an existing rug::Float.
+    pub fn from_rug_float(value: rug::Float) -> Self {
+        Self { value }
+    }
     /// Returns true if the float is zero.
     pub fn is_zero(&self) -> bool {
         self.value.is_zero()
@@ -1992,29 +1996,25 @@ impl NumberValue {
     }
 
     /// Returns cos(self) for this value.
-    pub fn cos_value(&self) -> Self {
+    pub fn cos_value(&self, min_precision_bits: u32) -> Self {
         match self {
             NumberValue::Rational(r) => {
                 if r.is_zero() {
                     return NumberValue::Rational(Rational::from_i32(1));
                 }
-                let prec = 53u32;
+                let prec = min_precision_bits.max(53);
                 let value = rug::Float::with_val(prec, &r.value).cos();
-                NumberValue::Float(Float {
-                    value: rug::Float::with_val(prec, value),
-                })
+                NumberValue::Float(Float { value })
             }
             NumberValue::Float(f) => {
-                let prec = f.prec().max(53);
+                let prec = min_precision_bits.max(f.prec());
                 let value = rug::Float::with_val(prec, &f.value).cos();
-                NumberValue::Float(Float {
-                    value: rug::Float::with_val(prec, value),
-                })
+                NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
                 // cos has extrema at k*π. We must check if any lie within [lo, hi]
                 // and clamp the result bounds accordingly.
-                let prec = lower.prec().max(upper.prec()).max(53);
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
                 let lo = &lower.value;
                 let hi = &upper.value;
                 let l_cos = rug::Float::with_val(prec, lo).cos();
@@ -2057,37 +2057,34 @@ impl NumberValue {
                 }
             }
             _ => {
-                let f = to_float_val_rnd(self, 53, rug::float::Round::Nearest);
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
                 NumberValue::Float(Float {
-                    value: rug::Float::with_val(f.prec().max(53), f.value.cos()),
+                    value: f.value.cos(),
                 })
             }
         }
     }
 
     /// Returns sin(self) for this value.
-    pub fn sin_value(&self) -> Self {
+    pub fn sin_value(&self, min_precision_bits: u32) -> Self {
         match self {
             NumberValue::Rational(r) => {
                 if r.is_zero() {
                     return NumberValue::Rational(Rational::from_i32(0));
                 }
-                let prec = 53u32;
+                let prec = min_precision_bits.max(53);
                 let value = rug::Float::with_val(prec, &r.value).sin();
-                NumberValue::Float(Float {
-                    value: rug::Float::with_val(prec, value),
-                })
+                NumberValue::Float(Float { value })
             }
             NumberValue::Float(f) => {
-                let prec = f.prec().max(53);
+                let prec = min_precision_bits.max(f.prec());
                 let value = rug::Float::with_val(prec, &f.value).sin();
-                NumberValue::Float(Float {
-                    value: rug::Float::with_val(prec, value),
-                })
+                NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
                 // sin has extrema at π/2 + kπ. We must check if any lie within [lo, hi].
-                let prec = lower.prec().max(upper.prec()).max(53);
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
                 let lo = &lower.value;
                 let hi = &upper.value;
                 let l_sin = rug::Float::with_val(prec, lo).sin();
@@ -2130,13 +2127,479 @@ impl NumberValue {
                 }
             }
             _ => {
-                let f = to_float_val_rnd(self, 53, rug::float::Round::Nearest);
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
                 NumberValue::Float(Float {
-                    value: rug::Float::with_val(f.prec().max(53), f.value.sin()),
+                    value: f.value.sin(),
                 })
             }
         }
     }
+
+    /// Returns tan(self) for this value.
+    pub fn tan_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).tan();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).tan();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let lo = &lower.value;
+                let hi = &upper.value;
+
+                let pi = rug::Float::with_val(prec, rug::float::Constant::Pi);
+                let half_pi = rug::Float::with_val(prec, &pi / 2u32);
+
+                // Check if the interval crosses kπ + π/2
+                let k_start_f = rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi).ceil();
+                let mut contains_pole = false;
+                if let Some(k_start) = k_start_f.to_integer() {
+                    let extremum = rug::Float::with_val(prec, &half_pi + rug::Float::with_val(prec, &k_start * &pi));
+                    if extremum <= *hi {
+                        contains_pole = true;
+                    }
+                }
+
+                if contains_pole {
+                    NumberValue::NaN
+                } else {
+                    NumberValue::Interval {
+                        lower: Float {
+                            value: rug::Float::with_val(prec, lo).tan(),
+                        },
+                        upper: Float {
+                            value: rug::Float::with_val(prec, hi).tan(),
+                        },
+                    }
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: f.value.tan(),
+                })
+            }
+        }
+    }
+
+    /// Returns asin(self) for this value.
+    /// Returns NaN if |self| > 1.
+    pub fn asin_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).asin();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).asin();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).asin(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).asin(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                let result = f.value.asin();
+                if result.is_nan() {
+                    NumberValue::NaN
+                } else {
+                    NumberValue::Float(Float { value: result })
+                }
+            }
+        }
+    }
+
+    /// Returns acos(self) for this value.
+    /// Returns NaN if |self| > 1.
+    pub fn acos_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).acos();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).acos();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &upper.value).acos(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &lower.value).acos(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                let result = f.value.acos();
+                if result.is_nan() {
+                    NumberValue::NaN
+                } else {
+                    NumberValue::Float(Float { value: result })
+                }
+            }
+        }
+    }
+
+    /// Returns atan(self) for this value.
+    pub fn atan_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).atan();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).atan();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).atan(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).atan(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: f.value.atan(),
+                })
+            }
+        }
+    }
+
+    /// Returns atan2(y, x) for these values.
+    pub fn atan2_value(y: &Self, x: &Self, min_precision_bits: u32) -> Self {
+        let prec = min_precision_bits.max(53);
+        let yf = to_float_val_rnd(y, prec, rug::float::Round::Nearest);
+        let xf = to_float_val_rnd(x, prec, rug::float::Round::Nearest);
+        let result = rug::Float::with_val(prec, yf.value.atan2(&xf.value));
+        if result.is_nan() {
+            NumberValue::NaN
+        } else {
+            NumberValue::Float(Float { value: result })
+        }
+    }
+
+    /// Returns sinh(self) for this value.
+    pub fn sinh_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).sinh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).sinh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).sinh(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).sinh(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: f.value.sinh(),
+                })
+            }
+        }
+    }
+
+    /// Returns cosh(self) for this value.
+    pub fn cosh_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(1));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).cosh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).cosh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let lo = &lower.value;
+                let hi = &upper.value;
+                let l_cosh = rug::Float::with_val(prec, lo).cosh();
+                let u_cosh = rug::Float::with_val(prec, hi).cosh();
+
+                let (min_val, max_val) = if lo.is_sign_negative() && hi.is_sign_positive() {
+                    (rug::Float::with_val(prec, 1.0), l_cosh.max(&u_cosh))
+                } else {
+                    (l_cosh.clone().min(&u_cosh), l_cosh.max(&u_cosh))
+                };
+
+                NumberValue::Interval {
+                    lower: Float { value: min_val },
+                    upper: Float { value: max_val },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: f.value.cosh(),
+                })
+            }
+        }
+    }
+
+    /// Returns tanh(self) for this value.
+    pub fn tanh_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).tanh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).tanh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).tanh(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).tanh(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: f.value.tanh(),
+                })
+            }
+        }
+    }
+
+    /// Returns asinh(self) for this value.
+    pub fn asinh_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).asinh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).asinh();
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).asinh(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).asinh(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                NumberValue::Float(Float {
+                    value: f.value.asinh(),
+                })
+            }
+        }
+    }
+
+    /// Returns acosh(self) for this value.
+    /// Returns NaN if self < 1.
+    pub fn acosh_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).acosh();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).acosh();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).acosh(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).acosh(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                let result = f.value.acosh();
+                if result.is_nan() {
+                    NumberValue::NaN
+                } else {
+                    NumberValue::Float(Float { value: result })
+                }
+            }
+        }
+    }
+
+    /// Returns atanh(self) for this value.
+    /// Returns NaN if |self| > 1. Returns ±infinity if self = ±1.
+    pub fn atanh_value(&self, min_precision_bits: u32) -> Self {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.is_zero() {
+                    return NumberValue::Rational(Rational::from_i32(0));
+                }
+                let prec = min_precision_bits.max(53);
+                let value = rug::Float::with_val(prec, &r.value).atanh();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                if value.is_infinite() {
+                    return if value.is_sign_positive() {
+                        NumberValue::PlusInfinity
+                    } else {
+                        NumberValue::MinusInfinity
+                    };
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Float(f) => {
+                let prec = min_precision_bits.max(f.prec());
+                let value = rug::Float::with_val(prec, &f.value).atanh();
+                if value.is_nan() {
+                    return NumberValue::NaN;
+                }
+                if value.is_infinite() {
+                    return if value.is_sign_positive() {
+                        NumberValue::PlusInfinity
+                    } else {
+                        NumberValue::MinusInfinity
+                    };
+                }
+                NumberValue::Float(Float { value })
+            }
+            NumberValue::Interval { lower, upper } => {
+                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                NumberValue::Interval {
+                    lower: Float {
+                        value: rug::Float::with_val(prec, &lower.value).atanh(),
+                    },
+                    upper: Float {
+                        value: rug::Float::with_val(prec, &upper.value).atanh(),
+                    },
+                }
+            }
+            _ => {
+                let prec = min_precision_bits.max(53);
+                let f = to_float_val_rnd(self, prec, rug::float::Round::Nearest);
+                let result = f.value.atanh();
+                if result.is_nan() {
+                    NumberValue::NaN
+                } else if result.is_infinite() {
+                    if result.is_sign_positive() {
+                        NumberValue::PlusInfinity
+                    } else {
+                        NumberValue::MinusInfinity
+                    }
+                } else {
+                    NumberValue::Float(Float { value: result })
+                }
+            }
+        }
+    }
+
 
     /// Converts the value to interval bounds (lower, upper). Returns None if the value is NaN.
     pub fn to_interval_bounds(&self) -> Option<(f64, f64)> {
@@ -3025,6 +3488,17 @@ impl Number {
         }
     }
 
+    /// Returns positive infinity.
+    pub fn plus_infinity() -> Self {
+        Self {
+            value: NumberValue::PlusInfinity,
+            imaginary: None,
+            precision: 0,
+            approximate: false,
+            is_imaginary: false,
+        }
+    }
+
     /// Returns negative infinity.
     pub fn minus_infinity() -> Self {
         Self {
@@ -3052,9 +3526,10 @@ impl Number {
             }
         } else {
             // e^(a+bi) = e^a * (cos(b) + i*sin(b))
+            let prec = self.precision.max(0) as u32;
             let exp_a = Self::from_real_value(real.exp_value());
-            let cos_b = Self::from_real_value(imag.cos_value());
-            let sin_b = Self::from_real_value(imag.sin_value());
+            let cos_b = Self::from_real_value(imag.cos_value(prec));
+            let sin_b = Self::from_real_value(imag.sin_value(prec));
             let re_part = exp_a.mul(&cos_b);
             let im_part = exp_a.mul(&sin_b);
             Number::new_complex(re_part, im_part)
@@ -3089,7 +3564,8 @@ impl Number {
     pub fn cos(&self) -> Self {
         let (real, imag) = self.to_canonical_real_imag();
         if imag.is_real_zero() {
-            let r = real.cos_value();
+            let prec = self.precision.max(0) as u32;
+            let r = real.cos_value(prec);
             Self {
                 precision: std::cmp::max(self.precision, r.precision()),
                 approximate: true,
@@ -3107,7 +3583,8 @@ impl Number {
     pub fn sin(&self) -> Self {
         let (real, imag) = self.to_canonical_real_imag();
         if imag.is_real_zero() {
-            let r = real.sin_value();
+            let prec = self.precision.max(0) as u32;
+            let r = real.sin_value(prec);
             Self {
                 precision: std::cmp::max(self.precision, r.precision()),
                 approximate: true,
@@ -3120,6 +3597,223 @@ impl Number {
             Self::from_real_value(NumberValue::NaN) // TODO: implement complex sin
         }
     }
+
+    fn apply_real_unary<F>(&self, op: F) -> Self
+    where
+        F: FnOnce(&NumberValue, u32) -> NumberValue,
+    {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let r = op(&real, self.precision.max(0) as u32);
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: true,
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            Self::from_real_value(NumberValue::NaN)
+        }
+    }
+
+    fn apply_real_unary_with_prec<F>(&self, min_precision_bits: u32, op: F) -> Self
+    where
+        F: FnOnce(&NumberValue, u32) -> NumberValue,
+    {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let target_prec = (self.precision.max(0) as u32).max(min_precision_bits);
+            let r = op(&real, target_prec);
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: true,
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            Self::from_real_value(NumberValue::NaN)
+        }
+    }
+
+    /// Returns cos(self) for real numbers with min precision in bits.
+    pub fn cos_with_prec(&self, min_precision_bits: u32) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let prec = (self.precision.max(0) as u32).max(min_precision_bits);
+            let r = real.cos_value(prec);
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: true,
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            Self::from_real_value(NumberValue::NaN)
+        }
+    }
+
+    /// Returns sin(self) for real numbers with min precision in bits.
+    pub fn sin_with_prec(&self, min_precision_bits: u32) -> Self {
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            let prec = (self.precision.max(0) as u32).max(min_precision_bits);
+            let r = real.sin_value(prec);
+            Self {
+                precision: std::cmp::max(self.precision, r.precision()),
+                approximate: true,
+                value: r,
+                imaginary: None,
+                is_imaginary: false,
+            }
+        } else {
+            Self::from_real_value(NumberValue::NaN)
+        }
+    }
+
+    /// Returns tan(self) for real numbers with min precision in bits.
+    pub fn tan_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.tan_value(prec))
+    }
+
+    /// Returns asin(self) for real numbers with min precision in bits.
+    pub fn asin_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.asin_value(prec))
+    }
+
+    /// Returns acos(self) for real numbers with min precision in bits.
+    pub fn acos_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.acos_value(prec))
+    }
+
+    /// Returns atan(self) for real numbers with min precision in bits.
+    pub fn atan_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.atan_value(prec))
+    }
+
+    /// Returns sinh(self) for real numbers with min precision in bits.
+    pub fn sinh_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.sinh_value(prec))
+    }
+
+    /// Returns cosh(self) for real numbers with min precision in bits.
+    pub fn cosh_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.cosh_value(prec))
+    }
+
+    /// Returns tanh(self) for real numbers with min precision in bits.
+    pub fn tanh_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.tanh_value(prec))
+    }
+
+    /// Returns asinh(self) for real numbers with min precision in bits.
+    pub fn asinh_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.asinh_value(prec))
+    }
+
+    /// Returns acosh(self) for real numbers with min precision in bits.
+    pub fn acosh_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.acosh_value(prec))
+    }
+
+    /// Returns atanh(self) for real numbers with min precision in bits.
+    pub fn atanh_with_prec(&self, min_precision_bits: u32) -> Self {
+        self.apply_real_unary_with_prec(min_precision_bits, |r, prec| r.atanh_value(prec))
+    }
+
+    /// Returns atan2(y, x) with min precision in bits.
+    pub fn atan2_with_prec(y: &Self, x: &Self, min_precision_bits: u32) -> Self {
+        if y.has_imaginary_part() || x.has_imaginary_part() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        let (yr, _) = y.to_canonical_real_imag();
+        let (xr, _) = x.to_canonical_real_imag();
+        let target_prec = (y.precision.max(x.precision).max(0) as u32).max(min_precision_bits);
+        let r = NumberValue::atan2_value(&yr, &xr, target_prec);
+        Self {
+            precision: std::cmp::max(y.precision, x.precision).max(r.precision()),
+            approximate: true,
+            value: r,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+
+    /// Returns tan(self) for real numbers.
+    pub fn tan(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.tan_value(prec))
+    }
+
+    /// Returns asin(self) for real numbers.
+    /// Domain: [-1, 1]. Returns NaN for |x| > 1.
+    pub fn asin(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.asin_value(prec))
+    }
+
+    /// Returns acos(self) for real numbers.
+    /// Domain: [-1, 1]. Returns NaN for |x| > 1.
+    pub fn acos(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.acos_value(prec))
+    }
+
+    /// Returns atan(self) for real numbers.
+    pub fn atan(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.atan_value(prec))
+    }
+
+    /// Returns atan2(y, x) — the two-argument arctangent.
+    pub fn atan2(y: &Self, x: &Self) -> Self {
+        if y.has_imaginary_part() || x.has_imaginary_part() {
+            return Self::from_real_value(NumberValue::NaN);
+        }
+        let (yr, _) = y.to_canonical_real_imag();
+        let (xr, _) = x.to_canonical_real_imag();
+        let target_prec = y.precision.max(x.precision).max(0) as u32;
+        let r = NumberValue::atan2_value(&yr, &xr, target_prec);
+        Self {
+            precision: std::cmp::max(y.precision, x.precision).max(r.precision()),
+            approximate: true,
+            value: r,
+            imaginary: None,
+            is_imaginary: false,
+        }
+    }
+
+    /// Returns sinh(self) for real numbers.
+    pub fn sinh(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.sinh_value(prec))
+    }
+
+    /// Returns cosh(self) for real numbers.
+    pub fn cosh(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.cosh_value(prec))
+    }
+
+    /// Returns tanh(self) for real numbers.
+    pub fn tanh(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.tanh_value(prec))
+    }
+
+    /// Returns asinh(self) for real numbers.
+    pub fn asinh(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.asinh_value(prec))
+    }
+
+    /// Returns acosh(self) for real numbers.
+    /// Domain: x >= 1. Returns NaN for x < 1.
+    pub fn acosh(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.acosh_value(prec))
+    }
+
+    /// Returns atanh(self) for real numbers.
+    /// Domain: (-1, 1). Returns ±∞ at x=±1, NaN for |x| > 1.
+    pub fn atanh(&self) -> Self {
+        self.apply_real_unary(|r, prec| r.atanh_value(prec))
+    }
+
 
     /// Converts this number to an i64 if it is an exact integer that fits.
     pub fn to_i64(&self) -> Option<i64> {
