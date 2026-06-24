@@ -2012,18 +2012,48 @@ impl NumberValue {
                 })
             }
             NumberValue::Interval { lower, upper } => {
-                // cos is not monotonic; simple approach: evaluate both endpoints
-                // This is a simplified version; proper interval cos is more complex
-                let l_cos = lower.value.clone().cos();
-                let u_cos = upper.value.clone().cos();
-                let (min, max) = if l_cos < u_cos {
-                    (l_cos, u_cos)
-                } else {
-                    (u_cos, l_cos)
-                };
+                // cos has extrema at k*π. We must check if any lie within [lo, hi]
+                // and clamp the result bounds accordingly.
+                let prec = lower.prec().max(upper.prec()).max(53);
+                let lo = &lower.value;
+                let hi = &upper.value;
+                let l_cos = rug::Float::with_val(prec, lo).cos();
+                let u_cos = rug::Float::with_val(prec, hi).cos();
+
+                let mut min_val = l_cos.clone().min(&u_cos);
+                let mut max_val = l_cos.max(&u_cos);
+
+                let pi = rug::Float::with_val(prec, rug::float::Constant::Pi);
+
+                // Check for cos extrema: cos(kπ) = ±1
+                // First multiple of π ≥ lo: k = ceil(lo/π)
+                let k_start_f = rug::Float::with_val(prec, lo / &pi).ceil();
+                if let Some(k_start) = k_start_f.to_integer() {
+                    // Check at most a few multiples within the interval
+                    let mut k = k_start;
+                    for _ in 0..4 {
+                        let extremum = rug::Float::with_val(prec, &k * &pi);
+                        if extremum > *hi {
+                            break;
+                        }
+                        // cos(kπ) = (-1)^k
+                        let k_mod2 = k.clone() % 2i32;
+                        if k_mod2 == 0 {
+                            // cos = 1
+                            let one = rug::Float::with_val(prec, 1.0);
+                            max_val = max_val.max(&one);
+                        } else {
+                            // cos = -1
+                            let neg_one = rug::Float::with_val(prec, -1.0);
+                            min_val = min_val.min(&neg_one);
+                        }
+                        k += 1;
+                    }
+                }
+
                 NumberValue::Interval {
-                    lower: Float { value: min },
-                    upper: Float { value: max },
+                    lower: Float { value: min_val },
+                    upper: Float { value: max_val },
                 }
             }
             _ => {
@@ -2056,17 +2086,47 @@ impl NumberValue {
                 })
             }
             NumberValue::Interval { lower, upper } => {
-                // sin is not monotonic; simple approach: evaluate both endpoints
-                let l_sin = lower.value.clone().sin();
-                let u_sin = upper.value.clone().sin();
-                let (min, max) = if l_sin < u_sin {
-                    (l_sin, u_sin)
-                } else {
-                    (u_sin, l_sin)
-                };
+                // sin has extrema at π/2 + kπ. We must check if any lie within [lo, hi].
+                let prec = lower.prec().max(upper.prec()).max(53);
+                let lo = &lower.value;
+                let hi = &upper.value;
+                let l_sin = rug::Float::with_val(prec, lo).sin();
+                let u_sin = rug::Float::with_val(prec, hi).sin();
+
+                let mut min_val = l_sin.clone().min(&u_sin);
+                let mut max_val = l_sin.max(&u_sin);
+
+                let pi = rug::Float::with_val(prec, rug::float::Constant::Pi);
+                let half_pi = rug::Float::with_val(prec, &pi / 2u32);
+
+                // Check for sin extrema: sin(π/2 + kπ) = ±1
+                // First (π/2 + kπ) ≥ lo: k = ceil((lo - π/2) / π)
+                let k_start_f = rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi).ceil();
+                if let Some(k_start) = k_start_f.to_integer() {
+                    let mut k = k_start;
+                    for _ in 0..4 {
+                        let extremum = rug::Float::with_val(prec, &half_pi + rug::Float::with_val(prec, &k * &pi));
+                        if extremum > *hi {
+                            break;
+                        }
+                        // sin(π/2 + kπ) = (-1)^k
+                        let k_mod2 = k.clone() % 2i32;
+                        if k_mod2 == 0 {
+                            // sin = 1
+                            let one = rug::Float::with_val(prec, 1.0);
+                            max_val = max_val.max(&one);
+                        } else {
+                            // sin = -1
+                            let neg_one = rug::Float::with_val(prec, -1.0);
+                            min_val = min_val.min(&neg_one);
+                        }
+                        k += 1;
+                    }
+                }
+
                 NumberValue::Interval {
-                    lower: Float { value: min },
-                    upper: Float { value: max },
+                    lower: Float { value: min_val },
+                    upper: Float { value: max_val },
                 }
             }
             _ => {

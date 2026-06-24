@@ -63,6 +63,22 @@ static LOGN_INFO: BuiltinFunctionInfo = BuiltinFunctionInfo {
     description: "Logarithm with base",
 };
 
+static LOG2_INFO: BuiltinFunctionInfo = BuiltinFunctionInfo {
+    name: "log2",
+    aliases: &[],
+    min_args: 1,
+    max_args: Some(1),
+    description: "Base-2 logarithm",
+};
+
+static LOG10_INFO: BuiltinFunctionInfo = BuiltinFunctionInfo {
+    name: "log10",
+    aliases: &[],
+    min_args: 1,
+    max_args: Some(1),
+    description: "Base-10 logarithm",
+};
+
 static POWERTOWER_INFO: BuiltinFunctionInfo = BuiltinFunctionInfo {
     name: "powertower",
     aliases: &[],
@@ -128,6 +144,9 @@ impl BuiltinFunction for CbrtFn {
 ///
 /// Upstream: `RootFunction` in `BuiltinFunctions-explog.cc`.
 /// root(x, n) = x^(1/n).
+///
+/// For odd integer n with negative real x, returns the real root:
+/// root(-8, 3) = -2 (matching cbrt behavior).
 struct RootFn;
 
 impl BuiltinFunction for RootFn {
@@ -142,6 +161,19 @@ impl BuiltinFunction for RootFn {
                 if n.is_zero() {
                     push_error(context, "root", "Division by zero");
                     return Ok(Expression::Number(Number::nan()));
+                }
+                // For odd integer n with negative real x, compute real root:
+                // root(-8, 3) = -2 (not complex principal root)
+                let zero = Number::from_i32(0);
+                if x.is_less_than(&zero) && !x.has_imaginary_part() {
+                    if let Some(n_int) = n.to_i64() {
+                        if n_int > 0 && n_int % 2 != 0 {
+                            let abs_x = x.abs();
+                            let reciprocal_n = Number::one().div(n);
+                            let abs_root = abs_x.pow(&reciprocal_n);
+                            return Ok(Expression::Number(abs_root.negate()));
+                        }
+                    }
                 }
                 let reciprocal_n = Number::one().div(n);
                 Ok(Expression::Number(x.pow(&reciprocal_n)))
@@ -272,6 +304,17 @@ impl BuiltinFunction for PowerTowerFn {
                     }
                 };
 
+                // Cap iterations to prevent DoS (upstream also has practical limits)
+                const MAX_HEIGHT: u64 = 1000;
+                if h > MAX_HEIGHT {
+                    push_error(
+                        context,
+                        "powertower",
+                        &format!("Height {h} exceeds maximum of {MAX_HEIGHT}"),
+                    );
+                    return Ok(Expression::Number(Number::nan()));
+                }
+
                 // Evaluate right-to-left: powertower(x, n) = x^(x^(x^...))
                 let mut result = base.clone();
                 for _ in 1..h {
@@ -311,6 +354,17 @@ impl BuiltinFunction for AllRootsFn {
                     }
                 };
 
+                // Cap degree to prevent DoS via unbounded allocation
+                const MAX_DEGREE: u64 = 10000;
+                if n > MAX_DEGREE {
+                    push_error(
+                        context,
+                        "allroots",
+                        &format!("Degree {n} exceeds maximum of {MAX_DEGREE}"),
+                    );
+                    return Ok(Expression::Number(Number::nan()));
+                }
+
                 // All nth roots of x: x^(1/n) * e^(2πik/n) for k = 0..n-1
                 // Principal root: x^(1/n)
                 let reciprocal_n = Number::one().div(n_num);
@@ -335,13 +389,11 @@ impl BuiltinFunction for AllRootsFn {
                             .div(&Number::from_i64(n as i64));
                         let cos_a = angle.cos();
                         let sin_a = angle.sin();
-                        // root_k = principal_abs * (cos(angle) + i*sin(angle))
-                        // Since principal might be complex, we multiply:
-                        // root_k = |x|^(1/n) * cis(arg(x)/n + 2πk/n)
-                        // For real x: principal * cis(2πk/n)
-                        let re_part = principal.mul(&cos_a);
-                        let im_part = principal.mul(&sin_a);
-                        let root = Number::new_complex_from_re_im(&re_part, &im_part);
+                        // root_k = principal * cis(angle)
+                        // Use proper complex multiplication so it works
+                        // even when principal is complex (e.g. negative x).
+                        let cis = Number::new_complex_from_re_im(&cos_a, &sin_a);
+                        let root = principal.mul(&cis);
                         roots.push(Expression::Number(root));
                     }
                 }
@@ -401,7 +453,7 @@ static LOG2_DISPATCH: Log2Dispatch = Log2Dispatch;
 
 impl BuiltinFunction for Log2Dispatch {
     fn info(&self) -> &BuiltinFunctionInfo {
-        &LOGN_INFO
+        &LOG2_INFO
     }
 
     fn evaluate(&self, args: &[Expression], context: &mut CalculatorContext) -> FunctionResult {
@@ -417,7 +469,7 @@ static LOG10_DISPATCH: Log10Dispatch = Log10Dispatch;
 
 impl BuiltinFunction for Log10Dispatch {
     fn info(&self) -> &BuiltinFunctionInfo {
-        &LOGN_INFO
+        &LOG10_INFO
     }
 
     fn evaluate(&self, args: &[Expression], context: &mut CalculatorContext) -> FunctionResult {
@@ -685,5 +737,193 @@ mod tests {
     #[test]
     fn lookup_returns_none_for_unknown() {
         assert!(lookup("unknown_func").is_none());
+    }
+
+    // --- edge-case tests ---
+
+    #[test]
+    fn root_neg8_3_returns_neg2() {
+        let mut ctx = make_ctx();
+        let result = RootFn
+            .evaluate(
+                &[
+                    Expression::Number(Number::from_i64(-8)),
+                    Expression::Number(Number::from_i64(3)),
+                ],
+                &mut ctx,
+            )
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                let s = n.to_qalc_string();
+                assert!(
+                    s.starts_with("-2.000") || s == "-2",
+                    "root(-8, 3) should be -2, got {s}",
+                );
+            }
+            _ => panic!("Expected Number"),
+        }
+    }
+
+    #[test]
+    fn cbrt_neg8_returns_neg2() {
+        let mut ctx = make_ctx();
+        let result = CbrtFn
+            .evaluate(&[Expression::Number(Number::from_i64(-8))], &mut ctx)
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                let s = n.to_qalc_string();
+                assert!(
+                    s.starts_with("-2.000") || s == "-2",
+                    "cbrt(-8) should be -2, got {s}",
+                );
+            }
+            _ => panic!("Expected Number"),
+        }
+    }
+
+    #[test]
+    fn ln_of_zero_returns_minus_infinity() {
+        let mut ctx = make_ctx();
+        let result = LogFn
+            .evaluate(&[Expression::Number(Number::from_i64(0))], &mut ctx)
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                assert!(n.is_infinite(), "ln(0) should be -infinity, got {}", n.to_string());
+            }
+            _ => panic!("Expected Number"),
+        }
+        // Should have pushed a warning
+        assert!(!ctx.messages.is_empty(), "ln(0) should push a warning");
+    }
+
+    #[test]
+    fn sqrt_of_zero_returns_zero() {
+        let mut ctx = make_ctx();
+        let result = SqrtFn
+            .evaluate(&[Expression::Number(Number::from_i64(0))], &mut ctx)
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                assert!(n.is_zero(), "sqrt(0) should be 0, got {}", n.to_string());
+            }
+            _ => panic!("Expected Number"),
+        }
+    }
+
+    #[test]
+    fn root_zero_n_returns_zero() {
+        let mut ctx = make_ctx();
+        let result = RootFn
+            .evaluate(
+                &[
+                    Expression::Number(Number::from_i64(0)),
+                    Expression::Number(Number::from_i64(5)),
+                ],
+                &mut ctx,
+            )
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                assert!(n.is_zero(), "root(0, 5) should be 0, got {}", n.to_string());
+            }
+            _ => panic!("Expected Number"),
+        }
+    }
+
+    #[test]
+    fn powertower_exceeds_max_height_returns_nan() {
+        let mut ctx = make_ctx();
+        let result = PowerTowerFn
+            .evaluate(
+                &[
+                    Expression::Number(Number::from_i64(2)),
+                    Expression::Number(Number::from_i64(1001)),
+                ],
+                &mut ctx,
+            )
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                assert!(n.is_nan(), "powertower(2, 1001) should return NaN (exceeds cap)");
+            }
+            _ => panic!("Expected Number"),
+        }
+        assert!(!ctx.messages.is_empty(), "should push an error for excessive height");
+    }
+
+    #[test]
+    fn allroots_exceeds_max_degree_returns_nan() {
+        let mut ctx = make_ctx();
+        let result = AllRootsFn
+            .evaluate(
+                &[
+                    Expression::Number(Number::from_i64(4)),
+                    Expression::Number(Number::from_i64(10001)),
+                ],
+                &mut ctx,
+            )
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                assert!(n.is_nan(), "allroots(4, 10001) should return NaN (exceeds cap)");
+            }
+            _ => panic!("Expected Number"),
+        }
+        assert!(!ctx.messages.is_empty(), "should push an error for excessive degree");
+    }
+
+    #[test]
+    fn log2_of_8_returns_3() {
+        let mut ctx = make_ctx();
+        let f = lookup("log2").unwrap();
+        let result = f
+            .evaluate(&[Expression::Number(Number::from_i64(8))], &mut ctx)
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                let s = n.to_qalc_string();
+                assert!(
+                    s.starts_with("3.000") || s == "3",
+                    "log2(8) should be 3, got {s}",
+                );
+            }
+            _ => panic!("Expected Number"),
+        }
+    }
+
+    #[test]
+    fn log10_of_1000_returns_3() {
+        let mut ctx = make_ctx();
+        let f = lookup("log10").unwrap();
+        let result = f
+            .evaluate(&[Expression::Number(Number::from_i64(1000))], &mut ctx)
+            .unwrap();
+        match result {
+            Expression::Number(n) => {
+                let s = n.to_qalc_string();
+                assert!(
+                    s.starts_with("3.000") || s == "3",
+                    "log10(1000) should be 3, got {s}",
+                );
+            }
+            _ => panic!("Expected Number"),
+        }
+    }
+
+    #[test]
+    fn log2_info_reports_correct_name() {
+        let f = lookup("log2").unwrap();
+        assert_eq!(f.info().name, "log2", "log2 should report name 'log2'");
+        assert_eq!(f.info().max_args, Some(1), "log2 should accept exactly 1 arg");
+    }
+
+    #[test]
+    fn log10_info_reports_correct_name() {
+        let f = lookup("log10").unwrap();
+        assert_eq!(f.info().name, "log10", "log10 should report name 'log10'");
+        assert_eq!(f.info().max_args, Some(1), "log10 should accept exactly 1 arg");
     }
 }
