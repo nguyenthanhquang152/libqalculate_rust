@@ -198,36 +198,36 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 
 | # | case_id | Expression | Expected | Settings | Status |
 |---|---------|------------|----------|----------|--------|
-| 1 | `geometry.batch:1` | `circle(3)` | `28.27433388` | — | inventory-only |
-| 2 | `geometry.batch:3` | `circumference(3)` | `18.84955592` | — | inventory-only |
-| 3 | `geometry.batch:6` | `cone(3, 4)` | `37.69911184` | — | inventory-only |
-| 4 | `geometry.batch:8` | `cone_sa(3, 4)` | `75.39822369` | — | inventory-only |
-| 5 | `geometry.batch:11` | `cube(3)` | `27` | — | inventory-only |
-| 6 | `geometry.batch:13` | `cube_sa(3)` | `54` | — | inventory-only |
-| 7 | `geometry.batch:16` | `cylinder(3, 4)` | `113.0973355` | — | inventory-only |
-| 8 | `geometry.batch:18` | `cylinder_sa(3, 4)` | `131.9468915` | — | inventory-only |
-| 9 | `geometry.batch:21` | `parallelogram(3, 4)` | `12` | — | inventory-only |
-| 10 | `geometry.batch:23` | `parallelogram_perimeter(3,4)` | `14` | — | inventory-only |
-| 11 | `geometry.batch:26` | `rectprism(3, 4, 5)` | `60` | — | inventory-only |
-| 12 | `geometry.batch:28` | `rectprism_sa(3, 4, 5)` | `94` | — | inventory-only |
-| 13 | `geometry.batch:31` | `triangleprism(3, 4, 5)` | `30` | — | inventory-only |
-| 14 | `geometry.batch:34` | `tetrahedron(3)` | `3.181980515` | — | inventory-only |
-| 15 | `geometry.batch:36` | `tetrahedron_height(3)` | `2.449489743` | — | inventory-only |
-| 16 | `geometry.batch:38` | `tetrahedron_sa(3)` | `15.58845727` | — | inventory-only |
-| 17 | `geometry.batch:41` | `sqpyramid(3)` | `6.363961031` | — | inventory-only |
-| 18 | `geometry.batch:43` | `sqpyramid_height(3)` | `2.121320344` | — | inventory-only |
-| 19 | `geometry.batch:45` | `sqpyramid_sa(3)` | `24.58845727` | — | inventory-only |
-| 20 | `geometry.batch:48` | `pyramid(3, 4, 5)` | `20` | — | inventory-only |
-| 21 | `geometry.batch:51` | `rect(3, 4)` | `12` | — | inventory-only |
-| 22 | `geometry.batch:53` | `rect_perimeter(3, 4)` | `14` | — | inventory-only |
-| 23 | `geometry.batch:56` | `sphere(4)` | `268.0825731` | — | inventory-only |
-| 24 | `geometry.batch:58` | `sphere_sa(4)` | `201.0619298` | — | inventory-only |
-| 25 | `geometry.batch:61` | `square(3)` | `9` | — | inventory-only |
-| 26 | `geometry.batch:63` | `square_perimeter(3)` | `12` | — | inventory-only |
-| 27 | `geometry.batch:66` | `trapezoid(3, 4, 5)` | `17.5` | — | inventory-only |
-| 28 | `geometry.batch:69` | `triangle(3, 4)` | `6` | — | inventory-only |
-| 29 | `geometry.batch:71` | `triangle_perimeter(3, 4, 5)` | `12` | — | inventory-only |
-| 30 | `geometry.batch:73` | `hypot(3, 4)` | `5` | — | inventory-only |
+| 1 | `geometry.batch:1` | `circle(3)` | `28.27433388` | — | native-pass |
+| 2 | `geometry.batch:3` | `circumference(3)` | `18.84955592` | — | native-pass |
+| 3 | `geometry.batch:6` | `cone(3, 4)` | `37.69911184` | — | native-pass |
+| 4 | `geometry.batch:8` | `cone_sa(3, 4)` | `75.39822369` | — | native-pass |
+| 5 | `geometry.batch:11` | `cube(3)` | `27` | — | native-pass |
+| 6 | `geometry.batch:13` | `cube_sa(3)` | `54` | — | native-pass |
+| 7 | `geometry.batch:16` | `cylinder(3, 4)` | `113.0973355` | — | native-pass |
+| 8 | `geometry.batch:18` | `cylinder_sa(3, 4)` | `131.9468915` | — | native-pass |
+| 9 | `geometry.batch:21` | `parallelogram(3, 4)` | `12` | — | native-pass |
+| 10 | `geometry.batch:23` | `parallelogram_perimeter(3,4)` | `14` | — | native-pass |
+| 11 | `geometry.batch:26` | `rectprism(3, 4, 5)` | `60` | — | native-pass |
+| 12 | `geometry.batch:28` | `rectprism_sa(3, 4, 5)` | `94` | — | native-pass |
+| 13 | `geometry.batch:31` | `triangleprism(3, 4, 5)` | `30` | — | native-pass |
+| 14 | `geometry.batch:34` | `tetrahedron(3)` | `3.181980515` | — | native-pass |
+| 15 | `geometry.batch:36` | `tetrahedron_height(3)` | `2.449489743` | — | native-pass |
+| 16 | `geometry.batch:38` | `tetrahedron_sa(3)` | `15.58845727` | — | native-pass |
+| 17 | `geometry.batch:41` | `sqpyramid(3)` | `6.363961031` | — | native-pass |
+| 18 | `geometry.batch:43` | `sqpyramid_height(3)` | `2.121320344` | — | native-pass |
+| 19 | `geometry.batch:45` | `sqpyramid_sa(3)` | `24.58845727` | — | native-pass |
+| 20 | `geometry.batch:48` | `pyramid(3, 4, 5)` | `20` | — | native-pass |
+| 21 | `geometry.batch:51` | `rect(3, 4)` | `12` | — | native-pass |
+| 22 | `geometry.batch:53` | `rect_perimeter(3, 4)` | `14` | — | native-pass |
+| 23 | `geometry.batch:56` | `sphere(4)` | `268.0825731` | — | native-pass |
+| 24 | `geometry.batch:58` | `sphere_sa(4)` | `201.0619298` | — | native-pass |
+| 25 | `geometry.batch:61` | `square(3)` | `9` | — | native-pass |
+| 26 | `geometry.batch:63` | `square_perimeter(3)` | `12` | — | native-pass |
+| 27 | `geometry.batch:66` | `trapezoid(3, 4, 5)` | `17.5` | — | native-pass |
+| 28 | `geometry.batch:69` | `triangle(3, 4)` | `6` | — | native-pass |
+| 29 | `geometry.batch:71` | `triangle_perimeter(3, 4, 5)` | `12` | — | native-pass |
+| 30 | `geometry.batch:73` | `hypot(3, 4)` | `5` | — | native-pass |
 
 ---
 

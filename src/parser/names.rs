@@ -143,7 +143,9 @@ impl StaticRegistry {
 
     /// Creates a static registry pre-populated with standard built-in functions.
     pub fn with_builtins() -> Self {
-        let mut reg = Self { entries: Vec::new() };
+        let mut reg = Self {
+            entries: Vec::new(),
+        };
         reg.add_function("abs", 1, Some(1));
         reg.add_function("sqrt", 1, Some(1));
         reg.add_function("ln", 1, Some(1));
@@ -155,6 +157,14 @@ impl StaticRegistry {
         reg.add_function("shift", 2, Some(3));
         // Dynamically register trig catalog functions and aliases
         for func in crate::functions::trig_catalog() {
+            reg.add_function(func.name, func.min_args, func.max_args);
+            for alias in func.aliases {
+                reg.add_function(*alias, func.min_args, func.max_args);
+            }
+        }
+
+        // Dynamically register geometry catalog functions and aliases
+        for func in crate::functions::geometry_catalog() {
             reg.add_function(func.name, func.min_args, func.max_args);
             for alias in func.aliases {
                 reg.add_function(*alias, func.min_args, func.max_args);

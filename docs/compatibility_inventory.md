@@ -236,7 +236,7 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 | 2 | `calculus.batch` | 11 | 0 | — | `unstarted` |
 | 3 | `dates.batch` | 11 | 0 | — | `unstarted` |
 | 4 | `explog.batch` | 10 | 1 | — | `scaffold` |
-| 5 | `geometry.batch` | 30 | 0 | — | `unstarted` |
+| 5 | `geometry.batch` | 30 | 0 | — | `native-pass` |
 | 6 | `limits.batch` | 181 | 4 | — | `unstarted` |
 | 7 | `matrixvector.batch` | 130 | 0 | — | `unstarted` |
 | 8 | `numberbase.batch` | 15 | 3 | — | `native-pass` |
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 55 |
-| Inventory-only batch cases | 601 |
+| Native-pass batch cases | 85 |
+| Inventory-only batch cases | 571 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
