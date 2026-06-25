@@ -12,6 +12,7 @@
 
 pub mod algebra_number_special;
 pub mod explog;
+pub mod geometry;
 pub mod trig;
 
 use crate::ast::Expression;
@@ -63,11 +64,7 @@ pub trait BuiltinFunction: Send + Sync {
     /// Arguments are pre-evaluated expressions. The function should
     /// validate argument count and types, and return appropriate
     /// error messages through the context.
-    fn evaluate(
-        &self,
-        args: &[Expression],
-        context: &mut CalculatorContext,
-    ) -> FunctionResult;
+    fn evaluate(&self, args: &[Expression], context: &mut CalculatorContext) -> FunctionResult;
 }
 
 /// Dispatches a function call to a built-in implementation if one exists.
@@ -94,6 +91,11 @@ pub fn dispatch_builtin(
         return Some(func.evaluate(args, context));
     }
 
+    // Try geometry family
+    if let Some(func) = geometry::lookup(name) {
+        return Some(func.evaluate(args, context));
+    }
+
     None
 }
 
@@ -102,6 +104,7 @@ pub fn builtin_info(name: &str) -> Option<&'static BuiltinFunctionInfo> {
     explog::lookup(name)
         .or_else(|| trig::lookup(name))
         .or_else(|| algebra_number_special::lookup(name))
+        .or_else(|| geometry::lookup(name))
         .map(|f| f.info())
 }
 
@@ -118,6 +121,11 @@ pub fn trig_catalog() -> Vec<&'static BuiltinFunctionInfo> {
 /// Returns all registered built-in function infos for the algebra/number/special family.
 pub fn algebra_number_special_catalog() -> Vec<&'static BuiltinFunctionInfo> {
     algebra_number_special::catalog()
+}
+
+/// Returns all registered built-in function infos for the geometry family.
+pub fn geometry_catalog() -> Vec<&'static BuiltinFunctionInfo> {
+    geometry::catalog()
 }
 
 /// Validates argument count and returns an error if out of range.

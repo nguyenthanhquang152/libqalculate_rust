@@ -800,6 +800,37 @@ fn differential_oracle_numberbase_batch() {
     );
 }
 
+/// Differential oracle test for `geometry.batch`.
+#[test]
+fn differential_oracle_geometry_batch() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping differential_oracle_geometry_batch; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let batch_path = upstream_tests_dir().join("geometry.batch");
+    if !batch_path.exists() {
+        eprintln!(
+            "skipping differential_oracle_geometry_batch; {} not found",
+            batch_path.display()
+        );
+        return;
+    }
+
+    let defs = defs_dir();
+    let mismatches = differential_oracle_batch(&batch_path, &qalc, &defs);
+    report_mismatches(&mismatches);
+
+    assert!(
+        mismatches.is_empty(),
+        "differential oracle geometry.batch found {} mismatch(es)",
+        mismatches.len()
+    );
+}
+
 /// Focused fallback-disabled oracle evidence for no-session `numberbase.batch`
 /// rows. The session-setting rows are covered separately below.
 #[test]

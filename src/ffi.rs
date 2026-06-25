@@ -320,34 +320,47 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn contains_bitwise_ops(expr: &crate::ast::Expression) -> bool {
+fn expression_contains(
+    expr: &crate::ast::Expression,
+    predicate: &impl Fn(&crate::ast::Expression) -> bool,
+) -> bool {
     use crate::ast::Expression;
+    if predicate(expr) {
+        return true;
+    }
+
     match expr {
-        Expression::ShiftLeft { .. } | Expression::ShiftRight { .. } => true,
-        Expression::BitwiseAnd(_) | Expression::BitwiseOr(_) | Expression::BitwiseXor(_) => true,
-        Expression::BitwiseNot(_) => true,
         Expression::Conversion { expr, target } => {
-            contains_bitwise_ops(expr) || contains_bitwise_ops(target)
+            expression_contains(expr, predicate) || expression_contains(target, predicate)
         }
         Expression::Multiplication(children)
         | Expression::Addition(children)
         | Expression::LogicalAnd(children)
-        | Expression::LogicalOr(children) => {
-            children.as_slice().iter().any(contains_bitwise_ops)
-        }
-        Expression::Division { numerator, denominator } => {
-            contains_bitwise_ops(numerator) || contains_bitwise_ops(denominator)
+        | Expression::LogicalOr(children)
+        | Expression::BitwiseAnd(children)
+        | Expression::BitwiseOr(children)
+        | Expression::BitwiseXor(children) => children
+            .as_slice()
+            .iter()
+            .any(|child| expression_contains(child, predicate)),
+        Expression::Division {
+            numerator,
+            denominator,
+        } => {
+            expression_contains(numerator, predicate) || expression_contains(denominator, predicate)
         }
         Expression::Power { base, exponent } => {
-            contains_bitwise_ops(base) || contains_bitwise_ops(exponent)
+            expression_contains(base, predicate) || expression_contains(exponent, predicate)
         }
         Expression::Remainder { lhs, rhs }
         | Expression::Modulo { lhs, rhs }
         | Expression::IntegerDivision { lhs, rhs }
+        | Expression::ShiftLeft { lhs, rhs }
+        | Expression::ShiftRight { lhs, rhs }
         | Expression::LogicalXor { lhs, rhs }
         | Expression::Parallel { lhs, rhs }
         | Expression::Comparison { lhs, rhs, .. } => {
-            contains_bitwise_ops(lhs) || contains_bitwise_ops(rhs)
+            expression_contains(lhs, predicate) || expression_contains(rhs, predicate)
         }
         Expression::Inverse(child)
         | Expression::Negate(child)
@@ -356,16 +369,11 @@ fn contains_bitwise_ops(expr: &crate::ast::Expression) -> bool {
         | Expression::MultiFactorial { expr: child, .. }
         | Expression::Percent(child)
         | Expression::LogicalNot(child)
-        | Expression::Assignment { value: child, .. } => {
-            contains_bitwise_ops(child)
+        | Expression::BitwiseNot(child)
+        | Expression::Assignment { value: child, .. } => expression_contains(child, predicate),
+        Expression::FunctionCall { args, .. } | Expression::Vector(args) => {
+            args.iter().any(|child| expression_contains(child, predicate))
         }
-        Expression::FunctionCall { args, .. } => {
-            args.iter().any(contains_bitwise_ops)
-        }
-        Expression::Vector(elems) => {
-            elems.iter().any(contains_bitwise_ops)
-        }
-        // Leaf variants that never contain nested bitwise operations.
         Expression::Number(_)
         | Expression::Unit { .. }
         | Expression::Symbolic(_)
@@ -376,9 +384,35 @@ fn contains_bitwise_ops(expr: &crate::ast::Expression) -> bool {
     }
 }
 
+fn contains_bitwise_ops(expr: &crate::ast::Expression) -> bool {
+    expression_contains(expr, &|expr| {
+        use crate::ast::Expression;
+        matches!(
+            expr,
+            Expression::ShiftLeft { .. }
+                | Expression::ShiftRight { .. }
+                | Expression::BitwiseAnd(_)
+                | Expression::BitwiseOr(_)
+                | Expression::BitwiseXor(_)
+                | Expression::BitwiseNot(_)
+        )
+    })
+}
+
+fn is_geometry_expression(expr: &crate::ast::Expression) -> bool {
+    expression_contains(expr, &|expr| {
+        let crate::ast::Expression::FunctionCall { function, .. } = expr else {
+            return false;
+        };
+        crate::functions::geometry::lookup(function.id()).is_some()
+    })
+}
+
 fn evaluate_general_expression_natively(
+    profile: PrintProfile,
     parsed: &crate::ast::Expression,
     context: &mut crate::context::CalculatorContext,
+    precision_digits: usize,
 ) -> Option<String> {
     let evaluated = crate::eval::evaluate_ast(parsed, context).ok()?;
     match evaluated {
@@ -387,15 +421,28 @@ fn evaluate_general_expression_natively(
                 let (real, _) = num.to_canonical_ref();
                 match &*real {
                     crate::number::NumberValue::Rational(r) => r.value.numer().to_string(),
-                    _ => num.to_string(),
+                    _ => match profile {
+                        PrintProfile::Api => num.to_string(),
+                        PrintProfile::Qalc => num.to_qalc_string_with_precision(precision_digits),
+                    },
                 }
             } else {
-                num.to_string()
+                match profile {
+                    PrintProfile::Api => num.to_string(),
+                    PrintProfile::Qalc => num.to_qalc_string_with_precision(precision_digits),
+                }
             };
-            Some(output.replace('-', "\u{2212}"))
+            Some(match profile {
+                PrintProfile::Api => output,
+                PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+            })
         }
         crate::ast::Expression::Symbolic(sym) => {
-            Some(sym.name().to_string().replace('-', "\u{2212}"))
+            let name = sym.name().to_string();
+            Some(match profile {
+                PrintProfile::Api => name,
+                PrintProfile::Qalc => name.replace('-', "\u{2212}"),
+            })
         }
         _ => None,
     }
@@ -406,14 +453,19 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
 
     let parsed = crate::parser::operators::parse_expression(expr).ok();
     if let Some(ref ast) = parsed {
-        if contains_bitwise_ops(ast) {
+        if contains_bitwise_ops(ast) || is_geometry_expression(ast) {
             // Build a context from session settings so native evaluation
             // respects user configuration (precision, base, etc.).
             let mut context = crate::context::CalculatorContext::default();
             for cmd in settings {
                 let _ = context.apply_command(cmd);
             }
-            if let Some(output) = evaluate_general_expression_natively(ast, &mut context) {
+            if let Some(output) = evaluate_general_expression_natively(
+                profile,
+                ast,
+                &mut context,
+                parsed_settings.precision_digits(),
+            ) {
                 return Some(output);
             }
         }
