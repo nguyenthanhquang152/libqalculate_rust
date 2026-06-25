@@ -506,6 +506,26 @@ impl NumberValue {
         }
     }
 
+    /// Extracts the integer value if this representation represents an integer.
+    pub fn to_integer(&self) -> Option<rug::Integer> {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.value.is_integer() {
+                    Some(r.value.numer().clone())
+                } else {
+                    None
+                }
+            }
+            NumberValue::Float(f) if f.rug_float().is_integer() => f
+                .rug_float()
+                .clone()
+                .to_integer_round(rug::float::Round::Nearest)
+                .map(|(int, _)| int),
+            NumberValue::Float(_) => None,
+            _ => None,
+        }
+    }
+
     /// Extract whether the value is approximate.
     pub fn approximate(&self) -> bool {
         match self {
@@ -7261,7 +7281,7 @@ impl Number {
 
     /// Computes the double factorial n!! = n * (n-2) * (n-4) * ...
     ///
-    /// Returns NaN for negative numbers, non-integers, complex numbers,
+    /// Returns NaN for values less than -1, non-integers, complex numbers,
     /// and values exceeding [`MAX_FACTORIAL_INPUT`].
     pub fn double_factorial(&self) -> Self {
         let (real, imag) = self.to_canonical_ref();
@@ -7274,7 +7294,10 @@ impl Number {
                     return Self::nan();
                 }
                 let n = r.value.numer();
-                if *n < 0 {
+                if *n == -1 || *n == 0 {
+                    return Self::from_rational(Rational::from_i32(1));
+                }
+                if *n < -1 {
                     return Self::nan();
                 }
                 if let Some(n_u32) = n.to_u32() {
@@ -7294,7 +7317,10 @@ impl Number {
                     return Self::nan();
                 }
                 if let Some(n) = f.rug_float().to_integer() {
-                    if n < 0 {
+                    if n == -1 || n == 0 {
+                        return Self::from_rational(Rational::from_i32(1));
+                    }
+                    if n < -1 {
                         return Self::nan();
                     }
                     if let Some(n_u32) = n.to_u32() {
@@ -7327,9 +7353,6 @@ impl Number {
         if k == 1 {
             return self.factorial();
         }
-        if k == 2 {
-            return self.double_factorial();
-        }
         let (real, imag) = self.to_canonical_ref();
         if !imag.is_real_zero() {
             return Self::nan();
@@ -7346,6 +7369,12 @@ impl Number {
                 if let Some(n_u32) = n.to_u32() {
                     if n_u32 > MAX_FACTORIAL_INPUT {
                         return Self::nan();
+                    }
+                    if k == 2 {
+                        let result = rug::Integer::factorial_2(n_u32);
+                        return Self::from_rational(Rational {
+                            value: rug::Rational::from(result),
+                        });
                     }
                     let mut result = rug::Integer::from(1);
                     let mut current = n_u32;
@@ -7375,6 +7404,12 @@ impl Number {
                         if n_u32 > MAX_FACTORIAL_INPUT {
                             return Self::nan();
                         }
+                        if k == 2 {
+                            let result = rug::Integer::factorial_2(n_u32);
+                            return Self::from_rational(Rational {
+                                value: rug::Rational::from(result),
+                            });
+                        }
                         let mut result = rug::Integer::from(1);
                         let mut current = n_u32;
                         while current > 0 {
@@ -7396,6 +7431,76 @@ impl Number {
             }
             _ => Self::nan(),
         }
+    }
+
+    /// Extracts the integer value if the number is real and represents an integer.
+    pub fn to_integer(&self) -> Option<rug::Integer> {
+        let (real, imag) = self.to_canonical_ref();
+        if imag.is_real_zero() {
+            real.to_integer()
+        } else {
+            None
+        }
+    }
+
+    /// Computes the binomial coefficient binomial(self, k).
+    ///
+    /// Returns `Some(Number)` on success, or `None` if they are not integers,
+    /// or if the values are out of bounds or cannot be computed.
+    pub fn binomial(&self, k: &Self) -> Option<Self> {
+        let m_int = self.to_integer()?;
+        let k_int = k.to_integer()?;
+
+        if k_int < 0 {
+            return Some(Self::from_rational(Rational::from_i32(0)));
+        }
+
+        if m_int < 0 {
+            // m2 = -m + k - 1 = k - m - 1
+            let mut m2_int = rug::Integer::from(&k_int - &m_int);
+            m2_int -= 1;
+            let m2 = Number::from_rational(Rational {
+                value: rug::Rational::from(m2_int),
+            });
+            let mut result = m2.binomial(k)?;
+            if k_int.is_odd() {
+                result = result.negate();
+            }
+            return Some(result);
+        }
+
+        if k_int > m_int {
+            return Some(Self::from_rational(Rational::from_i32(0)));
+        }
+
+        if m_int == k_int || k_int == 0 {
+            return Some(Self::from_rational(Rational::from_i32(1)));
+        }
+
+        let mut k_effective = k_int.clone();
+        let complement = rug::Integer::from(&m_int - &k_int);
+        if complement < k_effective {
+            k_effective = complement;
+        }
+
+        // k must fit in u32 to use with rug::Integer binomial
+        let k_u32 = k_effective.to_u32()?;
+
+        // Safety checks for huge values to match C++
+        // C++: if((k.integerLength() > 21 || m.integerLength() > 22 * (1 << (21 - k.integerLength()))) && m > k + 1000000L) return false;
+        let k_len = k_effective.significant_bits();
+        let m_len = m_int.significant_bits();
+        if (k_len > 21 || m_len > 22 * (1 << (21 - std::cmp::min(21, k_len))))
+            && m_int > rug::Integer::from(&k_effective + 1_000_000)
+        {
+            return None;
+        }
+
+        let res_int = m_int.binomial(k_u32);
+
+        Some(Self::from_rational(Rational {
+            value: rug::Rational::from(res_int),
+        }))
     }
 }
 

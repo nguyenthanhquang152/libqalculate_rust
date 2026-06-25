@@ -187,6 +187,14 @@ impl StaticRegistry {
             }
         }
 
+        // Dynamically register combinatorics catalog functions and aliases
+        for func in crate::functions::combinatorics_catalog() {
+            reg.add_function(func.name, func.min_args, func.max_args);
+            for alias in func.aliases {
+                reg.add_function(*alias, func.min_args, func.max_args);
+            }
+        }
+
         reg
     }
 
