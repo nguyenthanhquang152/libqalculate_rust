@@ -506,6 +506,21 @@ impl NumberValue {
         }
     }
 
+    /// Extracts the integer value if this representation represents an integer.
+    pub fn to_integer(&self) -> Option<rug::Integer> {
+        match self {
+            NumberValue::Rational(r) => {
+                if r.value.is_integer() {
+                    Some(r.value.numer().clone())
+                } else {
+                    None
+                }
+            }
+            NumberValue::Float(f) => f.rug_float().to_integer(),
+            _ => None,
+        }
+    }
+
     /// Extract whether the value is approximate.
     pub fn approximate(&self) -> bool {
         match self {
@@ -7396,6 +7411,67 @@ impl Number {
             }
             _ => Self::nan(),
         }
+    }
+
+    /// Extracts the integer value if the number is real and represents an integer.
+    pub fn to_integer(&self) -> Option<rug::Integer> {
+        let (real, imag) = self.to_canonical_ref();
+        if imag.is_real_zero() {
+            real.to_integer()
+        } else {
+            None
+        }
+    }
+
+    /// Computes the binomial coefficient binomial(self, k).
+    ///
+    /// Returns `Some(Number)` on success, or `None` if they are not integers,
+    /// or if the values are out of bounds or cannot be computed.
+    pub fn binomial(&self, k: &Self) -> Option<Self> {
+        let m_int = self.to_integer()?;
+        let k_int = k.to_integer()?;
+
+        if m_int < 0 {
+            if k_int < 0 {
+                return None;
+            }
+            // m2 = -m + k - 1 = k - m - 1
+            let mut m2_int = rug::Integer::from(&k_int - &m_int);
+            m2_int -= 1;
+            let m2 = Number::from_rational(Rational {
+                value: rug::Rational::from(m2_int),
+            });
+            let mut result = m2.binomial(k)?;
+            if k_int.is_odd() {
+                result = result.negate();
+            }
+            return Some(result);
+        }
+
+        if k_int < 0 || k_int > m_int {
+            return Some(Self::from_rational(Rational::from_i32(0)));
+        }
+
+        if m_int == k_int || k_int == 0 {
+            return Some(Self::from_rational(Rational::from_i32(1)));
+        }
+
+        // k must fit in u32 to use with rug::Integer binomial
+        let k_u32 = k_int.to_u32()?;
+        
+        // Safety checks for huge values to match C++
+        // C++: if((k.integerLength() > 21 || m.integerLength() > 22 * (1 << (21 - k.integerLength()))) && m > k + 1000000L) return false;
+        let k_len = k_int.significant_bits();
+        let m_len = m_int.significant_bits();
+        if (k_len > 21 || m_len > 22 * (1 << (21 - std::cmp::min(21, k_len)))) && m_int > rug::Integer::from(&k_int + 1_000_000) {
+            return None;
+        }
+
+        let res_int = m_int.binomial(k_u32);
+        
+        Some(Self::from_rational(Rational {
+            value: rug::Rational::from(res_int),
+        }))
     }
 }
 

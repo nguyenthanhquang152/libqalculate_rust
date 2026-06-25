@@ -11,6 +11,7 @@
 //! - `../libqalculate/data/functions.xml.in`
 
 pub mod algebra_number_special;
+pub mod combinatorics;
 pub mod explog;
 pub mod geometry;
 pub mod trig;
@@ -96,6 +97,11 @@ pub fn dispatch_builtin(
         return Some(func.evaluate(args, context));
     }
 
+    // Try combinatorics family
+    if let Some(func) = combinatorics::lookup(name) {
+        return Some(func.evaluate(args, context));
+    }
+
     None
 }
 
@@ -105,6 +111,7 @@ pub fn builtin_info(name: &str) -> Option<&'static BuiltinFunctionInfo> {
         .or_else(|| trig::lookup(name))
         .or_else(|| algebra_number_special::lookup(name))
         .or_else(|| geometry::lookup(name))
+        .or_else(|| combinatorics::lookup(name))
         .map(|f| f.info())
 }
 
@@ -126,6 +133,11 @@ pub fn algebra_number_special_catalog() -> Vec<&'static BuiltinFunctionInfo> {
 /// Returns all registered built-in function infos for the geometry family.
 pub fn geometry_catalog() -> Vec<&'static BuiltinFunctionInfo> {
     geometry::catalog()
+}
+
+/// Returns all registered built-in function infos for the combinatorics family.
+pub fn combinatorics_catalog() -> Vec<&'static BuiltinFunctionInfo> {
+    combinatorics::catalog()
 }
 
 /// Validates argument count and returns an error if out of range.
