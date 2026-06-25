@@ -44,6 +44,14 @@ fn test_constructors() {
 }
 
 #[test]
+fn non_integral_float_does_not_convert_to_integer() {
+    let non_integral = Number::from_float(Float::from_f64(5.5, 53));
+
+    assert!(non_integral.to_integer().is_none());
+    assert!(non_integral.binomial(&Number::from_i32(2)).is_none());
+}
+
+#[test]
 fn test_special_floats() {
     let n_nan = Number::from_f64(f64::NAN);
     assert!(n_nan.is_nan());
