@@ -351,17 +351,16 @@ impl CalculatorContext {
             Ok(expr_res) => {
                 let simplified = match &expr_res {
                     crate::ast::Expression::Number(_) => expr_res,
+                    crate::ast::Expression::Text(_) => expr_res,
                     crate::ast::Expression::Symbolic(_) => expr_res,
                     _ => crate::simplify::simplify_ast(&expr_res, self),
                 };
-                match simplified {
-                    crate::ast::Expression::Number(num) => {
-                        Ok(num.to_string())
-                    }
-                    crate::ast::Expression::Symbolic(sym) => {
-                        Ok(sym.name().to_string())
-                    }
-                    other => Err(format!("Unevaluated expression: {:?}", other)),
+                if let Some(output) =
+                    crate::text::format_result_with_numbers(&simplified, &|num| num.to_string())
+                {
+                    Ok(output)
+                } else {
+                    Err(format!("Unevaluated expression: {:?}", simplified))
                 }
             }
             Err(err_str) => {

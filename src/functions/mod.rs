@@ -15,6 +15,7 @@ pub mod combinatorics;
 pub mod explog;
 pub mod geometry;
 pub mod trig;
+pub mod utility_string;
 
 use crate::ast::Expression;
 use crate::context::CalculatorContext;
@@ -102,6 +103,11 @@ pub fn dispatch_builtin(
         return Some(func.evaluate(args, context));
     }
 
+    // Try utility/string family
+    if let Some(func) = utility_string::lookup(name) {
+        return Some(func.evaluate(args, context));
+    }
+
     None
 }
 
@@ -112,6 +118,7 @@ pub fn builtin_info(name: &str) -> Option<&'static BuiltinFunctionInfo> {
         .or_else(|| algebra_number_special::lookup(name))
         .or_else(|| geometry::lookup(name))
         .or_else(|| combinatorics::lookup(name))
+        .or_else(|| utility_string::lookup(name))
         .map(|f| f.info())
 }
 
@@ -138,6 +145,11 @@ pub fn geometry_catalog() -> Vec<&'static BuiltinFunctionInfo> {
 /// Returns all registered built-in function infos for the combinatorics family.
 pub fn combinatorics_catalog() -> Vec<&'static BuiltinFunctionInfo> {
     combinatorics::catalog()
+}
+
+/// Returns all registered built-in function infos for the utility/string family.
+pub fn utility_string_catalog() -> Vec<&'static BuiltinFunctionInfo> {
+    utility_string::catalog()
 }
 
 /// Validates argument count and returns an error if out of range.

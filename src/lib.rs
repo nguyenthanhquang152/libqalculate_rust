@@ -29,6 +29,7 @@ pub mod ffi;
 
 mod numberbase;
 mod session;
+mod text;
 
 /// Calculator options module.
 pub mod options;
