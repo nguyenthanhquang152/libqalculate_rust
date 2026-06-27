@@ -21,7 +21,13 @@ impl NativeSessionSettings {
     pub(crate) fn from_raw(settings: &[&str]) -> Option<Self> {
         let mut state = Self::default();
         for setting in settings {
-            let cmd_str = if setting.trim_start().starts_with("set ")
+            let cmd_str = if setting.trim_start().starts_with("assumptions ") {
+                let rest = setting.trim_start().strip_prefix("assumptions ").unwrap();
+                format!("assume {}", rest)
+            } else if setting.trim_start().starts_with("/assumptions ") {
+                let rest = setting.trim_start().strip_prefix("/assumptions ").unwrap();
+                format!("assume {}", rest)
+            } else if setting.trim_start().starts_with("set ")
                 || setting.trim_start().starts_with("/set ")
                 || setting.trim_start().starts_with("assume ")
                 || setting.trim_start().starts_with("/assume ")

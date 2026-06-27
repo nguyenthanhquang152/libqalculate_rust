@@ -20,7 +20,11 @@ impl EnvGuard {
         unsafe {
             std::env::set_var(name, value);
         }
-        Self { name, old_value, _lock_guard: lock_guard }
+        Self {
+            name,
+            old_value,
+            _lock_guard: lock_guard,
+        }
     }
 }
 
@@ -40,8 +44,8 @@ impl Drop for EnvGuard {
 fn eval_native(input: &str) -> Result<Expression, String> {
     let _guard = EnvGuard::set("QALCULATE_DISABLE_FALLBACK", "1");
     let mut context = CalculatorContext::default();
-    let expr = libqalculate_rust::parser::operators::parse_expression(input)
-        .map_err(|e| e.to_string())?;
+    let expr =
+        libqalculate_rust::parser::operators::parse_expression(input).map_err(|e| e.to_string())?;
     evaluate_ast(&expr, &mut context)
 }
 

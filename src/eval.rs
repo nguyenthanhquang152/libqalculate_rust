@@ -16,12 +16,11 @@ fn to_integer(num: &Number) -> Option<rug::Integer> {
     let (real, _) = num.to_canonical_ref();
     match &*real {
         NumberValue::Rational(r) if r.value.is_integer() => Some(r.value.numer().clone()),
-        NumberValue::Float(f) if f.rug_float().is_integer() => {
-            f.rug_float()
-                .clone()
-                .to_integer_round(rug::float::Round::Nearest)
-                .map(|(int, _)| int)
-        }
+        NumberValue::Float(f) if f.rug_float().is_integer() => f
+            .rug_float()
+            .clone()
+            .to_integer_round(rug::float::Round::Nearest)
+            .map(|(int, _)| int),
         _ => None,
     }
 }
@@ -82,8 +81,12 @@ fn evaluate_addition(
 
     // Check if any child is a raw percent term (before evaluation).
     // Also check if there is at least one non-percent term, which triggers relative percent.
-    let has_any_percent = children.iter().any(|c| unwrap_percent_additive(c).is_some());
-    let has_any_non_percent = children.iter().any(|c| unwrap_percent_additive(c).is_none());
+    let has_any_percent = children
+        .iter()
+        .any(|c| unwrap_percent_additive(c).is_some());
+    let has_any_non_percent = children
+        .iter()
+        .any(|c| unwrap_percent_additive(c).is_none());
 
     if !has_any_percent || !has_any_non_percent {
         // Fast path: no percent children, or ALL children are percent.
@@ -109,19 +112,18 @@ fn evaluate_addition(
 
             if has_non_percent_base {
                 // We have a non-percent base: apply relative percent.
-                match (&accumulator, &pct_inner_eval) {
-                    (Some(Expression::Number(acc_num)), Expression::Number(pct_num)) => {
-                        // Relative percent: acc * (1 ± pct/100)
-                        let pct_fraction = pct_num.div(&hundred);
-                        let multiplier = if is_negated {
-                            one.sub(&pct_fraction)
-                        } else {
-                            one.add(&pct_fraction)
-                        };
-                        accumulator = Some(Expression::Number(acc_num.mul(&multiplier)));
-                        continue;
-                    }
-                    _ => {} // Fall through to normal handling
+                if let (Some(Expression::Number(acc_num)), Expression::Number(pct_num)) =
+                    (&accumulator, &pct_inner_eval)
+                {
+                    // Relative percent: acc * (1 ± pct/100)
+                    let pct_fraction = pct_num.div(&hundred);
+                    let multiplier = if is_negated {
+                        one.sub(&pct_fraction)
+                    } else {
+                        one.add(&pct_fraction)
+                    };
+                    accumulator = Some(Expression::Number(acc_num.mul(&multiplier)));
+                    continue;
                 }
             }
 
@@ -157,12 +159,10 @@ fn add_to_accumulator(accumulator: Option<Expression>, term: Expression) -> Expr
         (None, t) => t,
         (Some(Expression::Number(a)), Expression::Number(b)) => Expression::Number(a.add(&b)),
         (Some(acc), t) => {
-            Expression::Addition(
-                NaryChildren::new(vec![acc, t]).unwrap_or_else(|_| {
-                    // Fallback: should not happen with 2 elements
-                    NaryChildren::new(vec![Expression::Number(Number::from_i32(0))]).unwrap()
-                }),
-            )
+            Expression::Addition(NaryChildren::new(vec![acc, t]).unwrap_or_else(|_| {
+                // Fallback: should not happen with 2 elements
+                NaryChildren::new(vec![Expression::Number(Number::from_i32(0))]).unwrap()
+            }))
         }
     }
 }
@@ -721,9 +721,7 @@ fn evaluate_ast_rec(
         Expression::Symbolic(sym) => evaluate_symbolic(sym, context),
         Expression::FunctionCall { function, args } => {
             let fid = function.id();
-            if let Some(res) =
-                crate::functions::utility_string::evaluate_raw(fid, args, context)
-            {
+            if let Some(res) = crate::functions::utility_string::evaluate_raw(fid, args, context) {
                 return res.map_err(|e| e.message);
             }
 
@@ -756,10 +754,13 @@ fn evaluate_ast_rec(
                     return Ok(res);
                 }
             } else if fid == "lxor" && args_eval.len() == 2 {
-                return evaluate_ast_rec(&Expression::LogicalXor {
-                    lhs: Box::new(args_eval[0].clone()),
-                    rhs: Box::new(args_eval[1].clone()),
-                }, context);
+                return evaluate_ast_rec(
+                    &Expression::LogicalXor {
+                        lhs: Box::new(args_eval[0].clone()),
+                        rhs: Box::new(args_eval[1].clone()),
+                    },
+                    context,
+                );
             } else if fid == "if" && (args_eval.len() == 3 || args_eval.len() == 4) {
                 if let Some(res) = evaluate_logical_if(&args_eval, context)? {
                     return Ok(res);
@@ -849,10 +850,7 @@ fn evaluate_ast_rec(
                     let result = num.multi_factorial(*count);
                     if result.is_nan() {
                         let msg = crate::messages::CalculatorMessage::new(
-                            format!(
-                                "Multi-factorial({}) requires a non-negative integer",
-                                count
-                            ),
+                            format!("Multi-factorial({}) requires a non-negative integer", count),
                             crate::messages::MessageType::Warning,
                             crate::messages::MessageCategory::None,
                             crate::messages::MessageStage::Calculation,
@@ -922,7 +920,8 @@ fn evaluate_conversion(
 
     // Only convert if it's a known keyword
     let is_supported_keyword = match keyword.as_str() {
-        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float" | "fp32" | "ieee754" | "sexa" | "sexagesimal" | "unicode" => true,
+        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float"
+        | "fp32" | "ieee754" | "sexa" | "sexagesimal" | "unicode" => true,
         other if other.starts_with("bin") && other[3..].chars().all(|c| c.is_ascii_digit()) => true,
         _ => false,
     };
@@ -1046,9 +1045,7 @@ fn evaluate_shift_logic(
     })
 }
 
-fn evaluate_builtin_shift(
-    args: &[Expression],
-) -> Result<Option<Expression>, String> {
+fn evaluate_builtin_shift(args: &[Expression]) -> Result<Option<Expression>, String> {
     // The upstream `shift` function accepts 2 or 3 arguments where the
     // optional third is a boolean direction flag.  We only handle the
     // common 2-argument form natively; 3-arg calls fall through to the

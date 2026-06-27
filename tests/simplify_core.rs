@@ -1,6 +1,6 @@
 use libqalculate_rust::context::CalculatorContext;
-use libqalculate_rust::simplify::simplify_ast;
 use libqalculate_rust::parser::operators::parse_expression;
+use libqalculate_rust::simplify::simplify_ast;
 
 struct EnvGuard {
     name: &'static str,
@@ -36,7 +36,7 @@ fn assert_simplifies_to(input: &str, expected: &str) {
     let simplified = simplify_ast(&expr, &mut context);
     let expected_expr = parse_expression(expected).unwrap();
     let expected_simplified = simplify_ast(&expected_expr, &mut context);
-    
+
     assert_eq!(
         format!("{:?}", simplified),
         format!("{:?}", expected_simplified),
@@ -49,7 +49,7 @@ fn assert_simplifies_to(input: &str, expected: &str) {
 #[test]
 fn test_identity_and_folding() {
     let _guard = EnvGuard::set("QALCULATE_DISABLE_FALLBACK", "1");
-    
+
     // Identity operations
     assert_simplifies_to("x + 0", "x");
     assert_simplifies_to("x * 1", "x");
@@ -81,7 +81,7 @@ fn test_division_to_signum() {
     let _guard = EnvGuard::set("QALCULATE_DISABLE_FALLBACK", "1");
     // x / abs(x) -> sgn(x)
     assert_simplifies_to("x / abs(x)", "sgn(x)");
-    
+
     // x / abs(x) - sgn(x) -> 0
     assert_simplifies_to("x / abs(x) - sgn(x)", "0");
 }

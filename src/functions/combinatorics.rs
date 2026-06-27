@@ -493,56 +493,120 @@ mod tests {
     }
 
     fn assert_exact_integer(value: Number) {
-        assert!(value.to_integer().is_some(), "expected exact integer, got {value}");
+        assert!(
+            value.to_integer().is_some(),
+            "expected exact integer, got {value}"
+        );
     }
 
     #[test]
     fn test_factorial() {
-        assert_eq!(eval_func("factorial", &[Number::from_i32(0)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("factorial", &[Number::from_i32(1)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("factorial", &[Number::from_i32(5)]).unwrap().to_string(), "120");
+        assert_eq!(
+            eval_func("factorial", &[Number::from_i32(0)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("factorial", &[Number::from_i32(1)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("factorial", &[Number::from_i32(5)])
+                .unwrap()
+                .to_string(),
+            "120"
+        );
     }
 
     #[test]
     fn test_factorial2() {
-        assert_eq!(eval_func("factorial2", &[Number::from_i32(0)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("factorial2", &[Number::from_i32(-1)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("factorial2", &[Number::from_i32(1)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("factorial2", &[Number::from_i32(5)]).unwrap().to_string(), "15");
-        assert_eq!(eval_func("factorial2", &[Number::from_i32(6)]).unwrap().to_string(), "48");
+        assert_eq!(
+            eval_func("factorial2", &[Number::from_i32(0)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("factorial2", &[Number::from_i32(-1)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("factorial2", &[Number::from_i32(1)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("factorial2", &[Number::from_i32(5)])
+                .unwrap()
+                .to_string(),
+            "15"
+        );
+        assert_eq!(
+            eval_func("factorial2", &[Number::from_i32(6)])
+                .unwrap()
+                .to_string(),
+            "48"
+        );
     }
 
     #[test]
     fn test_multifactorial() {
         assert_eq!(
-            eval_func("multifactorial", &[Number::from_i32(5), Number::from_i32(2)]).unwrap().to_string(),
+            eval_func(
+                "multifactorial",
+                &[Number::from_i32(5), Number::from_i32(2)]
+            )
+            .unwrap()
+            .to_string(),
             "15"
         );
         assert_eq!(
-            eval_func("multifactorial", &[Number::from_i32(6), Number::from_i32(3)]).unwrap().to_string(),
+            eval_func(
+                "multifactorial",
+                &[Number::from_i32(6), Number::from_i32(3)]
+            )
+            .unwrap()
+            .to_string(),
             "18"
         );
-        assert!(eval_func("multifactorial", &[Number::from_i32(-1), Number::from_i32(2)])
-            .unwrap()
-            .is_nan());
+        assert!(eval_func(
+            "multifactorial",
+            &[Number::from_i32(-1), Number::from_i32(2)]
+        )
+        .unwrap()
+        .is_nan());
     }
 
     #[test]
     fn test_binomial() {
         assert_eq!(
-            eval_func("binomial", &[Number::from_i32(5), Number::from_i32(2)]).unwrap().to_string(),
+            eval_func("binomial", &[Number::from_i32(5), Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
             "10"
         );
         assert_eq!(
-            eval_func("binomial", &[Number::from_i32(5), Number::from_i32(0)]).unwrap().to_string(),
+            eval_func("binomial", &[Number::from_i32(5), Number::from_i32(0)])
+                .unwrap()
+                .to_string(),
             "1"
         );
         assert_eq!(
-            eval_func("binomial", &[Number::from_i32(5), Number::from_i32(5)]).unwrap().to_string(),
+            eval_func("binomial", &[Number::from_i32(5), Number::from_i32(5)])
+                .unwrap()
+                .to_string(),
             "1"
         );
         assert_eq!(
-            eval_func("binomial", &[Number::from_i32(-3), Number::from_i32(-1)]).unwrap().to_string(),
+            eval_func("binomial", &[Number::from_i32(-3), Number::from_i32(-1)])
+                .unwrap()
+                .to_string(),
             "0"
         );
         assert_eq!(
@@ -608,57 +672,138 @@ mod tests {
     #[test]
     fn test_perm() {
         assert_eq!(
-            eval_func("perm", &[Number::from_i32(5), Number::from_i32(2)]).unwrap().to_string(),
+            eval_func("perm", &[Number::from_i32(5), Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
             "20"
         );
         assert_eq!(
-            eval_func("perm", &[Number::from_i32(5), Number::from_i32(5)]).unwrap().to_string(),
+            eval_func("perm", &[Number::from_i32(5), Number::from_i32(5)])
+                .unwrap()
+                .to_string(),
             "120"
         );
         assert_eq!(
-            eval_func("perm", &[Number::from_i32(5), Number::from_i32(6)]).unwrap().to_string(),
+            eval_func("perm", &[Number::from_i32(5), Number::from_i32(6)])
+                .unwrap()
+                .to_string(),
             "0"
         );
         assert_eq!(
-            eval_func("perm", &[Number::from_i32(-3), Number::from_i32(2)]).unwrap().to_string(),
+            eval_func("perm", &[Number::from_i32(-3), Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
             "12"
         );
-        assert_exact_integer(eval_func("perm", &[Number::from_i32(10_001), Number::from_i32(10_001)]).unwrap());
+        assert_exact_integer(
+            eval_func(
+                "perm",
+                &[Number::from_i32(10_001), Number::from_i32(10_001)],
+            )
+            .unwrap(),
+        );
     }
 
     #[test]
     fn test_comb() {
         assert_eq!(
-            eval_func("comb", &[Number::from_i32(5), Number::from_i32(2)]).unwrap().to_string(),
+            eval_func("comb", &[Number::from_i32(5), Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
             "10"
         );
     }
 
     #[test]
     fn test_derangements() {
-        assert_eq!(eval_func("derangements", &[Number::from_i32(0)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("derangements", &[Number::from_i32(1)]).unwrap().to_string(), "0");
-        assert_eq!(eval_func("derangements", &[Number::from_i32(2)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("derangements", &[Number::from_i32(3)]).unwrap().to_string(), "2");
-        assert_eq!(eval_func("derangements", &[Number::from_i32(4)]).unwrap().to_string(), "9");
-        assert_eq!(eval_func("derangements", &[Number::from_i32(5)]).unwrap().to_string(), "44");
+        assert_eq!(
+            eval_func("derangements", &[Number::from_i32(0)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("derangements", &[Number::from_i32(1)])
+                .unwrap()
+                .to_string(),
+            "0"
+        );
+        assert_eq!(
+            eval_func("derangements", &[Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("derangements", &[Number::from_i32(3)])
+                .unwrap()
+                .to_string(),
+            "2"
+        );
+        assert_eq!(
+            eval_func("derangements", &[Number::from_i32(4)])
+                .unwrap()
+                .to_string(),
+            "9"
+        );
+        assert_eq!(
+            eval_func("derangements", &[Number::from_i32(5)])
+                .unwrap()
+                .to_string(),
+            "44"
+        );
         assert_exact_integer(eval_func("derangements", &[Number::from_i32(10_001)]).unwrap());
     }
 
     #[test]
     fn test_hyperfactorial() {
-        assert_eq!(eval_func("hyperfactorial", &[Number::from_i32(1)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("hyperfactorial", &[Number::from_i32(2)]).unwrap().to_string(), "4");
-        assert_eq!(eval_func("hyperfactorial", &[Number::from_i32(3)]).unwrap().to_string(), "108");
+        assert_eq!(
+            eval_func("hyperfactorial", &[Number::from_i32(1)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("hyperfactorial", &[Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
+            "4"
+        );
+        assert_eq!(
+            eval_func("hyperfactorial", &[Number::from_i32(3)])
+                .unwrap()
+                .to_string(),
+            "108"
+        );
         assert_exact_integer(eval_func("hyperfactorial", &[Number::from_i32(151)]).unwrap());
     }
 
     #[test]
     fn test_superfactorial() {
-        assert_eq!(eval_func("superfactorial", &[Number::from_i32(1)]).unwrap().to_string(), "1");
-        assert_eq!(eval_func("superfactorial", &[Number::from_i32(2)]).unwrap().to_string(), "2");
-        assert_eq!(eval_func("superfactorial", &[Number::from_i32(3)]).unwrap().to_string(), "12");
-        assert_eq!(eval_func("superfactorial", &[Number::from_i32(4)]).unwrap().to_string(), "288");
+        assert_eq!(
+            eval_func("superfactorial", &[Number::from_i32(1)])
+                .unwrap()
+                .to_string(),
+            "1"
+        );
+        assert_eq!(
+            eval_func("superfactorial", &[Number::from_i32(2)])
+                .unwrap()
+                .to_string(),
+            "2"
+        );
+        assert_eq!(
+            eval_func("superfactorial", &[Number::from_i32(3)])
+                .unwrap()
+                .to_string(),
+            "12"
+        );
+        assert_eq!(
+            eval_func("superfactorial", &[Number::from_i32(4)])
+                .unwrap()
+                .to_string(),
+            "288"
+        );
         assert_exact_integer(eval_func("superfactorial", &[Number::from_i32(1_001)]).unwrap());
     }
 
@@ -667,7 +812,8 @@ mod tests {
         let func = lookup("derangements").expect("derangements registered");
         let mut ctx = make_ctx();
         ctx.evaluation_options.approximation = crate::options::ApproximationMode::Exact;
-        let oversized = Expression::Number(Number::from_i64(MAX_EXACT_COMBINATORICS_STEPS as i64 + 1));
+        let oversized =
+            Expression::Number(Number::from_i64(MAX_EXACT_COMBINATORICS_STEPS as i64 + 1));
         let result = func.evaluate(&[oversized], &mut ctx).unwrap();
 
         assert!(matches!(result, Expression::FunctionCall { .. }));

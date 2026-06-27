@@ -158,7 +158,10 @@ fn replace_nounit_title_represents_batch() {
     assert_eval_eq(&mut ctx, "replace(x + y, [x, y], [a, b])", "a + b");
 
     // replace with precalc
-    ctx.variables.insert("v".to_string(), libqalculate_rust::parser::operators::parse_expression("x + 1").unwrap());
+    ctx.variables.insert(
+        "v".to_string(),
+        libqalculate_rust::parser::operators::parse_expression("x + 1").unwrap(),
+    );
     assert_eval_eq(&mut ctx, "replace(v, x, y, 0)", "v");
     assert_eval_eq(&mut ctx, "replace(v, x, y, 1)", "y + 1");
 
@@ -166,7 +169,11 @@ fn replace_nounit_title_represents_batch() {
     let len_before = ctx.messages.len();
     let _ = eval_to_expr(&mut ctx, "replace(x + 1, z, y)");
     assert!(ctx.messages.len() > len_before);
-    assert!(ctx.messages.get_messages().iter().any(|msg| msg.message().contains("was not found")));
+    assert!(ctx
+        .messages
+        .get_messages()
+        .iter()
+        .any(|msg| msg.message().contains("was not found")));
 
     // nounit
     assert_eq!(eval(&mut ctx, "nounit(5 m)"), "5");
@@ -199,5 +206,3 @@ fn replace_nounit_title_represents_batch() {
     assert_eq!(eval(&mut ctx, "representsNumber(5.5)"), "1");
     assert_eq!(eval(&mut ctx, "representsNumber(3.14)"), "1");
 }
-
-

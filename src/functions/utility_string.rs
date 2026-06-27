@@ -188,12 +188,8 @@ static MESSAGE_FUNCTION: UtilityStringFunction = UtilityStringFunction {
 static REPLACE_FUNCTION: UtilityStringFunction = UtilityStringFunction {
     info: &REPLACE_INFO,
 };
-static NOUNIT_FUNCTION: UtilityStringFunction = UtilityStringFunction {
-    info: &NOUNIT_INFO,
-};
-static TITLE_FUNCTION: UtilityStringFunction = UtilityStringFunction {
-    info: &TITLE_INFO,
-};
+static NOUNIT_FUNCTION: UtilityStringFunction = UtilityStringFunction { info: &NOUNIT_INFO };
+static TITLE_FUNCTION: UtilityStringFunction = UtilityStringFunction { info: &TITLE_INFO };
 static REPRESENTS_INTEGER_FUNCTION: UtilityStringFunction = UtilityStringFunction {
     info: &REPRESENTS_INTEGER_INFO,
 };
@@ -276,10 +272,18 @@ pub(crate) fn evaluate_raw(
         "replace" => evaluate_replace(args, context),
         "nounit" => evaluate_nounit(args, context),
         "title" => evaluate_title(args, context),
-        "representsInteger" => evaluate_represents("representsInteger", args, context, |e| e.represents_integer()),
-        "representsReal" => evaluate_represents("representsReal", args, context, |e| e.represents_real()),
-        "representsRational" => evaluate_represents("representsRational", args, context, |e| e.represents_rational()),
-        "representsNumber" => evaluate_represents("representsNumber", args, context, |e| e.represents_number()),
+        "representsInteger" => evaluate_represents("representsInteger", args, context, |e| {
+            e.represents_integer()
+        }),
+        "representsReal" => {
+            evaluate_represents("representsReal", args, context, |e| e.represents_real())
+        }
+        "representsRational" => evaluate_represents("representsRational", args, context, |e| {
+            e.represents_rational()
+        }),
+        "representsNumber" => {
+            evaluate_represents("representsNumber", args, context, |e| e.represents_number())
+        }
         _ => return None,
     })
 }
@@ -450,7 +454,6 @@ fn evaluated_string_expression(
     let text = result_to_unquoted_text(&evaluated, context)?;
     Ok(Expression::Text(text))
 }
-
 fn text_argument_to_string(
     arg: &Expression,
     context: &mut CalculatorContext,
@@ -569,6 +572,7 @@ impl Encoding {
 fn encoding_name(name: &str) -> Option<Encoding> {
     let normalized = name
         .chars()
+        .filter(|ch| !ch.is_whitespace())
         .map(|ch| if ch == '\u{2212}' { '-' } else { ch })
         .collect::<String>()
         .to_ascii_lowercase();
@@ -625,19 +629,24 @@ fn number_to_u128(number: &Number) -> Result<u128, FunctionError> {
 
 fn evaluate_replace(args: &[Expression], context: &mut CalculatorContext) -> FunctionResult {
     validate_arity("replace", args, 3, Some(4))?;
-    let old_eval = crate::eval::evaluate_ast(&args[1], context).map_err(|message| function_error("replace", &message))?;
-    let new_eval = crate::eval::evaluate_ast(&args[2], context).map_err(|message| function_error("replace", &message))?;
+    let old_eval = crate::eval::evaluate_ast(&args[1], context)
+        .map_err(|message| function_error("replace", &message))?;
+    let new_eval = crate::eval::evaluate_ast(&args[2], context)
+        .map_err(|message| function_error("replace", &message))?;
     let precalc = bool_argument(args.get(3), false, context)?;
 
     let mut expr = if precalc {
-        crate::eval::evaluate_ast(&args[0], context).map_err(|message| function_error("replace", &message))?
+        crate::eval::evaluate_ast(&args[0], context)
+            .map_err(|message| function_error("replace", &message))?
     } else {
         args[0].clone()
     };
 
     let mut found = false;
     match (&old_eval, &new_eval) {
-        (Expression::Vector(from_items), Expression::Vector(to_items)) if from_items.len() == to_items.len() => {
+        (Expression::Vector(from_items), Expression::Vector(to_items))
+            if from_items.len() == to_items.len() =>
+        {
             for (from_item, to_item) in from_items.iter().zip(to_items.iter()) {
                 let (new_expr, ok) = replace_expression(&expr, from_item, to_item);
                 if ok {
@@ -664,7 +673,10 @@ fn evaluate_replace(args: &[Expression], context: &mut CalculatorContext) -> Fun
 
     if !found {
         context.messages.push(CalculatorMessage::new(
-            format!("Original value ({}) was not found.", crate::text::format_raw_expression(&old_eval)),
+            format!(
+                "Original value ({}) was not found.",
+                crate::text::format_raw_expression(&old_eval)
+            ),
             MessageType::Warning,
             MessageCategory::None,
             MessageStage::Calculation,
@@ -678,11 +690,7 @@ fn nary_children(children: Vec<Expression>) -> crate::ast::NaryChildren {
     crate::ast::NaryChildren::new(children).unwrap()
 }
 
-fn replace_expression(
-    expr: &Expression,
-    from: &Expression,
-    to: &Expression,
-) -> (Expression, bool) {
+fn replace_expression(expr: &Expression, from: &Expression, to: &Expression) -> (Expression, bool) {
     if expr == from {
         return (to.clone(), true);
     }
@@ -781,19 +789,28 @@ fn replace_expression(
                 new_children.push(new_child);
             }
             if changed {
-                (Expression::Multiplication(nary_children(new_children)), true)
+                (
+                    Expression::Multiplication(nary_children(new_children)),
+                    true,
+                )
             } else {
                 (expr.clone(), false)
             }
         }
-        Expression::Division { numerator, denominator } => {
+        Expression::Division {
+            numerator,
+            denominator,
+        } => {
             let (new_num, r1) = replace_expression(numerator, from, to);
             let (new_den, r2) = replace_expression(denominator, from, to);
             if r1 || r2 {
-                (Expression::Division {
-                    numerator: Box::new(new_num),
-                    denominator: Box::new(new_den),
-                }, true)
+                (
+                    Expression::Division {
+                        numerator: Box::new(new_num),
+                        denominator: Box::new(new_den),
+                    },
+                    true,
+                )
             } else {
                 (expr.clone(), false)
             }
@@ -802,10 +819,13 @@ fn replace_expression(
             let (new_base, r1) = replace_expression(base, from, to);
             let (new_exp, r2) = replace_expression(exponent, from, to);
             if r1 || r2 {
-                (Expression::Power {
-                    base: Box::new(new_base),
-                    exponent: Box::new(new_exp),
-                }, true)
+                (
+                    Expression::Power {
+                        base: Box::new(new_base),
+                        exponent: Box::new(new_exp),
+                    },
+                    true,
+                )
             } else {
                 (expr.clone(), false)
             }
@@ -837,10 +857,13 @@ fn replace_expression(
                 new_args.push(new_arg);
             }
             if changed {
-                (Expression::FunctionCall {
-                    function: function.clone(),
-                    args: new_args,
-                }, true)
+                (
+                    Expression::FunctionCall {
+                        function: function.clone(),
+                        args: new_args,
+                    },
+                    true,
+                )
             } else {
                 (expr.clone(), false)
             }
@@ -866,7 +889,9 @@ fn replace_expression(
             let mut new_children = Vec::new();
             for child in children.as_slice() {
                 let (new_child, r) = replace_expression(child, from, to);
-                if r { changed = true; }
+                if r {
+                    changed = true;
+                }
                 new_children.push(new_child);
             }
             if changed {
@@ -880,7 +905,9 @@ fn replace_expression(
             let mut new_children = Vec::new();
             for child in children.as_slice() {
                 let (new_child, r) = replace_expression(child, from, to);
-                if r { changed = true; }
+                if r {
+                    changed = true;
+                }
                 new_children.push(new_child);
             }
             if changed {
@@ -901,10 +928,13 @@ fn replace_expression(
             let (new_lhs, r1) = replace_expression(lhs, from, to);
             let (new_rhs, r2) = replace_expression(rhs, from, to);
             if r1 || r2 {
-                (Expression::LogicalXor {
-                    lhs: Box::new(new_lhs),
-                    rhs: Box::new(new_rhs),
-                }, true)
+                (
+                    Expression::LogicalXor {
+                        lhs: Box::new(new_lhs),
+                        rhs: Box::new(new_rhs),
+                    },
+                    true,
+                )
             } else {
                 (expr.clone(), false)
             }
@@ -914,7 +944,9 @@ fn replace_expression(
             let mut new_children = Vec::new();
             for child in children.as_slice() {
                 let (new_child, r) = replace_expression(child, from, to);
-                if r { changed = true; }
+                if r {
+                    changed = true;
+                }
                 new_children.push(new_child);
             }
             if changed {
@@ -928,7 +960,9 @@ fn replace_expression(
             let mut new_children = Vec::new();
             for child in children.as_slice() {
                 let (new_child, r) = replace_expression(child, from, to);
-                if r { changed = true; }
+                if r {
+                    changed = true;
+                }
                 new_children.push(new_child);
             }
             if changed {
@@ -942,7 +976,9 @@ fn replace_expression(
             let mut new_children = Vec::new();
             for child in children.as_slice() {
                 let (new_child, r) = replace_expression(child, from, to);
-                if r { changed = true; }
+                if r {
+                    changed = true;
+                }
                 new_children.push(new_child);
             }
             if changed {
@@ -965,16 +1001,16 @@ fn replace_expression(
 
 fn evaluate_nounit(args: &[Expression], context: &mut CalculatorContext) -> FunctionResult {
     validate_arity("nounit", args, 1, Some(1))?;
-    let evaluated = crate::eval::evaluate_ast(&args[0], context).map_err(|message| function_error("nounit", &message))?;
+    let evaluated = crate::eval::evaluate_ast(&args[0], context)
+        .map_err(|message| function_error("nounit", &message))?;
     let stripped = strip_units_expr(&evaluated);
-    crate::eval::evaluate_ast(&stripped, context).map_err(|message| function_error("nounit", &message))
+    crate::eval::evaluate_ast(&stripped, context)
+        .map_err(|message| function_error("nounit", &message))
 }
 
 fn strip_units_expr(expr: &Expression) -> Expression {
     match expr {
-        Expression::Unit { .. } => {
-            Expression::Number(Number::from_rational(Rational::from_i32(1)))
-        }
+        Expression::Unit { .. } => Expression::Number(Number::from_rational(Rational::from_i32(1))),
         Expression::Multiplication(children) => {
             let mut new_children = Vec::new();
             for child in children.as_slice() {
@@ -1008,7 +1044,10 @@ fn strip_units_expr(expr: &Expression) -> Expression {
                 Expression::Addition(nary_children(new_children))
             }
         }
-        Expression::Division { numerator, denominator } => {
+        Expression::Division {
+            numerator,
+            denominator,
+        } => {
             let num = strip_units_expr(numerator);
             let den = strip_units_expr(denominator);
             if let Expression::Number(ref n) = den {
@@ -1021,18 +1060,12 @@ fn strip_units_expr(expr: &Expression) -> Expression {
                 denominator: Box::new(den),
             }
         }
-        Expression::Power { base, exponent } => {
-            Expression::Power {
-                base: Box::new(strip_units_expr(base)),
-                exponent: Box::new(strip_units_expr(exponent)),
-            }
-        }
-        Expression::Negate(child) => {
-            Expression::Negate(Box::new(strip_units_expr(child)))
-        }
-        Expression::Inverse(child) => {
-            Expression::Inverse(Box::new(strip_units_expr(child)))
-        }
+        Expression::Power { base, exponent } => Expression::Power {
+            base: Box::new(strip_units_expr(base)),
+            exponent: Box::new(strip_units_expr(exponent)),
+        },
+        Expression::Negate(child) => Expression::Negate(Box::new(strip_units_expr(child))),
+        Expression::Inverse(child) => Expression::Inverse(Box::new(strip_units_expr(child))),
         Expression::FunctionCall { function, args } => {
             let new_args: Vec<_> = args.iter().map(strip_units_expr).collect();
             Expression::FunctionCall {
@@ -1054,7 +1087,10 @@ fn evaluate_title(args: &[Expression], context: &mut CalculatorContext) -> Funct
     if let Some(title) = get_item_title(&name, context) {
         Ok(Expression::Text(title))
     } else {
-        Err(function_error("title", &format!("Object {} does not exist.", name)))
+        Err(function_error(
+            "title",
+            &format!("Object {} does not exist.", name),
+        ))
     }
 }
 
@@ -1092,10 +1128,18 @@ fn get_item_title(name: &str, context: &CalculatorContext) -> Option<String> {
 
     if let Some(match_result) = context.definitions.lookup(name, false) {
         match match_result {
-            crate::parser::names::NameMatch::Function { definition, .. } => Some(definition.id().to_string()),
-            crate::parser::names::NameMatch::Unit { definition, .. } => Some(definition.id().to_string()),
-            crate::parser::names::NameMatch::Variable { definition } => Some(definition.id().to_string()),
-            crate::parser::names::NameMatch::Prefix { definition } => Some(definition.id().to_string()),
+            crate::parser::names::NameMatch::Function { definition, .. } => {
+                Some(definition.id().to_string())
+            }
+            crate::parser::names::NameMatch::Unit { definition, .. } => {
+                Some(definition.id().to_string())
+            }
+            crate::parser::names::NameMatch::Variable { definition } => {
+                Some(definition.id().to_string())
+            }
+            crate::parser::names::NameMatch::Prefix { definition } => {
+                Some(definition.id().to_string())
+            }
         }
     } else {
         None
@@ -1110,13 +1154,20 @@ fn evaluate_represents(
 ) -> FunctionResult {
     validate_arity(name, args, 1, Some(1))?;
     if check(&args[0]) {
-        return Ok(Expression::Number(Number::from_rational(Rational::from_i32(1))));
+        return Ok(Expression::Number(Number::from_rational(
+            Rational::from_i32(1),
+        )));
     }
-    let evaluated = crate::eval::evaluate_ast(&args[0], context).map_err(|message| function_error(name, &message))?;
+    let evaluated = crate::eval::evaluate_ast(&args[0], context)
+        .map_err(|message| function_error(name, &message))?;
     if check(&evaluated) {
-        return Ok(Expression::Number(Number::from_rational(Rational::from_i32(1))));
+        return Ok(Expression::Number(Number::from_rational(
+            Rational::from_i32(1),
+        )));
     }
-    Ok(Expression::Number(Number::from_rational(Rational::from_i32(0))))
+    Ok(Expression::Number(Number::from_rational(
+        Rational::from_i32(0),
+    )))
 }
 
 fn function_error(function_name: &str, message: &str) -> FunctionError {

@@ -118,7 +118,8 @@ impl CalculatorContext {
 
     /// Returns the target evaluation precision in bits.
     pub fn min_precision_bits(&self) -> u32 {
-        let bits = self.precision_digits
+        let bits = self
+            .precision_digits
             .max(1)
             .saturating_mul(4)
             .saturating_add(16)
@@ -289,11 +290,10 @@ impl CalculatorContext {
                 match simplified {
                     crate::ast::Expression::Number(num) => {
                         if num.is_nan() {
-                            let has_calc_warning = self
-                                .messages
-                                .get_messages()
-                                .iter()
-                                .any(|m| m.stage() == crate::messages::MessageStage::Calculation);
+                            let has_calc_warning =
+                                self.messages.get_messages().iter().any(|m| {
+                                    m.stage() == crate::messages::MessageStage::Calculation
+                                });
                             if !has_calc_warning {
                                 let msg = crate::messages::CalculatorMessage::new(
                                     "Calculation resulted in NaN".to_string(),
@@ -325,10 +325,7 @@ impl CalculatorContext {
     /// Parse and evaluate an expression, returning the result as a formatted string.
     ///
     /// This handles both numeric and symbolic results (e.g., from base conversions).
-    pub fn parse_and_evaluate_to_string(
-        &mut self,
-        input: &str,
-    ) -> Result<String, String> {
+    pub fn parse_and_evaluate_to_string(&mut self, input: &str) -> Result<String, String> {
         // 1. Parse stage
         let expr = match crate::parser::operators::parse_expression(input) {
             Ok(expr) => expr,

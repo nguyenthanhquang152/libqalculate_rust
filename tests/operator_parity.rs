@@ -252,4 +252,3 @@ fn double_factorial_one() {
     // 1!! = 1
     assert_eq!(eval("1!!"), "1");
 }
-

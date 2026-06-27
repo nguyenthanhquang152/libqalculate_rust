@@ -945,7 +945,9 @@ impl Expression {
             | Self::BitwiseOr(children)
             | Self::BitwiseXor(children)
             | Self::LogicalAnd(children)
-            | Self::LogicalOr(children) => children.as_slice().iter().all(|c| c.represents_integer()),
+            | Self::LogicalOr(children) => {
+                children.as_slice().iter().all(|c| c.represents_integer())
+            }
             Self::Power { base, exponent } => {
                 base.represents_integer() && exponent.represents_integer()
             }

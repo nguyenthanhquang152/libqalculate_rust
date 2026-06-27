@@ -20,6 +20,9 @@ pub mod eval;
 /// Native AST simplifier.
 pub mod simplify;
 
+/// Native symbolic / polynomial algorithms.
+pub mod symbolic;
+
 /// FFI bindings to C++ Calculator.
 ///
 /// This is the **only** module that uses `#![allow(unsafe_code)]` to override
