@@ -371,9 +371,9 @@ fn expression_contains(
         | Expression::LogicalNot(child)
         | Expression::BitwiseNot(child)
         | Expression::Assignment { value: child, .. } => expression_contains(child, predicate),
-        Expression::FunctionCall { args, .. } | Expression::Vector(args) => {
-            args.iter().any(|child| expression_contains(child, predicate))
-        }
+        Expression::FunctionCall { args, .. } | Expression::Vector(args) => args
+            .iter()
+            .any(|child| expression_contains(child, predicate)),
         Expression::Number(_)
         | Expression::Text(_)
         | Expression::Unit { .. }
@@ -425,6 +425,25 @@ fn is_text_native_expression(expr: &crate::ast::Expression) -> bool {
     })
 }
 
+fn is_polynomial_native_expression(expr: &crate::ast::Expression) -> bool {
+    expression_contains(expr, &|expr| {
+        if let crate::ast::Expression::FunctionCall { function, .. } = expr {
+            return matches!(
+                function.id(),
+                "coeff"
+                    | "lcoeff"
+                    | "tcoeff"
+                    | "degree"
+                    | "ldegree"
+                    | "pcontent"
+                    | "primpart"
+                    | "punit"
+                    | "factor"
+            );
+        }
+        false
+    })
+}
 fn evaluate_general_expression_natively(
     profile: PrintProfile,
     parsed: &crate::ast::Expression,
@@ -434,21 +453,11 @@ fn evaluate_general_expression_natively(
     let evaluated = crate::eval::evaluate_ast(parsed, context).ok()?;
     match evaluated {
         crate::ast::Expression::Number(num) => {
-            let output = if num.is_integer() {
-                let (real, _) = num.to_canonical_ref();
-                match &*real {
-                    crate::number::NumberValue::Rational(r) => r.value.numer().to_string(),
-                    _ => match profile {
-                        PrintProfile::Api => num.to_string(),
-                        PrintProfile::Qalc => num.to_qalc_string_with_precision(precision_digits),
-                    },
-                }
-            } else {
-                match profile {
-                    PrintProfile::Api => num.to_string(),
-                    PrintProfile::Qalc => num.to_qalc_string_with_precision(precision_digits),
-                }
-            };
+            let output = num.to_string_with_options(
+                precision_digits,
+                context.print_options.number_fraction_format,
+                context.evaluation_options.approximation,
+            );
             Some(match profile {
                 PrintProfile::Api => output,
                 PrintProfile::Qalc => output.replace('-', "\u{2212}"),
@@ -463,23 +472,11 @@ fn evaluate_general_expression_natively(
         }
         other => {
             let output = crate::text::format_result_with_numbers(&other, &|num| {
-                if num.is_integer() {
-                    let (real, _) = num.to_canonical_ref();
-                    match &*real {
-                        crate::number::NumberValue::Rational(r) => r.value.numer().to_string(),
-                        _ => match profile {
-                            PrintProfile::Api => num.to_string(),
-                            PrintProfile::Qalc => {
-                                num.to_qalc_string_with_precision(precision_digits)
-                            }
-                        },
-                    }
-                } else {
-                    match profile {
-                        PrintProfile::Api => num.to_string(),
-                        PrintProfile::Qalc => num.to_qalc_string_with_precision(precision_digits),
-                    }
-                }
+                num.to_string_with_options(
+                    precision_digits,
+                    context.print_options.number_fraction_format,
+                    context.evaluation_options.approximation,
+                )
             })?;
             Some(match profile {
                 PrintProfile::Api => output,
@@ -521,7 +518,11 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
 
     let parsed = crate::parser::operators::parse_expression(expr).ok();
     if let Some(ref ast) = parsed {
-        if contains_bitwise_ops(ast) || is_geometry_expression(ast) || is_text_native_expression(ast) {
+        if contains_bitwise_ops(ast)
+            || is_geometry_expression(ast)
+            || is_text_native_expression(ast)
+            || is_polynomial_native_expression(ast)
+        {
             // Build a context from session settings so native evaluation
             // respects user configuration (precision, base, etc.).
             let mut context = crate::context::CalculatorContext::default();

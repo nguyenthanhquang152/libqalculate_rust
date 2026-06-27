@@ -295,11 +295,7 @@ impl BuiltinFunction for PowerTowerFn {
                 let h = match height.to_i64() {
                     Some(h) if h > 0 => h as u64,
                     _ => {
-                        push_error(
-                            context,
-                            "powertower",
-                            "Height must be a positive integer",
-                        );
+                        push_error(context, "powertower", "Height must be a positive integer");
                         return Ok(Expression::Number(Number::nan()));
                     }
                 };
@@ -345,11 +341,7 @@ impl BuiltinFunction for AllRootsFn {
                 let n = match n_num.to_i64() {
                     Some(n) if n > 0 => n as u64,
                     _ => {
-                        push_error(
-                            context,
-                            "allroots",
-                            "Degree must be a positive integer",
-                        );
+                        push_error(context, "allroots", "Degree must be a positive integer");
                         return Ok(Expression::Number(Number::nan()));
                     }
                 };
@@ -654,7 +646,7 @@ mod tests {
         match result {
             Expression::Number(n) => {
                 // ln(1) = 0
-                assert!(n.is_zero(), "ln(1) should be 0, got {}", n.to_string());
+                assert!(n.is_zero(), "ln(1) should be 0, got {}", n);
             }
             _ => panic!("Expected Number"),
         }
@@ -791,7 +783,7 @@ mod tests {
             .unwrap();
         match result {
             Expression::Number(n) => {
-                assert!(n.is_infinite(), "ln(0) should be -infinity, got {}", n.to_string());
+                assert!(n.is_infinite(), "ln(0) should be -infinity, got {}", n);
             }
             _ => panic!("Expected Number"),
         }
@@ -807,7 +799,7 @@ mod tests {
             .unwrap();
         match result {
             Expression::Number(n) => {
-                assert!(n.is_zero(), "sqrt(0) should be 0, got {}", n.to_string());
+                assert!(n.is_zero(), "sqrt(0) should be 0, got {}", n);
             }
             _ => panic!("Expected Number"),
         }
@@ -827,7 +819,7 @@ mod tests {
             .unwrap();
         match result {
             Expression::Number(n) => {
-                assert!(n.is_zero(), "root(0, 5) should be 0, got {}", n.to_string());
+                assert!(n.is_zero(), "root(0, 5) should be 0, got {}", n);
             }
             _ => panic!("Expected Number"),
         }
@@ -847,11 +839,17 @@ mod tests {
             .unwrap();
         match result {
             Expression::Number(n) => {
-                assert!(n.is_nan(), "powertower(2, 1001) should return NaN (exceeds cap)");
+                assert!(
+                    n.is_nan(),
+                    "powertower(2, 1001) should return NaN (exceeds cap)"
+                );
             }
             _ => panic!("Expected Number"),
         }
-        assert!(!ctx.messages.is_empty(), "should push an error for excessive height");
+        assert!(
+            !ctx.messages.is_empty(),
+            "should push an error for excessive height"
+        );
     }
 
     #[test]
@@ -868,11 +866,17 @@ mod tests {
             .unwrap();
         match result {
             Expression::Number(n) => {
-                assert!(n.is_nan(), "allroots(4, 10001) should return NaN (exceeds cap)");
+                assert!(
+                    n.is_nan(),
+                    "allroots(4, 10001) should return NaN (exceeds cap)"
+                );
             }
             _ => panic!("Expected Number"),
         }
-        assert!(!ctx.messages.is_empty(), "should push an error for excessive degree");
+        assert!(
+            !ctx.messages.is_empty(),
+            "should push an error for excessive degree"
+        );
     }
 
     #[test]
@@ -917,13 +921,21 @@ mod tests {
     fn log2_info_reports_correct_name() {
         let f = lookup("log2").unwrap();
         assert_eq!(f.info().name, "log2", "log2 should report name 'log2'");
-        assert_eq!(f.info().max_args, Some(1), "log2 should accept exactly 1 arg");
+        assert_eq!(
+            f.info().max_args,
+            Some(1),
+            "log2 should accept exactly 1 arg"
+        );
     }
 
     #[test]
     fn log10_info_reports_correct_name() {
         let f = lookup("log10").unwrap();
         assert_eq!(f.info().name, "log10", "log10 should report name 'log10'");
-        assert_eq!(f.info().max_args, Some(1), "log10 should accept exactly 1 arg");
+        assert_eq!(
+            f.info().max_args,
+            Some(1),
+            "log10 should accept exactly 1 arg"
+        );
     }
 }

@@ -96,7 +96,7 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
     if kind_a != kind_b {
         return kind_priority(kind_a).cmp(&kind_priority(kind_b));
     }
-    
+
     fn compare_slices(sa: &[Expression], sb: &[Expression]) -> std::cmp::Ordering {
         let len_cmp = sa.len().cmp(&sb.len());
         if len_cmp != std::cmp::Ordering::Equal {
@@ -141,8 +141,14 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             compare_slices(na.as_slice(), nb.as_slice())
         }
         (
-            Expression::Division { numerator: na, denominator: da },
-            Expression::Division { numerator: nb, denominator: db },
+            Expression::Division {
+                numerator: na,
+                denominator: da,
+            },
+            Expression::Division {
+                numerator: nb,
+                denominator: db,
+            },
         ) => {
             let n_cmp = compare_expressions(na, nb);
             if n_cmp != std::cmp::Ordering::Equal {
@@ -151,8 +157,14 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             compare_expressions(da, db)
         }
         (
-            Expression::Power { base: ba, exponent: ea },
-            Expression::Power { base: bb, exponent: eb },
+            Expression::Power {
+                base: ba,
+                exponent: ea,
+            },
+            Expression::Power {
+                base: bb,
+                exponent: eb,
+            },
         ) => {
             let b_cmp = compare_expressions(ba, bb);
             if b_cmp != std::cmp::Ordering::Equal {
@@ -164,10 +176,7 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             Expression::Remainder { lhs: la, rhs: ra },
             Expression::Remainder { lhs: lb, rhs: rb },
         )
-        | (
-            Expression::Modulo { lhs: la, rhs: ra },
-            Expression::Modulo { lhs: lb, rhs: rb },
-        )
+        | (Expression::Modulo { lhs: la, rhs: ra }, Expression::Modulo { lhs: lb, rhs: rb })
         | (
             Expression::IntegerDivision { lhs: la, rhs: ra },
             Expression::IntegerDivision { lhs: lb, rhs: rb },
@@ -184,10 +193,7 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             Expression::LogicalXor { lhs: la, rhs: ra },
             Expression::LogicalXor { lhs: lb, rhs: rb },
         )
-        | (
-            Expression::Parallel { lhs: la, rhs: ra },
-            Expression::Parallel { lhs: lb, rhs: rb },
-        ) => {
+        | (Expression::Parallel { lhs: la, rhs: ra }, Expression::Parallel { lhs: lb, rhs: rb }) => {
             let l_cmp = compare_expressions(la, lb);
             if l_cmp != std::cmp::Ordering::Equal {
                 return l_cmp;
@@ -195,8 +201,14 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             compare_expressions(ra, rb)
         }
         (
-            Expression::MultiFactorial { expr: ea, count: ca },
-            Expression::MultiFactorial { expr: eb, count: cb },
+            Expression::MultiFactorial {
+                expr: ea,
+                count: ca,
+            },
+            Expression::MultiFactorial {
+                expr: eb,
+                count: cb,
+            },
         ) => {
             let e_cmp = compare_expressions(ea, eb);
             if e_cmp != std::cmp::Ordering::Equal {
@@ -205,8 +217,16 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             ca.cmp(cb)
         }
         (
-            Expression::Unit { unit: ua, prefix: pa, plural: pla },
-            Expression::Unit { unit: ub, prefix: pb, plural: plb },
+            Expression::Unit {
+                unit: ua,
+                prefix: pa,
+                plural: pla,
+            },
+            Expression::Unit {
+                unit: ub,
+                prefix: pb,
+                plural: plb,
+            },
         ) => {
             let u_cmp = ua.id().cmp(ub.id());
             if u_cmp != std::cmp::Ordering::Equal {
@@ -224,8 +244,14 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             pla.cmp(plb)
         }
         (
-            Expression::FunctionCall { function: fa, args: aa },
-            Expression::FunctionCall { function: fb, args: ab },
+            Expression::FunctionCall {
+                function: fa,
+                args: aa,
+            },
+            Expression::FunctionCall {
+                function: fb,
+                args: ab,
+            },
         ) => {
             let f_cmp = fa.id().cmp(fb.id());
             if f_cmp != std::cmp::Ordering::Equal {
@@ -233,12 +259,18 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             }
             compare_slices(aa, ab)
         }
-        (Expression::Vector(va), Expression::Vector(vb)) => {
-            compare_slices(va, vb)
-        }
+        (Expression::Vector(va), Expression::Vector(vb)) => compare_slices(va, vb),
         (
-            Expression::Comparison { op: oa, lhs: la, rhs: ra },
-            Expression::Comparison { op: ob, lhs: lb, rhs: rb },
+            Expression::Comparison {
+                op: oa,
+                lhs: la,
+                rhs: ra,
+            },
+            Expression::Comparison {
+                op: ob,
+                lhs: lb,
+                rhs: rb,
+            },
         ) => {
             let op_val = |o: &crate::ast::ComparisonOperator| match o {
                 crate::ast::ComparisonOperator::Less => 0,
@@ -259,8 +291,14 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             compare_expressions(ra, rb)
         }
         (
-            Expression::Conversion { expr: ea, target: ta },
-            Expression::Conversion { expr: eb, target: tb },
+            Expression::Conversion {
+                expr: ea,
+                target: ta,
+            },
+            Expression::Conversion {
+                expr: eb,
+                target: tb,
+            },
         ) => {
             let e_cmp = compare_expressions(ea, eb);
             if e_cmp != std::cmp::Ordering::Equal {
@@ -269,8 +307,14 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             compare_expressions(ta, tb)
         }
         (
-            Expression::Assignment { variable: va, value: val_a },
-            Expression::Assignment { variable: vb, value: val_b },
+            Expression::Assignment {
+                variable: va,
+                value: val_a,
+            },
+            Expression::Assignment {
+                variable: vb,
+                value: val_b,
+            },
         ) => {
             let v_cmp = va.cmp(vb);
             if v_cmp != std::cmp::Ordering::Equal {
@@ -278,9 +322,7 @@ fn compare_expressions(a: &Expression, b: &Expression) -> std::cmp::Ordering {
             }
             compare_expressions(val_a, val_b)
         }
-        (Expression::DateTime(da), Expression::DateTime(db)) => {
-            da.source().cmp(db.source())
-        }
+        (Expression::DateTime(da), Expression::DateTime(db)) => da.source().cmp(db.source()),
         (Expression::Undefined, Expression::Undefined) => std::cmp::Ordering::Equal,
         (Expression::Aborted, Expression::Aborted) => std::cmp::Ordering::Equal,
         _ => std::cmp::Ordering::Equal,
@@ -292,13 +334,20 @@ fn simplify_negate(expr: &Expression) -> Expression {
         Expression::Negate(inner) => *inner.clone(),
         Expression::Number(num) => Expression::Number(num.negate()),
         Expression::Addition(nary) => {
-            let mut negated_terms = nary.as_slice().iter().map(simplify_negate).collect::<Vec<_>>();
+            let mut negated_terms = nary
+                .as_slice()
+                .iter()
+                .map(simplify_negate)
+                .collect::<Vec<_>>();
             negated_terms.sort_by(compare_expressions);
             Expression::Addition(NaryChildren::new(negated_terms).unwrap())
         }
         Expression::Multiplication(nary) => {
             let mut terms = nary.as_slice().to_vec();
-            if let Some(pos) = terms.iter().position(|t| matches!(t, Expression::Number(_))) {
+            if let Some(pos) = terms
+                .iter()
+                .position(|t| matches!(t, Expression::Number(_)))
+            {
                 if let Expression::Number(num) = &terms[pos] {
                     let negated_num = num.negate();
                     if negated_num.is_one() {
@@ -351,7 +400,10 @@ fn extract_coeff_and_base(expr: &Expression) -> (Number, Expression) {
             } else if rest.len() == 1 {
                 (coeff, rest.remove(0))
             } else {
-                (coeff, Expression::Multiplication(NaryChildren::new(rest).unwrap()))
+                (
+                    coeff,
+                    Expression::Multiplication(NaryChildren::new(rest).unwrap()),
+                )
             }
         }
         Expression::Number(num) => (num.clone(), Expression::Number(Number::from_i32(1))),
@@ -381,9 +433,9 @@ fn make_product(coeff: Number, base: Expression) -> Expression {
                 terms.extend(nary.as_slice().to_vec());
                 Expression::Multiplication(NaryChildren::new(terms).unwrap())
             }
-            other => {
-                Expression::Multiplication(NaryChildren::new(vec![Expression::Number(coeff), other]).unwrap())
-            }
+            other => Expression::Multiplication(
+                NaryChildren::new(vec![Expression::Number(coeff), other]).unwrap(),
+            ),
         }
     }
 }
@@ -524,7 +576,7 @@ fn simplify_rec(expr: &Expression, context: &mut CalculatorContext) -> Expressio
                                     num_accum = num_accum.mul(num);
                                 }
                                 other => {
-                                    let (base, exp) = extract_base_and_exponent(&other);
+                                    let (base, exp) = extract_base_and_exponent(other);
                                     add_multiplication_term(&mut sym_terms, base, exp);
                                 }
                             }
@@ -628,6 +680,28 @@ fn simplify_rec(expr: &Expression, context: &mut CalculatorContext) -> Expressio
                         if e_num.is_one() {
                             return b.clone();
                         }
+                        if e_num.is_rational() && e_num.to_f64() == 0.5 {
+                            if let Some(Expression::Power {
+                                base: inner_base,
+                                exponent: inner_exponent,
+                            }) = crate::symbolic::match_perfect_square(b, context)
+                            {
+                                if let Expression::Number(ref inner_exp_num) = *inner_exponent {
+                                    if inner_exp_num.to_f64() == 2.0 {
+                                        if context.assumptions.default_sign
+                                            == crate::context::AssumptionSign::Positive
+                                        {
+                                            return *inner_base;
+                                        } else {
+                                            return Expression::FunctionCall {
+                                                function: crate::ast::FunctionRef::new("abs"),
+                                                args: vec![*inner_base],
+                                            };
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     if let Expression::Number(b_num) = b {
                         if b_num.is_one() {
@@ -667,25 +741,35 @@ fn simplify_rec(expr: &Expression, context: &mut CalculatorContext) -> Expressio
                         if terms.len() == 2 {
                             let (t1, t2) = (&terms[0], &terms[1]);
                             let is_abs_t1 = |e: &Expression, possible_abs: &Expression| -> bool {
-                                if let Expression::FunctionCall { function: f, args: a } = possible_abs {
+                                if let Expression::FunctionCall {
+                                    function: f,
+                                    args: a,
+                                } = possible_abs
+                                {
                                     f.id() == "abs" && a.len() == 1 && a[0] == *e
                                 } else {
                                     false
                                 }
                             };
-                            let check_pair = |e1: &Expression, e2: &Expression| -> Option<Expression> {
-                                let (coeff, base) = extract_coeff_and_base(e2);
-                                if coeff == Number::from_i32(-1) && is_abs_t1(e1, &base) {
-                                    return Some(Expression::Addition(NaryChildren::new(vec![
-                                        Expression::FunctionCall {
-                                            function: crate::ast::FunctionRef::new("abs".to_owned()),
-                                            args: vec![e1.clone()],
-                                        },
-                                        simplify_negate(e1),
-                                    ]).unwrap()));
-                                }
-                                None
-                            };
+                            let check_pair =
+                                |e1: &Expression, e2: &Expression| -> Option<Expression> {
+                                    let (coeff, base) = extract_coeff_and_base(e2);
+                                    if coeff == Number::from_i32(-1) && is_abs_t1(e1, &base) {
+                                        return Some(Expression::Addition(
+                                            NaryChildren::new(vec![
+                                                Expression::FunctionCall {
+                                                    function: crate::ast::FunctionRef::new(
+                                                        "abs".to_owned(),
+                                                    ),
+                                                    args: vec![e1.clone()],
+                                                },
+                                                simplify_negate(e1),
+                                            ])
+                                            .unwrap(),
+                                        ));
+                                    }
+                                    None
+                                };
                             if let Some(res) = check_pair(t1, t2) {
                                 return simplify_rec(&res, context);
                             }

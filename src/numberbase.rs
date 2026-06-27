@@ -418,7 +418,9 @@ pub(crate) fn convert_number(
         if let Some(val) = number_to_u128(num) {
             return Ok(format_binary(val, width));
         } else {
-            return Err("Cannot convert to binary: value is not a non-negative integer".to_string());
+            return Err(
+                "Cannot convert to binary: value is not a non-negative integer".to_string(),
+            );
         }
     }
 
@@ -434,7 +436,10 @@ pub(crate) fn convert_number(
             if let Some(val) = number_to_u128(num) {
                 Ok(format_integer_base(val, 16))
             } else {
-                Err("Cannot convert to hexadecimal: value is not a non-negative integer".to_string())
+                Err(
+                    "Cannot convert to hexadecimal: value is not a non-negative integer"
+                        .to_string(),
+                )
             }
         }
         "roman" => {
@@ -445,13 +450,15 @@ pub(crate) fn convert_number(
                     Err("Cannot convert to Roman numerals: value must be 1–3999".to_string())
                 }
             } else {
-                Err("Cannot convert to Roman numerals: value is not a non-negative integer".to_string())
+                Err(
+                    "Cannot convert to Roman numerals: value is not a non-negative integer"
+                        .to_string(),
+                )
             }
         }
         "base" => {
-            let base_val = base_arg.ok_or_else(|| {
-                "Invalid base for conversion: must be 2–36".to_string()
-            })?;
+            let base_val =
+                base_arg.ok_or_else(|| "Invalid base for conversion: must be 2–36".to_string())?;
             if !(2..=36).contains(&base_val) {
                 return Err("Invalid base for conversion: must be 2–36".to_string());
             }
@@ -529,17 +536,18 @@ pub(crate) fn number_to_u128(num: &crate::number::Number) -> Option<u128> {
 /// Interpret hex digits in an Expression and return a decimal Number Expression.
 pub(crate) fn builtin_hex(arg: &crate::ast::Expression) -> Option<crate::ast::Expression> {
     let hex_str = match arg {
-        crate::ast::Expression::Number(num) => {
-            number_to_u128(num).map(|val| val.to_string())
-        }
+        crate::ast::Expression::Number(num) => number_to_u128(num).map(|val| val.to_string()),
         crate::ast::Expression::Symbolic(sym) => Some(sym.name().to_string()),
         _ => None,
     };
     if let Some(hex_digits) = hex_str {
         if let Some(parsed) = parse_radix_u128(&hex_digits, 16) {
-            return Some(crate::ast::Expression::Number(crate::number::Number::from_rational(
-                crate::number::Rational::new(parsed as i128, 1),
-            )));
+            return Some(crate::ast::Expression::Number(
+                crate::number::Number::from_rational(crate::number::Rational::new(
+                    parsed as i128,
+                    1,
+                )),
+            ));
         }
     }
     None
@@ -556,13 +564,17 @@ pub(crate) fn builtin_float(arg: &crate::ast::Expression) -> Option<crate::ast::
                 // If the result is an exact integer, return as Rational
                 if float_val.fract() == 0.0 && float_val.is_finite() {
                     let int_val = float_val as i128;
-                    return Some(crate::ast::Expression::Number(crate::number::Number::from_rational(
-                        crate::number::Rational::new(int_val, 1),
-                    )));
+                    return Some(crate::ast::Expression::Number(
+                        crate::number::Number::from_rational(crate::number::Rational::new(
+                            int_val, 1,
+                        )),
+                    ));
                 }
                 // Otherwise return as a formatted string
                 let result_str = format!("{}", float_val);
-                return Some(crate::ast::Expression::Symbolic(crate::ast::Symbol::new(result_str)));
+                return Some(crate::ast::Expression::Symbolic(crate::ast::Symbol::new(
+                    result_str,
+                )));
             }
         }
     }
@@ -574,12 +586,13 @@ pub(crate) fn builtin_float_error(arg: &crate::ast::Expression) -> Option<crate:
     if let crate::ast::Expression::Number(num) = arg {
         let decimal_str = number_to_decimal_string(num);
         if let Some(error_str) = float_error_decimal(&decimal_str) {
-            return Some(crate::ast::Expression::Symbolic(crate::ast::Symbol::new(error_str)));
+            return Some(crate::ast::Expression::Symbolic(crate::ast::Symbol::new(
+                error_str,
+            )));
         }
     }
     None
 }
-
 
 fn is_vetted_native_numberbase_expr(expr: &str) -> bool {
     let trimmed = expr.trim();

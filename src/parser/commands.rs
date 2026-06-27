@@ -114,7 +114,9 @@ pub fn parse_command(input: &str) -> Result<SessionCommand, ParseError> {
     if cmd_name.eq_ignore_ascii_case("set") {
         let setting = parse_set_setting(rest, span)?;
         Ok(SessionCommand::Set(SetCommand { setting, span }))
-    } else if cmd_name.eq_ignore_ascii_case("assume") {
+    } else if cmd_name.eq_ignore_ascii_case("assume")
+        || cmd_name.eq_ignore_ascii_case("assumptions")
+    {
         let kind = parse_assume_kind(rest, span)?;
         Ok(SessionCommand::Assume(AssumeCommand { kind, span }))
     } else {

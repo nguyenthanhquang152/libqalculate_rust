@@ -41,10 +41,7 @@ fn eval_num(name: &str, args: &[f64]) -> String {
 /// result as a string.
 fn eval_complex(name: &str, re: f64, im: f64) -> String {
     let func = lookup(name).unwrap_or_else(|| panic!("no function '{name}'"));
-    let num = crate::number::Number::new_complex(
-        make_test_number(re),
-        make_test_number(im),
-    );
+    let num = crate::number::Number::new_complex(make_test_number(re), make_test_number(im));
     let expr_args = vec![crate::ast::Expression::Number(num)];
     let mut ctx = CalculatorContext::new();
     match func.evaluate(&expr_args, &mut ctx) {
@@ -61,11 +58,15 @@ fn eval_complex(name: &str, re: f64, im: f64) -> String {
 #[test]
 fn catalog_returns_all_functions() {
     let catalog = super::catalog();
-    assert!(catalog.len() >= 14, "Expected ≥14 functions, got {}", catalog.len());
+    assert!(
+        catalog.len() >= 14,
+        "Expected ≥14 functions, got {}",
+        catalog.len()
+    );
     let names: Vec<_> = catalog.iter().map(|f| f.name).collect();
     for expected in &[
-        "abs", "sgn", "round", "floor", "ceil", "trunc", "re", "im",
-        "arg", "conj", "gamma", "erf", "zeta", "gammainc",
+        "abs", "sgn", "round", "floor", "ceil", "trunc", "re", "im", "arg", "conj", "gamma", "erf",
+        "zeta", "gammainc",
     ] {
         assert!(names.contains(expected), "missing '{expected}' in catalog");
     }
@@ -208,7 +209,10 @@ fn arg_negative() {
     // arg(-1) = π
     let result = eval_num("arg", &[-1.0]);
     let val: f64 = result.parse().unwrap();
-    assert!((val - std::f64::consts::PI).abs() < 1e-6, "expected π, got {val}");
+    assert!(
+        (val - std::f64::consts::PI).abs() < 1e-6,
+        "expected π, got {val}"
+    );
 }
 
 #[test]
@@ -220,7 +224,10 @@ fn conj_real() {
 fn conj_complex() {
     // conj(3+4i) = 3-4i
     let result = eval_complex("conj", 3.0, 4.0);
-    assert!(result.contains("- 4i"), "expected negative imaginary, got {result}");
+    assert!(
+        result.contains("- 4i"),
+        "expected negative imaginary, got {result}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -250,14 +257,20 @@ fn gamma_half() {
 fn gamma_pole() {
     // Γ(0) is a pole → NaN
     let result = eval_num("gamma", &[0.0]);
-    assert!(result.to_lowercase().contains("nan"), "expected NaN, got {result}");
+    assert!(
+        result.to_lowercase().contains("nan"),
+        "expected NaN, got {result}"
+    );
 }
 
 #[test]
 fn gamma_negative_integer_pole() {
     // Γ(-1) is a pole → NaN
     let result = eval_num("gamma", &[-1.0]);
-    assert!(result.to_lowercase().contains("nan"), "expected NaN, got {result}");
+    assert!(
+        result.to_lowercase().contains("nan"),
+        "expected NaN, got {result}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +300,10 @@ fn zeta_two() {
     let result = eval_num("zeta", &[2.0]);
     let val: f64 = result.parse().unwrap();
     let expected = std::f64::consts::PI.powi(2) / 6.0;
-    assert!((val - expected).abs() < 1e-6, "expected {expected}, got {val}");
+    assert!(
+        (val - expected).abs() < 1e-6,
+        "expected {expected}, got {val}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +353,9 @@ fn arity_too_many() {
 #[test]
 fn gammainc_arity() {
     let func = lookup("gammainc").unwrap();
-    let args = vec![crate::ast::Expression::Number(crate::number::Number::from_f64(1.0))];
+    let args = vec![crate::ast::Expression::Number(
+        crate::number::Number::from_f64(1.0),
+    )];
     let mut ctx = CalculatorContext::new();
     let result = func.evaluate(&args, &mut ctx);
     assert!(result.is_err(), "gammainc with 1 arg should error");
@@ -371,7 +389,9 @@ fn eval_interval(name: &str, lower: f64, upper: f64) -> String {
 #[test]
 fn sgn_interval_spans_zero() {
     // Spanning zero -> NaN
-    assert!(eval_interval("sgn", -1.0, 1.0).to_lowercase().contains("nan"));
+    assert!(eval_interval("sgn", -1.0, 1.0)
+        .to_lowercase()
+        .contains("nan"));
 }
 
 #[test]
@@ -389,13 +409,17 @@ fn sgn_interval_strictly_negative() {
 #[test]
 fn sgn_interval_touches_zero_positive() {
     // Touching zero at lower bound [0, 2] -> NaN
-    assert!(eval_interval("sgn", 0.0, 2.0).to_lowercase().contains("nan"));
+    assert!(eval_interval("sgn", 0.0, 2.0)
+        .to_lowercase()
+        .contains("nan"));
 }
 
 #[test]
 fn sgn_interval_touches_zero_negative() {
     // Touching zero at upper bound [-2, 0] -> NaN
-    assert!(eval_interval("sgn", -2.0, 0.0).to_lowercase().contains("nan"));
+    assert!(eval_interval("sgn", -2.0, 0.0)
+        .to_lowercase()
+        .contains("nan"));
 }
 
 #[test]
@@ -408,31 +432,42 @@ fn gamma_interval_spans_min() {
 #[test]
 fn gamma_interval_pole_spanning_zero() {
     // [-0.5, 0.5] spans pole at 0 -> NaN
-    assert!(eval_interval("gamma", -0.5, 0.5).to_lowercase().contains("nan"));
+    assert!(eval_interval("gamma", -0.5, 0.5)
+        .to_lowercase()
+        .contains("nan"));
 }
 
 #[test]
 fn gamma_interval_pole_at_bound() {
     // [-1.0, -0.5] has pole at -1.0 -> NaN
-    assert!(eval_interval("gamma", -1.0, -0.5).to_lowercase().contains("nan"));
+    assert!(eval_interval("gamma", -1.0, -0.5)
+        .to_lowercase()
+        .contains("nan"));
 }
 
 #[test]
 fn zeta_interval_spans_pole() {
     // [0.5, 1.5] spans pole at 1 -> NaN
-    assert!(eval_interval("zeta", 0.5, 1.5).to_lowercase().contains("nan"));
+    assert!(eval_interval("zeta", 0.5, 1.5)
+        .to_lowercase()
+        .contains("nan"));
 }
 
 #[test]
 fn zeta_interval_monotonic() {
     // [2.0, 3.0] -> [zeta(3), zeta(2)] -> [1.202..., 1.644...]
     let res = eval_interval("zeta", 2.0, 3.0);
-    assert!(res.contains("1.202") && res.contains("1.644"), "got: {}", res);
+    assert!(
+        res.contains("1.202") && res.contains("1.644"),
+        "got: {}",
+        res
+    );
 }
 
 #[test]
 fn zeta_interval_oscillatory() {
     // [-3.0, -2.5] (x < -2) -> NaN
-    assert!(eval_interval("zeta", -3.0, -2.5).to_lowercase().contains("nan"));
+    assert!(eval_interval("zeta", -3.0, -2.5)
+        .to_lowercase()
+        .contains("nan"));
 }
-

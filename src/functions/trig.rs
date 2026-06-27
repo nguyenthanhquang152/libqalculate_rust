@@ -12,7 +12,7 @@
 use crate::ast::Expression;
 use crate::context::CalculatorContext;
 use crate::functions::{BuiltinFunction, BuiltinFunctionInfo, FunctionError, FunctionResult};
-use crate::number::{Number, NumberValue, Float};
+use crate::number::{Float, Number, NumberValue};
 
 // ---------------------------------------------------------------------------
 // Function info constants
@@ -231,15 +231,32 @@ static ACOTH_INFO: BuiltinFunctionInfo = BuiltinFunctionInfo {
 // ---------------------------------------------------------------------------
 
 static CATALOG: &[&BuiltinFunctionInfo] = &[
-    &SIN_INFO, &COS_INFO, &TAN_INFO,
-    &ASIN_INFO, &ACOS_INFO, &ATAN_INFO, &ATAN2_INFO,
-    &SINH_INFO, &COSH_INFO, &TANH_INFO,
-    &ASINH_INFO, &ACOSH_INFO, &ATANH_INFO,
+    &SIN_INFO,
+    &COS_INFO,
+    &TAN_INFO,
+    &ASIN_INFO,
+    &ACOS_INFO,
+    &ATAN_INFO,
+    &ATAN2_INFO,
+    &SINH_INFO,
+    &COSH_INFO,
+    &TANH_INFO,
+    &ASINH_INFO,
+    &ACOSH_INFO,
+    &ATANH_INFO,
     &SINC_INFO,
-    &CSC_INFO, &SEC_INFO, &COT_INFO,
-    &CSCH_INFO, &SECH_INFO, &COTH_INFO,
-    &ACSC_INFO, &ASEC_INFO, &ACOT_INFO,
-    &ACSCH_INFO, &ASECH_INFO, &ACOTH_INFO,
+    &CSC_INFO,
+    &SEC_INFO,
+    &COT_INFO,
+    &CSCH_INFO,
+    &SECH_INFO,
+    &COTH_INFO,
+    &ACSC_INFO,
+    &ASEC_INFO,
+    &ACOT_INFO,
+    &ACSCH_INFO,
+    &ASECH_INFO,
+    &ACOTH_INFO,
 ];
 
 /// Returns all registered trig function infos.
@@ -253,15 +270,32 @@ pub fn catalog() -> Vec<&'static BuiltinFunctionInfo> {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum TrigOp {
-    Sin, Cos, Tan,
-    Asin, Acos, Atan, Atan2,
-    Sinh, Cosh, Tanh,
-    Asinh, Acosh, Atanh,
+    Sin,
+    Cos,
+    Tan,
+    Asin,
+    Acos,
+    Atan,
+    Atan2,
+    Sinh,
+    Cosh,
+    Tanh,
+    Asinh,
+    Acosh,
+    Atanh,
     Sinc,
-    Csc, Sec, Cot,
-    Csch, Sech, Coth,
-    Acsc, Asec, Acot,
-    Acsch, Asech, Acoth,
+    Csc,
+    Sec,
+    Cot,
+    Csch,
+    Sech,
+    Coth,
+    Acsc,
+    Asec,
+    Acot,
+    Acsch,
+    Asech,
+    Acoth,
 }
 
 impl TrigOp {
@@ -449,11 +483,11 @@ impl BuiltinFunction for TrigFn {
                     }
                     TrigOp::Acot => {
                         if num.is_zero() {
-                            let pi_val = rug::Float::with_val(prec.max(53), rug::float::Constant::Pi);
-                            let half_pi = Number::from_real_value(NumberValue::Float(Float::from_rug_float(
+                            let pi_val =
+                                rug::Float::with_val(prec.max(53), rug::float::Constant::Pi);
+                            Number::from_real_value(NumberValue::Float(Float::from_rug_float(
                                 rug::Float::with_val(prec.max(53), pi_val / 2u32),
-                            )));
-                            half_pi
+                            )))
                         } else {
                             let recip = Number::one().div(num);
                             recip.atan_with_prec(prec)
@@ -482,10 +516,12 @@ impl BuiltinFunction for TrigFn {
                     }
                     TrigOp::Acoth => {
                         if num.is_zero() {
-                            let pi_val = rug::Float::with_val(prec.max(53), rug::float::Constant::Pi);
-                            let half_pi = Number::from_real_value(NumberValue::Float(Float::from_rug_float(
-                                rug::Float::with_val(prec.max(53), pi_val / 2u32),
-                            )));
+                            let pi_val =
+                                rug::Float::with_val(prec.max(53), rug::float::Constant::Pi);
+                            let half_pi =
+                                Number::from_real_value(NumberValue::Float(Float::from_rug_float(
+                                    rug::Float::with_val(prec.max(53), pi_val / 2u32),
+                                )));
                             Number::new_complex(Number::from_i64(0), half_pi)
                         } else {
                             let recip = Number::one().div(num);
@@ -642,7 +678,9 @@ mod tests {
 
     fn assert_approx(actual: &Number, expected: f64, tol: f64, label: &str) {
         let s = actual.to_qalc_string_with_precision(20);
-        let val: f64 = s.parse().unwrap_or_else(|_| panic!("{label}: could not parse '{s}' as f64"));
+        let val: f64 = s
+            .parse()
+            .unwrap_or_else(|_| panic!("{label}: could not parse '{s}' as f64"));
         assert!(
             (val - expected).abs() < tol,
             "{label}: expected ≈{expected}, got {val} (string: {s})"
@@ -712,7 +750,11 @@ mod tests {
     #[test]
     fn sin_of_zero_returns_zero() {
         let result = eval_num(lookup("sin").unwrap(), Number::from_i64(0));
-        assert!(result.is_zero(), "sin(0) should be 0, got {}", result.to_qalc_string());
+        assert!(
+            result.is_zero(),
+            "sin(0) should be 0, got {}",
+            result.to_qalc_string()
+        );
     }
 
     #[test]
@@ -893,7 +935,10 @@ mod tests {
             value: rug::Rational::from((1, 2)),
         });
         let _result = f.evaluate(&[Expression::Number(half)], &mut ctx);
-        assert!(!ctx.messages.is_empty(), "acosh(0.5) should produce a warning");
+        assert!(
+            !ctx.messages.is_empty(),
+            "acosh(0.5) should produce a warning"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -925,7 +970,7 @@ mod tests {
         assert!(result.has_imaginary_part(), "acoth(0) should be complex");
         let (real, imag) = result.to_canonical_real_imag();
         assert!(real.is_real_zero(), "real part should be zero");
-        
+
         let pi = Number::pi();
         let expected_imag = pi.div(&Number::from_i64(2));
         let diff = Number::from_real_value(imag).sub(&expected_imag);
@@ -936,10 +981,7 @@ mod tests {
     fn acsch_of_zero_returns_plus_infinity() {
         let result = eval_num(lookup("acsch").unwrap(), Number::from_i64(0));
         assert!(result.is_infinite(), "acsch(0) should be infinite");
-        let is_positive = match result.value() {
-            crate::number::NumberValue::PlusInfinity => true,
-            _ => false,
-        };
+        let is_positive = matches!(result.value(), crate::number::NumberValue::PlusInfinity);
         assert!(is_positive, "acsch(0) should be plus_infinity");
     }
 
@@ -965,8 +1007,18 @@ mod tests {
         let res = eval_num(lookup("acos").unwrap(), interval);
         match res.value() {
             NumberValue::Interval { lower, upper } => {
-                assert_approx(&Number::from_real_value(NumberValue::Float(lower.clone())), 0.0, 1e-10, "acos([0,1]) lower");
-                assert_approx(&Number::from_real_value(NumberValue::Float(upper.clone())), std::f64::consts::FRAC_PI_2, 1e-10, "acos([0,1]) upper");
+                assert_approx(
+                    &Number::from_real_value(NumberValue::Float(lower.clone())),
+                    0.0,
+                    1e-10,
+                    "acos([0,1]) lower",
+                );
+                assert_approx(
+                    &Number::from_real_value(NumberValue::Float(upper.clone())),
+                    std::f64::consts::FRAC_PI_2,
+                    1e-10,
+                    "acos([0,1]) upper",
+                );
             }
             other => panic!("Expected Interval, got {:?}", other),
         }
@@ -979,8 +1031,18 @@ mod tests {
         let res_cosh = eval_num(lookup("cosh").unwrap(), interval_cosh);
         match res_cosh.value() {
             NumberValue::Interval { lower, upper } => {
-                assert_approx(&Number::from_real_value(NumberValue::Float(lower.clone())), 1.0, 1e-10, "cosh([-1,1]) lower");
-                assert_approx(&Number::from_real_value(NumberValue::Float(upper.clone())), 1.5430806348152437, 1e-10, "cosh([-1,1]) upper");
+                assert_approx(
+                    &Number::from_real_value(NumberValue::Float(lower.clone())),
+                    1.0,
+                    1e-10,
+                    "cosh([-1,1]) lower",
+                );
+                assert_approx(
+                    &Number::from_real_value(NumberValue::Float(upper.clone())),
+                    1.5430806348152437,
+                    1e-10,
+                    "cosh([-1,1]) upper",
+                );
             }
             other => panic!("Expected Interval, got {:?}", other),
         }
@@ -988,9 +1050,12 @@ mod tests {
         // tan([0, pi]) -> NaN (since it crosses pi/2)
         let interval_tan = Number::from_real_value(NumberValue::Interval {
             lower: crate::number::Float::from_f64(0.0, 53),
-            upper: crate::number::Float::from_f64(3.141592653589793, 53),
+            upper: crate::number::Float::from_f64(std::f64::consts::PI, 53),
         });
         let res_tan = eval_num(lookup("tan").unwrap(), interval_tan);
-        assert!(res_tan.is_nan(), "tan([0, pi]) should be NaN due to pole crossing");
+        assert!(
+            res_tan.is_nan(),
+            "tan([0, pi]) should be NaN due to pole crossing"
+        );
     }
 }

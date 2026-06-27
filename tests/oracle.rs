@@ -974,7 +974,11 @@ fn focused_epic6_strings_oracle_cases() {
         ("strings.batch:37", r#"len(concatenate("a", "bc"))"#, &[]),
         ("strings.batch:41", "0xD8 to unicode", &["/set unicode 1"]),
         ("strings.batch:43", "char(0xD8)", &["/set unicode 1"]),
-        ("strings.batch:45", "char([0xD8, 0x61])", &["/set unicode 1"]),
+        (
+            "strings.batch:45",
+            "char([0xD8, 0x61])",
+            &["/set unicode 1"],
+        ),
         ("strings.batch:47", "code(Ø) to hex", &["/set unicode 1"]),
         ("strings.batch:49", "code(😀) to hex", &["/set unicode 1"]),
         (

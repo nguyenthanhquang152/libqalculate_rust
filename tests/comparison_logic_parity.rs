@@ -32,8 +32,8 @@ impl Drop for EnvGuard {
 }
 
 fn eval(context: &mut CalculatorContext, input: &str) -> Result<Expression, String> {
-    let expr = libqalculate_rust::parser::operators::parse_expression(input)
-        .map_err(|e| e.to_string())?;
+    let expr =
+        libqalculate_rust::parser::operators::parse_expression(input).map_err(|e| e.to_string())?;
     evaluate_ast(&expr, context)
 }
 
@@ -43,13 +43,22 @@ fn test_logical_xor_builtin() {
     let mut context = CalculatorContext::default();
 
     // lxor(1, 0) -> 1
-    assert_eq!(eval(&mut context, "lxor(1, 0)").unwrap(), Expression::Number(Number::from_i32(1)));
+    assert_eq!(
+        eval(&mut context, "lxor(1, 0)").unwrap(),
+        Expression::Number(Number::from_i32(1))
+    );
 
     // lxor(1, 1) -> 0
-    assert_eq!(eval(&mut context, "lxor(1, 1)").unwrap(), Expression::Number(Number::from_i32(0)));
+    assert_eq!(
+        eval(&mut context, "lxor(1, 1)").unwrap(),
+        Expression::Number(Number::from_i32(0))
+    );
 
     // lxor(0, 0) -> 0
-    assert_eq!(eval(&mut context, "lxor(0, 0)").unwrap(), Expression::Number(Number::from_i32(0)));
+    assert_eq!(
+        eval(&mut context, "lxor(0, 0)").unwrap(),
+        Expression::Number(Number::from_i32(0))
+    );
 
     // lxor(x, 1) -> LogicalXor { lhs: x, rhs: 1 } (unevaluated)
     let res = eval(&mut context, "lxor(x, 1)").unwrap();
@@ -62,17 +71,26 @@ fn test_logical_if_builtin() {
     let mut context = CalculatorContext::default();
 
     // if(1, 5, 6) -> 5
-    assert_eq!(eval(&mut context, "if(1, 5, 6)").unwrap(), Expression::Number(Number::from_i32(5)));
+    assert_eq!(
+        eval(&mut context, "if(1, 5, 6)").unwrap(),
+        Expression::Number(Number::from_i32(5))
+    );
 
     // if(0, 5, 6) -> 6
-    assert_eq!(eval(&mut context, "if(0, 5, 6)").unwrap(), Expression::Number(Number::from_i32(6)));
+    assert_eq!(
+        eval(&mut context, "if(0, 5, 6)").unwrap(),
+        Expression::Number(Number::from_i32(6))
+    );
 
     // if(x, 5, 6) -> if(x, 5, 6) (unevaluated)
     let res = eval(&mut context, "if(x, 5, 6)").unwrap();
     assert!(matches!(res, Expression::FunctionCall { .. }));
 
     // if(x, 5, 6, 1) -> 6 (assume false)
-    assert_eq!(eval(&mut context, "if(x, 5, 6, 1)").unwrap(), Expression::Number(Number::from_i32(6)));
+    assert_eq!(
+        eval(&mut context, "if(x, 5, 6, 1)").unwrap(),
+        Expression::Number(Number::from_i32(6))
+    );
 
     // if(x, 5, 6, 0) -> if(x, 5, 6, 0)
     let res = eval(&mut context, "if(x, 5, 6, 0)").unwrap();
@@ -90,7 +108,10 @@ fn test_logical_if_nan() {
     assert!(matches!(res, Expression::FunctionCall { .. }));
 
     // if(0/0, 5, 6, 1) -> 6 (since NaN is unknown and assume_false = 1)
-    assert_eq!(eval(&mut context, "if(0/0, 5, 6, 1)").unwrap(), Expression::Number(Number::from_i32(6)));
+    assert_eq!(
+        eval(&mut context, "if(0/0, 5, 6, 1)").unwrap(),
+        Expression::Number(Number::from_i32(6))
+    );
 }
 
 #[test]
@@ -99,7 +120,10 @@ fn test_logical_if_vectors() {
     let mut context = CalculatorContext::default();
 
     // Helper to construct: if(cond, then_val, else_val) or if(cond, then_val, else_val, assume_false)
-    let make_if = |cond: Expression, then_val: Expression, else_val: Expression, assume_false: Option<Expression>| {
+    let make_if = |cond: Expression,
+                   then_val: Expression,
+                   else_val: Expression,
+                   assume_false: Option<Expression>| {
         let mut args = vec![cond, then_val, else_val];
         if let Some(af) = assume_false {
             args.push(af);
@@ -155,12 +179,11 @@ fn test_logical_if_uncertainty() {
     let _guard = EnvGuard::set("QALCULATE_DISABLE_FALLBACK", "1");
     let mut context = CalculatorContext::default();
 
-    let make_if = |cond: Expression, then_val: Expression, else_val: Expression| {
-        Expression::FunctionCall {
+    let make_if =
+        |cond: Expression, then_val: Expression, else_val: Expression| Expression::FunctionCall {
             function: FunctionRef::new("if"),
             args: vec![cond, then_val, else_val],
-        }
-    };
+        };
 
     let n = |val| Expression::Number(Number::from_i32(val));
     let parsed = |s: &str| Expression::Number(s.parse::<Number>().unwrap());
@@ -179,4 +202,3 @@ fn test_logical_if_uncertainty() {
     let res = evaluate_ast(&expr, &mut context).unwrap();
     assert!(matches!(res, Expression::FunctionCall { .. }));
 }
-

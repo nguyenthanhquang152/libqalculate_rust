@@ -55,7 +55,7 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | `operators.batch` | 30 | 0 | — |
 | `parser.batch` | 27 | 0 | — |
 | `percentages.batch` | 26 | 24 | — |
-| `polynomial.batch` | 49 | 4 | — |
+| `polynomial.batch` | 49 | 39 | — |
 | `solver.batch` | 25 | 4 | — |
 | `stats.batch` | 39 | 0 | `tests/vectordata.csv`, `tests/vectordata2.csv` |
 | `strings.batch` | 24 | 1 | — |
@@ -776,47 +776,47 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 6 | `polynomial.batch:15` | `abs(x - abs(x)) - (abs(x) - x)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
 | 7 | `polynomial.batch:17` | `sqrt(8 + 2*sqrt(15)) - (sqrt(5) + sqrt(3))` | `0` | /set approximation exact; /set fr 2 | inventory-only |
 | 8 | `polynomial.batch:19` | `x / abs(x) - sgn(x)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
-| 9 | `polynomial.batch:21` | `factor x + 2*sqrt(x) + 1` | `(sqrt(x) + 1)^2` | /set approximation exact; /set fr 2 | inventory-only |
+| 9 | `polynomial.batch:21` | `factor x + 2*sqrt(x) + 1` | `(sqrt(x) + 1)^2` | /set approximation exact; /set fr 2 | native-pass |
 | 10 | `polynomial.batch:23` | `abs(x - y) - abs(y - x)` | `0` | /set approximation exact; /set fr 2 | inventory-only |
-| 11 | `polynomial.batch:26` | `sqrt(x + 2*sqrt(x) + 1)` | `sqrt(x) + 1` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
-| 12 | `polynomial.batch:28` | `factor x + 2 * sqrt(xy) + y` | `(sqrt(x) + sqrt(y))^2` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
-| 13 | `polynomial.batch:30` | `ln(x^2 + 2*x + 1)` | `2 * ln(x + 1)` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
+| 11 | `polynomial.batch:26` | `sqrt(x + 2*sqrt(x) + 1)` | `sqrt(x) + 1` | /set approximation exact; /set fr 2; /assume positive | native-pass |
+| 12 | `polynomial.batch:28` | `factor x + 2 * sqrt(xy) + y` | `(sqrt(x) + sqrt(y))^2` | /set approximation exact; /set fr 2; /assume positive | native-pass |
+| 13 | `polynomial.batch:30` | `ln(x^2 + 2*x + 1)` | `2 * ln(x + 1)` | /set approximation exact; /set fr 2; /assume positive | native-pass |
 | 14 | `polynomial.batch:32` | `x^(log(y, x))` | `y` | /set approximation exact; /set fr 2; /assume positive | inventory-only |
-| 15 | `polynomial.batch:36` | `coeff(3x + 4, 0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 16 | `polynomial.batch:38` | `coeff(3y + 4, 1)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 17 | `polynomial.batch:40` | `coeff(3a + 4, 2)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 18 | `polynomial.batch:42` | `coeff(4x*(2x^2 + 5 -5x), 3)` | `8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 19 | `polynomial.batch:44` | `coeff(x^3-7x^2-4x-5x^2, 2)` | `-12` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 20 | `polynomial.batch:46` | `coeff(1+x^3-4x-5x^2-1, 0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 21 | `polynomial.batch:48` | `coeff(3x + 4, 1, x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 22 | `polynomial.batch:50` | `coeff(3x + 4, 1, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 23 | `polynomial.batch:52` | `coeff(3x + 2y + 4, 1, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 24 | `polynomial.batch:55` | `pcontent(3x + 6)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 25 | `polynomial.batch:57` | `pcontent(2x^3-4x^2-6x-8x^2)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 26 | `polynomial.batch:59` | `pcontent(2y^3-3y^2-6y-8y^2)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 27 | `polynomial.batch:61` | `pcontent(2x^3-3x^2-6x-8x^2, y)` | `2x^3 - 11x^2 - 6x` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 28 | `polynomial.batch:64` | `lcoeff(6+ 3x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 29 | `polynomial.batch:66` | `lcoeff(6 -5x^2 + 3x^2)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 30 | `polynomial.batch:68` | `lcoeff(6 -5x^2 + 3x^2, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 31 | `polynomial.batch:70` | `lcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 32 | `polynomial.batch:73` | `ldegree(3x)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 33 | `polynomial.batch:75` | `ldegree(6 -5x^2 - 6)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 34 | `polynomial.batch:77` | `ldegree(-5x^2, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 35 | `polynomial.batch:79` | `ldegree(3yx^2 + 2y, y)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 36 | `polynomial.batch:82` | `degree(3x + 6)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 37 | `polynomial.batch:84` | `degree(2x^3-4x^2-6x-8x^2)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 38 | `polynomial.batch:86` | `degree(2x^3-3x^2-6x-2x^3)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 39 | `polynomial.batch:88` | `degree(2x^3-3x^2-6x-2x^3, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 40 | `polynomial.batch:91` | `primpart(3x + 6)` | `x + 2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 41 | `polynomial.batch:93` | `primpart(-12x^3 + 30x - 20)` | `6x^3 - 15x + 10` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 42 | `polynomial.batch:95` | `primpart(2xy + 8y + 16, y)` | `(xy) / 2 + 2y + 4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 43 | `polynomial.batch:98` | `tcoeff(6+ 3x)` | `6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 44 | `polynomial.batch:100` | `tcoeff(-5x^2 + 3x - x)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 45 | `polynomial.batch:102` | `tcoeff(6x -5x^2 + 3x^2, y)` | `6x - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 46 | `polynomial.batch:104` | `tcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 47 | `polynomial.batch:107` | `punit(-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 48 | `polynomial.batch:109` | `punit(1-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
-| 49 | `polynomial.batch:111` | `punit(3x-1)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | inventory-only |
+| 15 | `polynomial.batch:36` | `coeff(3x + 4, 0)` | `4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 16 | `polynomial.batch:38` | `coeff(3y + 4, 1)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 17 | `polynomial.batch:40` | `coeff(3a + 4, 2)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 18 | `polynomial.batch:42` | `coeff(4x*(2x^2 + 5 -5x), 3)` | `8` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 19 | `polynomial.batch:44` | `coeff(x^3-7x^2-4x-5x^2, 2)` | `-12` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 20 | `polynomial.batch:46` | `coeff(1+x^3-4x-5x^2-1, 0)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 21 | `polynomial.batch:48` | `coeff(3x + 4, 1, x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 22 | `polynomial.batch:50` | `coeff(3x + 4, 1, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 23 | `polynomial.batch:52` | `coeff(3x + 2y + 4, 1, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 24 | `polynomial.batch:55` | `pcontent(3x + 6)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 25 | `polynomial.batch:57` | `pcontent(2x^3-4x^2-6x-8x^2)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 26 | `polynomial.batch:59` | `pcontent(2y^3-3y^2-6y-8y^2)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 27 | `polynomial.batch:61` | `pcontent(2x^3-3x^2-6x-8x^2, y)` | `2x^3 - 11x^2 - 6x` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 28 | `polynomial.batch:64` | `lcoeff(6+ 3x)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 29 | `polynomial.batch:66` | `lcoeff(6 -5x^2 + 3x^2)` | `-2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 30 | `polynomial.batch:68` | `lcoeff(6 -5x^2 + 3x^2, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 31 | `polynomial.batch:70` | `lcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 32 | `polynomial.batch:73` | `ldegree(3x)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 33 | `polynomial.batch:75` | `ldegree(6 -5x^2 - 6)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 34 | `polynomial.batch:77` | `ldegree(-5x^2, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 35 | `polynomial.batch:79` | `ldegree(3yx^2 + 2y, y)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 36 | `polynomial.batch:82` | `degree(3x + 6)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 37 | `polynomial.batch:84` | `degree(2x^3-4x^2-6x-8x^2)` | `3` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 38 | `polynomial.batch:86` | `degree(2x^3-3x^2-6x-2x^3)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 39 | `polynomial.batch:88` | `degree(2x^3-3x^2-6x-2x^3, y)` | `0` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 40 | `polynomial.batch:91` | `primpart(3x + 6)` | `x + 2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 41 | `polynomial.batch:93` | `primpart(-12x^3 + 30x - 20)` | `6x^3 - 15x + 10` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 42 | `polynomial.batch:95` | `primpart(2xy + 8y + 16, y)` | `(xy) / 2 + 2y + 4` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 43 | `polynomial.batch:98` | `tcoeff(6+ 3x)` | `6` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 44 | `polynomial.batch:100` | `tcoeff(-5x^2 + 3x - x)` | `2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 45 | `polynomial.batch:102` | `tcoeff(6x -5x^2 + 3x^2, y)` | `6x - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 46 | `polynomial.batch:104` | `tcoeff(6 -5x^2 + 3x^2 + 2y, y)` | `6 - 2x^2` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 47 | `polynomial.batch:107` | `punit(-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 48 | `polynomial.batch:109` | `punit(1-3x)` | `-1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
+| 49 | `polynomial.batch:111` | `punit(3x-1)` | `1` | /set approximation exact; /set fr 2; /assume positive; /assume unknown | native-pass |
 
 ---
 

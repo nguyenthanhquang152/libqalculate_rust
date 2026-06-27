@@ -491,6 +491,21 @@ impl NumberValue {
         self.is_real_zero()
     }
 
+    /// Converts the number value to an f64 approximation.
+    pub fn to_f64(&self) -> f64 {
+        match self {
+            NumberValue::Rational(r) => rug::Float::with_val(53, &r.value).to_f64(),
+            NumberValue::Float(f) => f.value.to_f64(),
+            NumberValue::Interval { lower, upper } => {
+                0.5 * (lower.value.to_f64() + upper.value.to_f64())
+            }
+            NumberValue::Uncertainty { value, .. } => value.to_f64(),
+            NumberValue::PlusInfinity => f64::INFINITY,
+            NumberValue::MinusInfinity => f64::NEG_INFINITY,
+            NumberValue::NaN => f64::NAN,
+        }
+    }
+
     /// Extract the precision.
     pub fn precision(&self) -> i32 {
         match self {
@@ -2039,7 +2054,10 @@ impl NumberValue {
             NumberValue::Interval { lower, upper } => {
                 // cos has extrema at k*π. We must check if any lie within [lo, hi]
                 // and clamp the result bounds accordingly.
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 let lo = &lower.value;
                 let hi = &upper.value;
                 let l_cos = rug::Float::with_val(prec, lo).cos();
@@ -2109,7 +2127,10 @@ impl NumberValue {
             }
             NumberValue::Interval { lower, upper } => {
                 // sin has extrema at π/2 + kπ. We must check if any lie within [lo, hi].
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 let lo = &lower.value;
                 let hi = &upper.value;
                 let l_sin = rug::Float::with_val(prec, lo).sin();
@@ -2123,11 +2144,16 @@ impl NumberValue {
 
                 // Check for sin extrema: sin(π/2 + kπ) = ±1
                 // First (π/2 + kπ) ≥ lo: k = ceil((lo - π/2) / π)
-                let k_start_f = rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi).ceil();
+                let k_start_f =
+                    rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi)
+                        .ceil();
                 if let Some(k_start) = k_start_f.to_integer() {
                     let mut k = k_start;
                     for _ in 0..4 {
-                        let extremum = rug::Float::with_val(prec, &half_pi + rug::Float::with_val(prec, &k * &pi));
+                        let extremum = rug::Float::with_val(
+                            prec,
+                            &half_pi + rug::Float::with_val(prec, &k * &pi),
+                        );
                         if extremum > *hi {
                             break;
                         }
@@ -2178,7 +2204,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 let lo = &lower.value;
                 let hi = &upper.value;
 
@@ -2186,10 +2215,15 @@ impl NumberValue {
                 let half_pi = rug::Float::with_val(prec, &pi / 2u32);
 
                 // Check if the interval crosses kπ + π/2
-                let k_start_f = rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi).ceil();
+                let k_start_f =
+                    rug::Float::with_val(prec, (rug::Float::with_val(prec, lo) - &half_pi) / &pi)
+                        .ceil();
                 let mut contains_pole = false;
                 if let Some(k_start) = k_start_f.to_integer() {
-                    let extremum = rug::Float::with_val(prec, &half_pi + rug::Float::with_val(prec, &k_start * &pi));
+                    let extremum = rug::Float::with_val(
+                        prec,
+                        &half_pi + rug::Float::with_val(prec, &k_start * &pi),
+                    );
                     if extremum <= *hi {
                         contains_pole = true;
                     }
@@ -2242,7 +2276,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).asin(),
@@ -2286,7 +2323,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &upper.value).acos(),
@@ -2326,7 +2366,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).atan(),
@@ -2376,7 +2419,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).sinh(),
@@ -2413,7 +2459,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 let lo = &lower.value;
                 let hi = &upper.value;
                 let l_cosh = rug::Float::with_val(prec, lo).cosh();
@@ -2457,7 +2506,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).tanh(),
@@ -2494,7 +2546,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).asinh(),
@@ -2535,7 +2590,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).acosh(),
@@ -2596,7 +2654,10 @@ impl NumberValue {
                 NumberValue::Float(Float { value })
             }
             NumberValue::Interval { lower, upper } => {
-                let prec = min_precision_bits.max(lower.prec()).max(upper.prec()).max(53);
+                let prec = min_precision_bits
+                    .max(lower.prec())
+                    .max(upper.prec())
+                    .max(53);
                 NumberValue::Interval {
                     lower: Float {
                         value: rug::Float::with_val(prec, &lower.value).atanh(),
@@ -2624,7 +2685,6 @@ impl NumberValue {
             }
         }
     }
-
 
     /// Converts the value to interval bounds (lower, upper). Returns None if the value is NaN.
     pub fn to_interval_bounds(&self) -> Option<(f64, f64)> {
@@ -2734,7 +2794,10 @@ impl NumberValue {
             }
             NumberValue::Float(f) => !f.is_nan() && f.value.is_sign_positive() && !f.is_zero(),
             NumberValue::Interval { lower, upper } => {
-                !lower.is_nan() && !upper.is_nan() && lower.value.is_sign_positive() && !lower.value.is_zero()
+                !lower.is_nan()
+                    && !upper.is_nan()
+                    && lower.value.is_sign_positive()
+                    && !lower.value.is_zero()
             }
             NumberValue::Uncertainty { value, .. } => value.is_positive(),
             NumberValue::PlusInfinity => true,
@@ -2745,12 +2808,13 @@ impl NumberValue {
     /// Returns true if the value is strictly negative (< 0).
     pub fn is_negative(&self) -> bool {
         match self {
-            NumberValue::Rational(r) => {
-                !r.is_zero() && r.value.cmp0() == std::cmp::Ordering::Less
-            }
+            NumberValue::Rational(r) => !r.is_zero() && r.value.cmp0() == std::cmp::Ordering::Less,
             NumberValue::Float(f) => !f.is_nan() && f.value.is_sign_negative() && !f.is_zero(),
             NumberValue::Interval { lower, upper } => {
-                !lower.is_nan() && !upper.is_nan() && upper.value.is_sign_negative() && !upper.value.is_zero()
+                !lower.is_nan()
+                    && !upper.is_nan()
+                    && upper.value.is_sign_negative()
+                    && !upper.value.is_zero()
             }
             NumberValue::Uncertainty { value, .. } => value.is_negative(),
             NumberValue::MinusInfinity => true,
@@ -3007,9 +3071,7 @@ impl NumberValue {
                 }
                 let prec = 53u32;
                 let f = rug::Float::with_val(prec, &r.value);
-                NumberValue::Float(Float {
-                    value: f.gamma(),
-                })
+                NumberValue::Float(Float { value: f.gamma() })
             }
             NumberValue::Float(f) => {
                 if f.is_nan() {
@@ -3018,9 +3080,7 @@ impl NumberValue {
                 // Check for non-positive integer poles
                 if !f.is_infinite() {
                     let truncated = rug::Float::with_val(f.prec(), &f.value).trunc();
-                    if f.value == truncated
-                        && f.value.cmp0() != Some(std::cmp::Ordering::Greater)
-                    {
+                    if f.value == truncated && f.value.cmp0() != Some(std::cmp::Ordering::Greater) {
                         return NumberValue::NaN;
                     }
                 }
@@ -3032,22 +3092,22 @@ impl NumberValue {
             NumberValue::Interval { lower, upper } => {
                 let prec_l = lower.prec();
                 let prec_u = upper.prec();
-                
+
                 // Reject intervals containing zero or negative values due to poles and oscillations
                 if lower.value <= 0.0 {
                     return NumberValue::NaN;
                 }
-                
+
                 // Gamma minimum point: x_min ≈ 1.4616321449683623
                 // Min value: g_min ≈ 0.8856031944108887
                 let x_min = 1.4616321449683623;
                 let g_l = rug::Float::with_val(prec_l, &lower.value).gamma();
                 let g_u = rug::Float::with_val(prec_u, &upper.value).gamma();
-                
+
                 if g_l.is_nan() || g_u.is_nan() {
                     return NumberValue::NaN;
                 }
-                
+
                 let (new_l, new_u) = if upper.value <= x_min {
                     // Decreasing
                     (g_u, g_l)
@@ -3061,7 +3121,7 @@ impl NumberValue {
                     let min_val = rug::Float::with_val(min_prec, 0.8856031944108887f64);
                     (min_val, max_val)
                 };
-                
+
                 NumberValue::Interval {
                     lower: Float { value: new_l },
                     upper: Float { value: new_u },
@@ -3150,12 +3210,12 @@ impl NumberValue {
             NumberValue::Interval { lower, upper } => {
                 let prec_l = lower.prec();
                 let prec_u = upper.prec();
-                
+
                 // Pole at x = 1
                 if lower.value <= 1.0 && upper.value >= 1.0 {
                     return NumberValue::NaN;
                 }
-                
+
                 if lower.value >= -2.0 {
                     // zeta(x) is monotonically decreasing for x >= -2 (excluding x=1)
                     let z_l = rug::Float::with_val(prec_l, &lower.value).zeta();
@@ -4263,7 +4323,6 @@ impl Number {
         }
     }
 
-
     /// Returns tan(self) for real numbers.
     pub fn tan(&self) -> Self {
         self.apply_real_unary(|r, prec| r.tan_value(prec))
@@ -4336,21 +4395,17 @@ impl Number {
         self.apply_real_unary(|r, prec| r.atanh_value(prec))
     }
 
-
     /// Converts this number to an i64 if it is an exact integer that fits.
     pub fn to_i64(&self) -> Option<i64> {
         if self.has_imaginary_part() {
             return None;
         }
         match &self.value {
-            NumberValue::Rational(r) if r.value.is_integer() => {
-                r.value.numer().to_i64()
-            }
-            NumberValue::Float(f) if f.rug_float().is_integer() => {
-                f.rug_float()
-                    .to_integer_round(rug::float::Round::Nearest)
-                    .and_then(|(int, _)| int.to_i64())
-            }
+            NumberValue::Rational(r) if r.value.is_integer() => r.value.numer().to_i64(),
+            NumberValue::Float(f) if f.rug_float().is_integer() => f
+                .rug_float()
+                .to_integer_round(rug::float::Round::Nearest)
+                .and_then(|(int, _)| int.to_i64()),
             _ => None,
         }
     }
@@ -4548,6 +4603,40 @@ impl Number {
     pub fn is_zero(&self) -> bool {
         let (real, imag) = self.to_canonical_ref();
         real.is_real_zero() && imag.is_real_zero()
+    }
+
+    /// Returns true if the real part of the number is strictly negative (< 0).
+    pub fn is_negative(&self) -> bool {
+        self.to_canonical_ref().0.is_negative()
+    }
+
+    /// Returns the f64 approximation of the real part of the number.
+    pub fn to_f64(&self) -> f64 {
+        self.to_canonical_ref().0.to_f64()
+    }
+
+    /// Returns the rational numerator of the real part of this number (canonicalized).
+    /// For a complex number, this operates only on the real component. If not a rational, returns self.
+    pub fn numerator(&self) -> Self {
+        let (real, _) = self.to_canonical_ref();
+        match &*real {
+            NumberValue::Rational(r) => Self::from_rational(Rational {
+                value: rug::Rational::from(r.value.numer().clone()),
+            }),
+            _ => self.clone(),
+        }
+    }
+
+    /// Returns the rational denominator of the real part of this number (canonicalized).
+    /// For a complex number, this operates only on the real component. If not a rational, returns 1.
+    pub fn denominator(&self) -> Self {
+        let (real, _) = self.to_canonical_ref();
+        match &*real {
+            NumberValue::Rational(r) => Self::from_rational(Rational {
+                value: rug::Rational::from(r.value.denom().clone()),
+            }),
+            _ => Self::from_i32(1),
+        }
     }
 
     /// Returns true if the number is non-zero (using interval rules).
@@ -5304,6 +5393,67 @@ impl Number {
         )
     }
 
+    /// Formats this number with the specified formatting options.
+    pub fn to_string_with_options(
+        &self,
+        precision_digits: usize,
+        fraction_format: crate::options::NumberFractionFormat,
+        approximation: crate::options::ApproximationMode,
+    ) -> String {
+        let (real, imag) = self.to_canonical_real_imag();
+        if !imag.is_real_zero() {
+            let r_str = self.real_part().to_string_with_options(
+                precision_digits,
+                fraction_format,
+                approximation,
+            );
+            let i_str = self.imaginary_part().to_string_with_options(
+                precision_digits,
+                fraction_format,
+                approximation,
+            );
+            if imag.is_real_one() {
+                if real.is_real_zero() {
+                    "i".to_string()
+                } else {
+                    format!("{r_str} + i")
+                }
+            } else if imag.negate().is_real_one() {
+                if real.is_real_zero() {
+                    "-i".to_string()
+                } else {
+                    format!("{r_str} - i")
+                }
+            } else if is_real_negative(&imag) {
+                let abs_imag = imag.negate();
+                let abs_i_str = format_number_value_with_options(
+                    &abs_imag,
+                    precision_digits,
+                    fraction_format,
+                    approximation,
+                );
+                if real.is_real_zero() {
+                    format!("-{abs_i_str}i")
+                } else {
+                    format!("{r_str} - {abs_i_str}i")
+                }
+            } else {
+                if real.is_real_zero() {
+                    format!("{i_str}i")
+                } else {
+                    format!("{r_str} + {i_str}i")
+                }
+            }
+        } else {
+            format_number_value_with_options(
+                &real,
+                precision_digits,
+                fraction_format,
+                approximation,
+            )
+        }
+    }
+
     fn to_qalc_string_with_uncertainty_format(
         &self,
         precision_digits: usize,
@@ -5386,6 +5536,93 @@ impl Number {
             }
             _ => None,
         }
+    }
+}
+
+fn is_real_negative(val: &NumberValue) -> bool {
+    match val {
+        NumberValue::Rational(r) => r.value.numer().is_negative(),
+        NumberValue::Float(f) => f.value.is_sign_negative(),
+        NumberValue::MinusInfinity => true,
+        NumberValue::Uncertainty { value, .. } => is_real_negative(value),
+        _ => false,
+    }
+}
+
+fn format_number_value_with_options(
+    val: &NumberValue,
+    precision_digits: usize,
+    fraction_format: crate::options::NumberFractionFormat,
+    approximation: crate::options::ApproximationMode,
+) -> String {
+    match val {
+        NumberValue::Rational(r) => {
+            if r.value.is_integer() {
+                r.value.numer().to_string()
+            } else {
+                let is_terminating = r.terminating_decimal_string().is_some();
+                let use_fraction = fraction_format
+                    == crate::options::NumberFractionFormat::Fractional
+                    || approximation == crate::options::ApproximationMode::Exact
+                    || (approximation == crate::options::ApproximationMode::TryExact
+                        && !is_terminating);
+
+                if use_fraction {
+                    format!("{} / {}", r.value.numer(), r.value.denom())
+                } else if let Some(decimal) = r.terminating_decimal_string() {
+                    decimal
+                } else {
+                    let binary_precision = qalc_decimal_precision_bits(precision_digits);
+                    let output = rug::Float::with_val(binary_precision, &r.value)
+                        .to_string_radix(10, Some(precision_digits));
+                    fixed_decimal_from_scientific(&output).unwrap_or(output)
+                }
+            }
+        }
+        NumberValue::Float(f) => {
+            let output = f.value.to_string_radix(10, Some(precision_digits));
+            fixed_decimal_from_scientific(&output).unwrap_or(output)
+        }
+        NumberValue::Uncertainty {
+            value,
+            uncertainty,
+            is_relative,
+        } => {
+            if uncertainty.is_real_zero() {
+                format_number_value_with_options(
+                    value,
+                    precision_digits,
+                    fraction_format,
+                    approximation,
+                )
+            } else {
+                let val_str = format_number_value_with_options(
+                    value,
+                    precision_digits,
+                    fraction_format,
+                    approximation,
+                );
+                let unc_str = format_number_value_with_options(
+                    uncertainty,
+                    precision_digits,
+                    fraction_format,
+                    approximation,
+                );
+                if *is_relative {
+                    format!("{val_str}±{unc_str}%")
+                } else {
+                    format!("{val_str}±{unc_str}")
+                }
+            }
+        }
+        NumberValue::Interval { lower, upper } => {
+            let lower_str = format_qalc_float_bound(&lower.value);
+            let upper_str = format_qalc_float_bound(&upper.value);
+            format!("[{lower_str}  {upper_str}]")
+        }
+        NumberValue::PlusInfinity => "+∞".to_string(),
+        NumberValue::MinusInfinity => "-∞".to_string(),
+        _ => val.to_string(),
     }
 }
 
