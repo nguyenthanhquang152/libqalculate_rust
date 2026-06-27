@@ -763,6 +763,7 @@ impl Parser {
             TokenKind::Number { text, kind } => parse_number_literal(&text, kind)
                 .map(Expression::Number)
                 .map_err(|_| ParseError::new(ParseErrorKind::InvalidNumber, token.span)),
+            TokenKind::StringLiteral(value) => Ok(Expression::Text(value)),
             TokenKind::Identifier(name) => {
                 if self.adjacent_open_paren_follows(token.span) {
                     self.advance(); // consume OpenParen
@@ -829,22 +830,54 @@ impl Parser {
                     }
                 }
             }
+            TokenKind::OpenBracket => self.parse_vector_literal(),
             TokenKind::Operator(operator) => self.parse_prefix_operator(operator, token.span),
             TokenKind::CloseParen | TokenKind::CloseBracket => {
                 Err(ParseError::new(ParseErrorKind::UnexpectedToken, token.span))
             }
-            TokenKind::OpenBracket
-            | TokenKind::Comma
+            TokenKind::Comma
             | TokenKind::Semicolon
             | TokenKind::Dot
             | TokenKind::Colon
             | TokenKind::Ellipsis
-            | TokenKind::StringLiteral(_)
             | TokenKind::Comment(_)
             | TokenKind::CommandPrefix => {
                 Err(ParseError::new(ParseErrorKind::UnexpectedToken, token.span))
             }
         }
+    }
+
+    fn parse_vector_literal(&mut self) -> Result<Expression, ParseError> {
+        let mut items = Vec::new();
+        if self
+            .peek()
+            .is_some_and(|token| matches!(token.kind, TokenKind::CloseBracket))
+        {
+            self.advance();
+            return Ok(Expression::Vector(items));
+        }
+
+        loop {
+            items.push(self.parse_expression(0)?);
+            let next = self
+                .advance()
+                .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEnd, self.end_span()))?;
+            match next.kind {
+                TokenKind::CloseBracket => break,
+                TokenKind::Comma | TokenKind::Semicolon => {
+                    if self
+                        .peek()
+                        .is_some_and(|token| matches!(token.kind, TokenKind::CloseBracket))
+                    {
+                        self.advance();
+                        break;
+                    }
+                }
+                _ => return Err(self.unexpected_token(&next)),
+            }
+        }
+
+        Ok(Expression::Vector(items))
     }
 
     fn parse_bare_function_argument(&mut self) -> Result<Expression, ParseError> {

@@ -56,6 +56,8 @@ pub enum StructureKind {
     Number,
     /// Unit reference node.
     Unit,
+    /// Quoted text value node.
+    Text,
     /// Symbolic text node.
     Symbolic,
     /// Function call node.
@@ -268,6 +270,11 @@ impl NaryChildren {
     /// Returns mutable children in upstream child order without allowing length changes.
     pub fn as_mut_slice(&mut self) -> &mut [Expression] {
         &mut self.children
+    }
+
+    /// Converts the NaryChildren into its inner Vec.
+    pub fn into_vec(self) -> Vec<Expression> {
+        self.children
     }
 }
 
@@ -541,6 +548,8 @@ pub enum Expression {
         /// Whether the formatted unit is plural.
         plural: bool,
     },
+    /// Quoted text value.
+    Text(String),
     /// Symbolic text leaf.
     Symbolic(Symbol),
     /// Function call with stable function handle and ordered arguments.
@@ -640,6 +649,7 @@ impl Expression {
             Self::Percent(_) => StructureKind::Percent,
             Self::Number(_) => StructureKind::Number,
             Self::Unit { .. } => StructureKind::Unit,
+            Self::Text(_) => StructureKind::Text,
             Self::Symbolic(_) => StructureKind::Symbolic,
             Self::FunctionCall { .. } => StructureKind::Function,
             Self::Variable(_) => StructureKind::Variable,
@@ -784,6 +794,7 @@ impl Expression {
             )),
             Self::Number(_)
             | Self::Unit { .. }
+            | Self::Text(_)
             | Self::Symbolic(_)
             | Self::Variable(_)
             | Self::Vector(_)
@@ -824,6 +835,7 @@ impl Expression {
             | Self::Comparison { .. } => 2,
             Self::Number(_)
             | Self::Unit { .. }
+            | Self::Text(_)
             | Self::Symbolic(_)
             | Self::Variable(_)
             | Self::Undefined
@@ -895,6 +907,7 @@ impl Expression {
             },
             Self::Number(_)
             | Self::Unit { .. }
+            | Self::Text(_)
             | Self::Symbolic(_)
             | Self::Variable(_)
             | Self::Undefined
@@ -920,6 +933,57 @@ impl Expression {
         validate_matrix_row_slices(&matrix_rows).ok()?;
 
         Some(matrix_rows)
+    }
+
+    /// Returns true if the expression represents an integer.
+    pub fn represents_integer(&self) -> bool {
+        match self {
+            Self::Number(num) => num.is_integer(),
+            Self::Multiplication(children)
+            | Self::Addition(children)
+            | Self::BitwiseAnd(children)
+            | Self::BitwiseOr(children)
+            | Self::BitwiseXor(children)
+            | Self::LogicalAnd(children)
+            | Self::LogicalOr(children) => children.as_slice().iter().all(|c| c.represents_integer()),
+            Self::Power { base, exponent } => {
+                base.represents_integer() && exponent.represents_integer()
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if the expression represents a rational number.
+    pub fn represents_rational(&self) -> bool {
+        match self {
+            Self::Number(num) => num.is_rational(),
+            Self::Multiplication(children) | Self::Addition(children) => {
+                children.as_slice().iter().all(|c| c.represents_rational())
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if the expression represents a real number.
+    pub fn represents_real(&self) -> bool {
+        match self {
+            Self::Number(num) => num.is_real(),
+            Self::Multiplication(children) | Self::Addition(children) => {
+                children.as_slice().iter().all(|c| c.represents_real())
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if the expression represents a number (not NaN).
+    pub fn represents_number(&self) -> bool {
+        match self {
+            Self::Number(num) => !num.is_nan(),
+            Self::Multiplication(children) | Self::Addition(children) => {
+                children.as_slice().iter().all(|c| c.represents_number())
+            }
+            _ => false,
+        }
     }
 }
 

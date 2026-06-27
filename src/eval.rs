@@ -333,6 +333,7 @@ fn evaluate_ast_rec(
 ) -> Result<Expression, String> {
     match expr {
         Expression::Number(num) => Ok(Expression::Number(num.clone())),
+        Expression::Text(text) => Ok(Expression::Text(text.clone())),
         Expression::Negate(child) => {
             let child_eval = evaluate_ast_rec(child, context)?;
             match child_eval {
@@ -719,11 +720,17 @@ fn evaluate_ast_rec(
         Expression::Variable(var_ref) => evaluate_variable(var_ref, context),
         Expression::Symbolic(sym) => evaluate_symbolic(sym, context),
         Expression::FunctionCall { function, args } => {
+            let fid = function.id();
+            if let Some(res) =
+                crate::functions::utility_string::evaluate_raw(fid, args, context)
+            {
+                return res.map_err(|e| e.message);
+            }
+
             let mut args_eval = Vec::new();
             for arg in args {
                 args_eval.push(evaluate_ast_rec(arg, context)?);
             }
-            let fid = function.id();
             if fid == "abs" && args_eval.len() == 1 {
                 if let Expression::Number(num) = &args_eval[0] {
                     return Ok(Expression::Number(num.abs()));
@@ -915,20 +922,24 @@ fn evaluate_conversion(
 
     // Only convert if it's a known keyword
     let is_supported_keyword = match keyword.as_str() {
-        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float" | "fp32" | "ieee754" | "sexa" | "sexagesimal" => true,
+        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float" | "fp32" | "ieee754" | "sexa" | "sexagesimal" | "unicode" => true,
         other if other.starts_with("bin") && other[3..].chars().all(|c| c.is_ascii_digit()) => true,
         _ => false,
     };
 
     if is_supported_keyword {
-        let base_arg = if let Some(arg_expr) = arg {
-            if let Expression::Number(base_num) = arg_expr {
-                crate::numberbase::number_to_u128(base_num)
-            } else {
-                None
-            }
-        } else {
-            None
+        if keyword == "unicode" {
+            let value = crate::numberbase::number_to_u128(num).ok_or_else(|| {
+                "Cannot convert to Unicode: value is not a non-negative integer".to_string()
+            })?;
+            let text = crate::text::codepoint_to_string(value)
+                .ok_or_else(|| "Cannot convert to Unicode: invalid code point".to_string())?;
+            return Ok(Expression::Symbolic(Symbol::new(text)));
+        }
+
+        let base_arg = match arg {
+            Some(Expression::Number(base_num)) => crate::numberbase::number_to_u128(base_num),
+            _ => None,
         };
         match crate::numberbase::convert_number(num, &keyword, base_arg) {
             Ok(formatted) => Ok(Expression::Symbolic(Symbol::new(formatted))),

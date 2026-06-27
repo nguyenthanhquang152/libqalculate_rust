@@ -948,6 +948,75 @@ fn focused_epic2_numberbase_session_oracle_cases() {
     }
 }
 
+/// Focused fallback-disabled oracle evidence for `strings.batch` rows that do
+/// not depend on non-setting session expressions.
+#[test]
+fn focused_epic6_strings_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_epic6_strings_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [(&str, &str, &[&str]); 17] = [
+        ("strings.batch:14", r#"concatenate("a", "bc", 'defg')"#, &[]),
+        ("strings.batch:16", r#"concatenate("", "c", '', 'd')"#, &[]),
+        ("strings.batch:18", "concatenate(1,2)", &[]),
+        ("strings.batch:20", "concatenate(1*2, 5)", &[]),
+        ("strings.batch:22", "dec(concatenate(4*2, 5))", &[]),
+        ("strings.batch:29", r#"len("")"#, &[]),
+        ("strings.batch:31", r#"len(" ")"#, &[]),
+        ("strings.batch:33", "len(5)", &[]),
+        ("strings.batch:35", "len(5/6)", &[]),
+        ("strings.batch:37", r#"len(concatenate("a", "bc"))"#, &[]),
+        ("strings.batch:41", "0xD8 to unicode", &["/set unicode 1"]),
+        ("strings.batch:43", "char(0xD8)", &["/set unicode 1"]),
+        ("strings.batch:45", "char([0xD8, 0x61])", &["/set unicode 1"]),
+        ("strings.batch:47", "code(Ø) to hex", &["/set unicode 1"]),
+        ("strings.batch:49", "code(😀) to hex", &["/set unicode 1"]),
+        (
+            "strings.batch:51",
+            "code(🍉, utf-8, 0) to hex",
+            &["/set unicode 1"],
+        ),
+        ("strings.batch:53", "code(abc)", &["/set unicode 1"]),
+    ];
+
+    for (case_id, expression, raw_settings) in cases {
+        let settings = raw_settings
+            .iter()
+            .map(|raw| SessionCommand {
+                raw: (*raw).to_string(),
+            })
+            .collect::<Vec<_>>();
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
 /// Focused fallback-disabled oracle evidence for Epic 2 numeric slices that are
 /// not represented as simple no-session upstream batch rows.
 #[test]

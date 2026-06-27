@@ -586,6 +586,11 @@ impl NumberValue {
         }
     }
 
+    /// Check if the value is a rational number.
+    pub fn is_rational(&self) -> bool {
+        matches!(self, NumberValue::Rational(_))
+    }
+
     /// Check if rational is 1/1, float is 1.0, interval point bounds are 1.0, or uncertainty is 1.0 and zero.
     pub fn is_real_one(&self) -> bool {
         match self {
@@ -4578,6 +4583,17 @@ impl Number {
         }
         let (real, imag) = self.to_canonical_ref();
         imag.is_real_zero() && real.is_integer()
+    }
+
+    /// Returns true if the number has no imaginary part and is represented as a rational.
+    pub fn is_rational(&self) -> bool {
+        let (real, imag) = self.to_canonical_ref();
+        imag.is_real_zero() && real.is_rational()
+    }
+
+    /// Returns true if the number is not infinite and has no imaginary part.
+    pub fn is_real(&self) -> bool {
+        !self.is_infinite() && !self.is_complex()
     }
 
     /// Returns true if the number is exactly one.

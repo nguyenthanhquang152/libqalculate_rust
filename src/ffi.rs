@@ -109,7 +109,7 @@ pub struct CalculationOutput {
     pub fallback_state: FallbackState,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrintProfile {
     Api,
     Qalc,
@@ -375,6 +375,7 @@ fn expression_contains(
             args.iter().any(|child| expression_contains(child, predicate))
         }
         Expression::Number(_)
+        | Expression::Text(_)
         | Expression::Unit { .. }
         | Expression::Symbolic(_)
         | Expression::Variable(_)
@@ -408,6 +409,22 @@ fn is_geometry_expression(expr: &crate::ast::Expression) -> bool {
     })
 }
 
+fn is_text_native_expression(expr: &crate::ast::Expression) -> bool {
+    expression_contains(expr, &|expr| {
+        let crate::ast::Expression::FunctionCall { function, .. } = expr else {
+            if let crate::ast::Expression::Conversion { target, .. } = expr {
+                return matches!(
+                    target.as_ref(),
+                    crate::ast::Expression::Symbolic(symbol)
+                        if symbol.name().eq_ignore_ascii_case("unicode")
+                );
+            }
+            return matches!(expr, crate::ast::Expression::Text(_));
+        };
+        crate::functions::utility_string::is_raw_utility_string(function.id())
+    })
+}
+
 fn evaluate_general_expression_natively(
     profile: PrintProfile,
     parsed: &crate::ast::Expression,
@@ -438,14 +455,65 @@ fn evaluate_general_expression_natively(
             })
         }
         crate::ast::Expression::Symbolic(sym) => {
-            let name = sym.name().to_string();
+            let name = qalc_symbolic_conversion_output(profile, parsed, sym.name());
             Some(match profile {
                 PrintProfile::Api => name,
                 PrintProfile::Qalc => name.replace('-', "\u{2212}"),
             })
         }
-        _ => None,
+        other => {
+            let output = crate::text::format_result_with_numbers(&other, &|num| {
+                if num.is_integer() {
+                    let (real, _) = num.to_canonical_ref();
+                    match &*real {
+                        crate::number::NumberValue::Rational(r) => r.value.numer().to_string(),
+                        _ => match profile {
+                            PrintProfile::Api => num.to_string(),
+                            PrintProfile::Qalc => {
+                                num.to_qalc_string_with_precision(precision_digits)
+                            }
+                        },
+                    }
+                } else {
+                    match profile {
+                        PrintProfile::Api => num.to_string(),
+                        PrintProfile::Qalc => num.to_qalc_string_with_precision(precision_digits),
+                    }
+                }
+            })?;
+            Some(match profile {
+                PrintProfile::Api => output,
+                PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+            })
+        }
     }
+}
+
+fn qalc_symbolic_conversion_output(
+    profile: PrintProfile,
+    parsed: &crate::ast::Expression,
+    output: &str,
+) -> String {
+    if profile == PrintProfile::Qalc
+        && conversion_target_is_hex(parsed)
+        && !output.starts_with("0x")
+        && output.chars().all(|ch| ch.is_ascii_hexdigit())
+    {
+        format!("0x{output}")
+    } else {
+        output.to_string()
+    }
+}
+
+fn conversion_target_is_hex(expr: &crate::ast::Expression) -> bool {
+    let crate::ast::Expression::Conversion { target, .. } = expr else {
+        return false;
+    };
+    matches!(
+        target.as_ref(),
+        crate::ast::Expression::Symbolic(symbol)
+            if matches!(symbol.name().to_ascii_lowercase().as_str(), "hex" | "hexadecimal")
+    )
 }
 
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
@@ -453,7 +521,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
 
     let parsed = crate::parser::operators::parse_expression(expr).ok();
     if let Some(ref ast) = parsed {
-        if contains_bitwise_ops(ast) || is_geometry_expression(ast) {
+        if contains_bitwise_ops(ast) || is_geometry_expression(ast) || is_text_native_expression(ast) {
             // Build a context from session settings so native evaluation
             // respects user configuration (precision, base, etc.).
             let mut context = crate::context::CalculatorContext::default();

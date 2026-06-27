@@ -195,6 +195,14 @@ impl StaticRegistry {
             }
         }
 
+        // Dynamically register utility/string catalog functions and aliases
+        for func in crate::functions::utility_string_catalog() {
+            reg.add_function(func.name, func.min_args, func.max_args);
+            for alias in func.aliases {
+                reg.add_function(*alias, func.min_args, func.max_args);
+            }
+        }
+
         reg
     }
 
