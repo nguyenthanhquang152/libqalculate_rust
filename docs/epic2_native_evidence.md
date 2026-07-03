@@ -128,6 +128,21 @@ fallback-disabled for equivalent aliases such as `magnitude(-2.0)` and
 `magnitude(-4/2)`. Precision settings remain outside this slice because the
 vector path computes default-precision `sqrt(29)` before formatting.
 
+The same focused oracle test also records the `matrixvector.batch` `part` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:221`: `part([1], 1, 1, 1, 1) -> 1`
+- `matrixvector.batch:223`:
+  `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2) -> 5`
+- `matrixvector.batch:225`:
+  `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3) -> [3; 6]`
+- `matrixvector.batch:227`:
+  `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3) -> [2  3; 5  6; 8  9; 11  12]`
+
+The native `part` gate is source-exact for these four promoted spellings and
+remains fallback-disabled for equivalent aliases such as
+`part([1], 1.0, 1, 1, 1)` and unrelated subranges.
+
 `tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
 focused Refs #15 input/API slice without changing batch-manifest counts:
 
