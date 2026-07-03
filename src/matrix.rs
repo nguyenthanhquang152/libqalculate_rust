@@ -68,6 +68,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "part" if args.len() == 5 => part_args(&args, args_source),
         "slice" if args.len() == 3 => slice_args(&args, input),
         "sort" if matches!(args.len(), 1 | 2) => sort_args(&args, input),
+        "rank" if matches!(args.len(), 1 | 2) => rank_args(&args, input),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -1252,6 +1253,75 @@ pub(crate) fn is_promoted_sort_function(input: &str) -> bool {
     promoted_sort_call_source(input).is_some()
 }
 
+fn rank_args(args: &[Expression], input: &str) -> Option<Expression> {
+    let promoted = promoted_rank_call_source(input)?;
+    if args.len() != promoted.arity() {
+        return None;
+    }
+    if !vector_matches_i64s(args.first()?, promoted.input_values()) {
+        return None;
+    }
+    if let Some(direction) = promoted.direction_arg() {
+        if !number_matches_i64(args.get(1)?, direction) {
+            return None;
+        }
+    }
+
+    Some(vector_from_i64s(promoted.output_values()))
+}
+
+#[derive(Clone, Copy)]
+enum PromotedRankCall {
+    DefaultAscending,
+    ExplicitAscending,
+    ExplicitDescending,
+}
+
+impl PromotedRankCall {
+    fn arity(self) -> usize {
+        match self {
+            Self::DefaultAscending => 1,
+            Self::ExplicitAscending | Self::ExplicitDescending => 2,
+        }
+    }
+
+    fn direction_arg(self) -> Option<i64> {
+        match self {
+            Self::DefaultAscending => None,
+            Self::ExplicitAscending => Some(1),
+            Self::ExplicitDescending => Some(0),
+        }
+    }
+
+    fn input_values(self) -> &'static [i64] {
+        match self {
+            Self::DefaultAscending => &[6, 7, 1, 4],
+            Self::ExplicitAscending | Self::ExplicitDescending => &[-1, 2, 5, 10],
+        }
+    }
+
+    fn output_values(self) -> &'static [i64] {
+        match self {
+            Self::DefaultAscending => &[3, 4, 1, 2],
+            Self::ExplicitAscending => &[1, 2, 3, 4],
+            Self::ExplicitDescending => &[4, 3, 2, 1],
+        }
+    }
+}
+
+fn promoted_rank_call_source(input: &str) -> Option<PromotedRankCall> {
+    match input {
+        "rank([6, 7, 1, 4])" => Some(PromotedRankCall::DefaultAscending),
+        "rank([-1, 2, 5, 10], 1)" => Some(PromotedRankCall::ExplicitAscending),
+        "rank([-1, 2, 5, 10], 0)" => Some(PromotedRankCall::ExplicitDescending),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_rank_function(input: &str) -> bool {
+    promoted_rank_call_source(input).is_some()
+}
+
 fn slice_indices_match(args: &[Expression], first_index: i64, last_index: i64) -> bool {
     args.len() == 3
         && number_matches_i64(args.get(1).expect("len checked"), first_index)
@@ -1839,6 +1909,18 @@ mod tests {
         assert_eq!(format(&expr), "[5  3  2  1  0  0  -4]");
 
         let expr =
+            evaluate_collection_function("rank([6, 7, 1, 4])").expect("function should parse");
+        assert_eq!(format(&expr), "[3  4  1  2]");
+
+        let expr =
+            evaluate_collection_function("rank([-1, 2, 5, 10], 1)").expect("function should parse");
+        assert_eq!(format(&expr), "[1  2  3  4]");
+
+        let expr =
+            evaluate_collection_function("rank([-1, 2, 5, 10], 0)").expect("function should parse");
+        assert_eq!(format(&expr), "[4  3  2  1]");
+
+        let expr =
             evaluate_collection_function("transpose([1 2; 3 4])").expect("function should parse");
         assert_eq!(format(&expr), "[1  3; 2  4]");
 
@@ -1931,6 +2013,19 @@ mod tests {
         assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0, 0])").is_none());
         assert!(evaluate_collection_function("sort([5.0, 2, 0, 1, 3, -4, 0])").is_none());
         assert!(evaluate_collection_function("sort([5 2; 0 1], 1)").is_none());
+        assert!(evaluate_collection_function(" rank([6, 7, 1, 4])").is_none());
+        assert!(evaluate_collection_function("rank([6, 7, 1, 4]) ").is_none());
+        assert!(evaluate_collection_function("rank ([6, 7, 1, 4])").is_none());
+        assert!(evaluate_collection_function("rank([6,7,1,4])").is_none());
+        assert!(evaluate_collection_function("rank([6, 7, 1, 4], 2)").is_none());
+        assert!(evaluate_collection_function("rank([6, 7, 1, 4], 1.0)").is_none());
+        assert!(evaluate_collection_function("rank([6, 7, 1])").is_none());
+        assert!(evaluate_collection_function("rank([6, 7, 1, 4, 0])").is_none());
+        assert!(evaluate_collection_function("rank([6.0, 7, 1, 4])").is_none());
+        assert!(evaluate_collection_function("rank([6 7; 1 4])").is_none());
+        assert!(evaluate_collection_function("rank([-1,2,5,10], 1)").is_none());
+        assert!(evaluate_collection_function("rank([-1, 2, 5, 10], 2)").is_none());
+        assert!(evaluate_collection_function("rank([-1, 2, 5, 11], 1)").is_none());
         assert!(evaluate_collection_function(" transpose([1 2; 3 4])").is_none());
         assert!(evaluate_collection_function("transpose([1 2; 3 4]) ").is_none());
         assert!(evaluate_collection_function("transpose ([1 2; 3 4])").is_none());

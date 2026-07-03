@@ -1580,6 +1580,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-rank-default",
+            "rank([6, 7, 1, 4])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-rank-ascending",
+            "rank([-1, 2, 5, 10], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-rank-descending",
+            "rank([-1, 2, 5, 10], 0)",
+            default_settings,
+        ),
+        (
             "matrixvector-access-transpose-function",
             "transpose([1 2; 3 4])",
             default_settings,

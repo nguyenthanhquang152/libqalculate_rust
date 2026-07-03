@@ -219,6 +219,18 @@ remains fallback-disabled for spacing variants, unrelated sort directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `rank` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:269`: `rank([6, 7, 1, 4]) -> [3  4  1  2]`
+- `matrixvector.batch:271`: `rank([-1, 2, 5, 10], 1) -> [1  2  3  4]`
+- `matrixvector.batch:273`: `rank([-1, 2, 5, 10], 0) -> [4  3  2  1]`
+
+The native `rank` gate is source-exact for these three promoted spellings and
+remains fallback-disabled for spacing variants, unrelated rank directions,
+non-integer direction arguments, matrix inputs, shape/value mismatches, and
+explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `transpose`
 rows promoted in Refs #41:
 
