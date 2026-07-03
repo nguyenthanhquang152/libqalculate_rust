@@ -1595,6 +1595,26 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-pow-function",
+            "pow([1 2; 3 4], 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-entrywise-power-scalar",
+            "[1 2; 3 4].^2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-entrywise-power-column",
+            "[2 4; 3 4].^[-1; 2]",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-entrywise-power-outer",
+            "[2; 3].^[3 4]",
+            default_settings,
+        ),
+        (
             "matrixvector-access-transpose-function",
             "transpose([1 2; 3 4])",
             default_settings,

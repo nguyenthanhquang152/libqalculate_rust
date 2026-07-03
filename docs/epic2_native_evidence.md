@@ -231,6 +231,19 @@ remains fallback-disabled for spacing variants, unrelated rank directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch`
+`pow`/entrywise power rows promoted in Refs #41:
+
+- `matrixvector.batch:141`: `pow([1 2; 3 4], 2) -> [1  4; 9  16]`
+- `matrixvector.batch:143`: `[1 2; 3 4].^2 -> [1  4; 9  16]`
+- `matrixvector.batch:145`: `[2 4; 3 4].^[-1; 2] -> [0.5  0.25; 9  16]`
+- `matrixvector.batch:147`: `[2; 3].^[3 4] -> [8  16; 27  81]`
+
+The native entrywise power gate covers the collection `pow(...)` spelling and
+the `.^` operator for these promoted rows. Explicit session settings remain
+fallback-disabled, and unsupported arity/scalar-only or incompatible-shape
+forms remain outside native promotion.
+
 The same focused oracle test also records the `matrixvector.batch` `transpose`
 rows promoted in Refs #41:
 

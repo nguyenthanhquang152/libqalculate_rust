@@ -299,6 +299,10 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("[1 2].*[3 4]", "[3  8]"),
         ("[1; 2].*[3 4]", "[3  4; 6  8]"),
         ("[1 2; 3 4].*[1 2; 3 4]", "[1  4; 9  16]"),
+        ("pow([1 2; 3 4], 2)", "[1  4; 9  16]"),
+        ("[1 2; 3 4].^2", "[1  4; 9  16]"),
+        ("[2 4; 3 4].^[-1; 2]", "[0.5  0.25; 9  16]"),
+        ("[2; 3].^[3 4]", "[8  16; 27  81]"),
         ("[2 4 12] / 2", "[1  2  6]"),
         ("divide([2 4 12], 2)", "[1  2  6]"),
         ("rdivide([2 4 12], 2)", "[1  2  6]"),
@@ -428,6 +432,26 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "rank([-1, 2, 5, 10], 0)"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "[2 4; 3 4].^[-1; 2]"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "[1 2; 3 4].^3"],
         Some("1"),
         Some("1"),
     );
@@ -598,6 +622,11 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "rank([-1,2,5,10], 1)",
         "rank([-1, 2, 5, 10], 2)",
         "rank([-1, 2, 5, 11], 1)",
+        "pow([1 2; 3 4])",
+        "pow([1 2; 3 4], 2, 3)",
+        "pow(1, 2)",
+        "pow([1 2], [3 4 5])",
+        "[1 2].^[3 4 5]",
         " transpose([1 2; 3 4])",
         "transpose([1 2; 3 4]) ",
         "transpose ([1 2; 3 4])",
