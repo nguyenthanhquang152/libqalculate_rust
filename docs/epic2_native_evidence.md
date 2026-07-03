@@ -219,6 +219,16 @@ remains fallback-disabled for spacing variants, unrelated sort directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `transpose`
+rows promoted in Refs #41:
+
+- `matrixvector.batch:291`: `transpose([1 2; 3 4]) -> [1  3; 2  4]`
+- `matrixvector.batch:293`: `[1 2 3; 4 5 6].' -> [1  4; 2  5; 3  6]`
+
+The native `transpose` gate is source-exact for these two promoted spellings
+and remains fallback-disabled for spacing variants, alternate postfix spellings,
+unrelated matrix shapes, value mismatches, and explicit session settings.
+
 `tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
 focused Refs #15 input/API slice without changing batch-manifest counts:
 

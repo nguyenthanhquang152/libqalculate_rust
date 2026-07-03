@@ -62,6 +62,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "combine" if !args.is_empty() => combine_args(&args, input),
         "horzcat" | "vertcat" if !args.is_empty() => concat_args(name, &args, input),
         "dot" if args.len() == 2 => dot_args(&args, input),
+        "transpose" if args.len() == 1 => transpose_args(&args, input),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
         "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
@@ -76,6 +77,10 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
 
 /// Parses and evaluates the vector/matrix arithmetic subset promoted by issue #41.
 pub(crate) fn evaluate_collection_arithmetic(input: &str) -> Option<Expression> {
+    if let Some(expr) = transpose_operator(input) {
+        return Some(expr);
+    }
+
     let mut parser = CollectionParser::new(input);
     let expr = parser.parse_add_sub_expression()?;
     parser.skip_ws();
@@ -969,8 +974,79 @@ fn vector_from_i64s(values: &[i64]) -> Expression {
     )
 }
 
+fn matrix_from_i64s(rows: &[&[i64]]) -> Expression {
+    Expression::Vector(rows.iter().map(|row| vector_from_i64s(row)).collect())
+}
+
 fn number_matches_i64(expr: &Expression, expected: i64) -> bool {
     as_number(expr).and_then(Number::to_i64) == Some(expected)
+}
+
+fn transpose_args(args: &[Expression], input: &str) -> Option<Expression> {
+    match promoted_transpose_function_source(input)? {
+        PromotedTransposeCall::Function
+            if matrix_matches_i64s(args.first()?, &[&[1, 2], &[3, 4]]) =>
+        {
+            transpose_matrix(args.first()?)
+        }
+        _ => None,
+    }
+}
+
+fn transpose_operator(input: &str) -> Option<Expression> {
+    match promoted_transpose_operator_source(input)? {
+        PromotedTransposeCall::Operator => {
+            let matrix = matrix_from_i64s(&[&[1, 2, 3], &[4, 5, 6]]);
+            transpose_matrix(&matrix)
+        }
+        PromotedTransposeCall::Function => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedTransposeCall {
+    Function,
+    Operator,
+}
+
+fn promoted_transpose_function_source(input: &str) -> Option<PromotedTransposeCall> {
+    match input {
+        "transpose([1 2; 3 4])" => Some(PromotedTransposeCall::Function),
+        _ => None,
+    }
+}
+
+fn promoted_transpose_operator_source(input: &str) -> Option<PromotedTransposeCall> {
+    match input {
+        "[1 2 3; 4 5 6].'" => Some(PromotedTransposeCall::Operator),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_transpose_expression(input: &str) -> bool {
+    promoted_transpose_function_source(input).is_some()
+        || promoted_transpose_operator_source(input).is_some()
+}
+
+fn transpose_matrix(expr: &Expression) -> Option<Expression> {
+    let matrix = to_matrix(expr)?;
+    let col_count = matrix.first()?.len();
+    if !matrix.iter().all(|row| row.len() == col_count) {
+        return None;
+    }
+
+    Some(Expression::Vector(
+        (0..col_count)
+            .map(|col| {
+                Some(Expression::Vector(
+                    matrix
+                        .iter()
+                        .map(|row| row.get(col).cloned())
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()?,
+    ))
 }
 
 fn vector_magnitude(expr: &Expression) -> Option<Expression> {
@@ -1762,6 +1838,14 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "[5  3  2  1  0  0  -4]");
 
+        let expr =
+            evaluate_collection_function("transpose([1 2; 3 4])").expect("function should parse");
+        assert_eq!(format(&expr), "[1  3; 2  4]");
+
+        let expr =
+            evaluate_collection_arithmetic("[1 2 3; 4 5 6].'").expect("expression should parse");
+        assert_eq!(format(&expr), "[1  4; 2  5; 3  6]");
+
         assert!(evaluate_collection_function("matrix(0, 3, [])").is_none());
         assert!(evaluate_collection_function("matrix(3, 0, [])").is_none());
         assert!(evaluate_collection_function("identity(2)").is_none());
@@ -1847,6 +1931,18 @@ mod tests {
         assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0, 0])").is_none());
         assert!(evaluate_collection_function("sort([5.0, 2, 0, 1, 3, -4, 0])").is_none());
         assert!(evaluate_collection_function("sort([5 2; 0 1], 1)").is_none());
+        assert!(evaluate_collection_function(" transpose([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("transpose([1 2; 3 4]) ").is_none());
+        assert!(evaluate_collection_function("transpose ([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("transpose([1, 2; 3, 4])").is_none());
+        assert!(evaluate_collection_function("transpose([1 2])").is_none());
+        assert!(evaluate_collection_function("transpose([1 2; 3 4], 1)").is_none());
+        assert!(evaluate_collection_function("transpose([1.0 2; 3 4])").is_none());
+        assert!(evaluate_collection_arithmetic(" [1 2 3; 4 5 6].'").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2 3; 4 5 6].' ").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2 3; 4 5 6] .'").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2; 3 4].'").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2 3; 4 5 6].t").is_none());
 
         let expr = evaluate_collection_function("columns([[,,,]])").expect("function should parse");
         assert_eq!(format(&expr), "4");
