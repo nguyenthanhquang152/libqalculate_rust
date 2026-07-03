@@ -60,7 +60,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "hadamard" if args.len() >= 2 => hadamard_args(&args),
         "identity" if args.len() == 1 => identity_arg(args.first()?),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
-        "norm" if args.len() == 1 => norm_arg(args.first()?, args_source),
+        "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
@@ -712,10 +712,7 @@ pub(crate) fn is_promoted_magnitude_function(input: &str) -> bool {
 }
 
 pub(crate) fn is_promoted_norm_function(input: &str) -> bool {
-    let Some((name, args_source)) = split_function_call(input) else {
-        return false;
-    };
-    name == "norm" && promoted_norm_arg_source(args_source).is_some()
+    promoted_norm_call_source(input).is_some()
 }
 
 fn magnitude_arg(arg: &Expression, args_source: &str) -> Option<Expression> {
@@ -772,8 +769,8 @@ fn vector_magnitude(expr: &Expression) -> Option<Expression> {
     Some(Expression::Number(sum.sqrt()))
 }
 
-fn norm_arg(arg: &Expression, args_source: &str) -> Option<Expression> {
-    match promoted_norm_arg_source(args_source)? {
+fn norm_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    match promoted_norm_call_source(input)? {
         PromotedNormArg::Singleton if vector_matches_i64s(arg, &[2]) => vector_magnitude(arg),
         PromotedNormArg::TwoElement if vector_matches_i64s(arg, &[3, 4]) => vector_magnitude(arg),
         PromotedNormArg::ThreeElement if vector_matches_i64s(arg, &[2, 3, 6]) => {
@@ -790,11 +787,11 @@ enum PromotedNormArg {
     ThreeElement,
 }
 
-fn promoted_norm_arg_source(args_source: &str) -> Option<PromotedNormArg> {
-    match args_source {
-        "[2]" => Some(PromotedNormArg::Singleton),
-        "[3, 4]" => Some(PromotedNormArg::TwoElement),
-        "[2, 3, 6]" => Some(PromotedNormArg::ThreeElement),
+fn promoted_norm_call_source(input: &str) -> Option<PromotedNormArg> {
+    match input {
+        "norm([2])" => Some(PromotedNormArg::Singleton),
+        "norm([3, 4])" => Some(PromotedNormArg::TwoElement),
+        "norm([2, 3, 6])" => Some(PromotedNormArg::ThreeElement),
         _ => None,
     }
 }
@@ -1391,6 +1388,10 @@ mod tests {
         assert!(evaluate_collection_function("magnitude([1 2; 3 4])").is_none());
         assert!(evaluate_collection_function("norm([2.0])").is_none());
         assert!(evaluate_collection_function("norm([4/2])").is_none());
+        assert!(evaluate_collection_function(" norm([2])").is_none());
+        assert!(evaluate_collection_function("norm([2]) ").is_none());
+        assert!(evaluate_collection_function(" norm([2]) ").is_none());
+        assert!(evaluate_collection_function("norm ([2])").is_none());
         assert!(evaluate_collection_function("norm( [2])").is_none());
         assert!(evaluate_collection_function("norm([2] )").is_none());
         assert!(evaluate_collection_function("norm([3,4])").is_none());
