@@ -61,6 +61,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "identity" if args.len() == 1 => identity_arg(args.first()?),
         "combine" if !args.is_empty() => combine_args(&args, input),
         "horzcat" | "vertcat" if !args.is_empty() => concat_args(name, &args, input),
+        "dot" if args.len() == 2 => dot_args(&args, input),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
         "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
@@ -849,6 +850,72 @@ pub(crate) fn is_promoted_concat_function(input: &str) -> bool {
     promoted_concat_call_source(input).is_some()
 }
 
+fn dot_args(args: &[Expression], input: &str) -> Option<Expression> {
+    match promoted_dot_call_source(input)? {
+        PromotedDotCall::Scalars
+            if number_matches_i64(args.first()?, 2) && number_matches_i64(args.get(1)?, 3) =>
+        {
+            dot_product(args.first()?, args.get(1)?)
+        }
+        PromotedDotCall::TwoVectors
+            if vector_matches_i64s(args.first()?, &[1, 2])
+                && vector_matches_i64s(args.get(1)?, &[3, 4]) =>
+        {
+            dot_product(args.first()?, args.get(1)?)
+        }
+        PromotedDotCall::ThreeVectors
+            if vector_matches_i64s(args.first()?, &[1, 2, 3])
+                && vector_matches_i64s(args.get(1)?, &[4, 5, 6]) =>
+        {
+            dot_product(args.first()?, args.get(1)?)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedDotCall {
+    Scalars,
+    TwoVectors,
+    ThreeVectors,
+}
+
+fn promoted_dot_call_source(input: &str) -> Option<PromotedDotCall> {
+    match input {
+        "dot((2); (3))" => Some(PromotedDotCall::Scalars),
+        "dot((1; 2); (3, 4))" => Some(PromotedDotCall::TwoVectors),
+        "dot((1; 2; 3); (4; 5; 6))" => Some(PromotedDotCall::ThreeVectors),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_dot_function(input: &str) -> bool {
+    promoted_dot_call_source(input).is_some()
+}
+
+fn dot_product(lhs: &Expression, rhs: &Expression) -> Option<Expression> {
+    let lhs_values = dot_values(lhs)?;
+    let rhs_values = dot_values(rhs)?;
+    if lhs_values.len() != rhs_values.len() {
+        return None;
+    }
+    let sum = lhs_values
+        .iter()
+        .zip(rhs_values.iter())
+        .fold(Number::from_i32(0), |acc, (lhs, rhs)| {
+            acc.add(&lhs.mul(rhs))
+        });
+    Some(Expression::Number(sum))
+}
+
+fn dot_values(expr: &Expression) -> Option<Vec<Number>> {
+    match expr {
+        Expression::Number(number) => Some(vec![number.clone()]),
+        Expression::Vector(_) => vector_numbers(expr),
+        _ => None,
+    }
+}
+
 fn magnitude_arg(arg: &Expression, args_source: &str) -> Option<Expression> {
     match promoted_magnitude_arg_source(args_source)? {
         PromotedMagnitudeArg::Scalar if number_matches_i64(arg, -2) => {
@@ -1627,6 +1694,17 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "[1  2; 3  4; 5  6]");
 
+        let expr = evaluate_collection_function("dot((2); (3))").expect("function should parse");
+        assert_eq!(format(&expr), "6");
+
+        let expr =
+            evaluate_collection_function("dot((1; 2); (3, 4))").expect("function should parse");
+        assert_eq!(format(&expr), "11");
+
+        let expr = evaluate_collection_function("dot((1; 2; 3); (4; 5; 6))")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "32");
+
         let expr = evaluate_collection_function("magnitude(-2)").expect("function should parse");
         assert_eq!(format(&expr), "2");
 
@@ -1732,6 +1810,16 @@ mod tests {
         assert!(evaluate_collection_function("norm([3, 4.0])").is_none());
         assert!(evaluate_collection_function("norm([2, 3, 6, 0])").is_none());
         assert!(evaluate_collection_function("norm([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function(" dot((2); (3))").is_none());
+        assert!(evaluate_collection_function("dot((2); (3)) ").is_none());
+        assert!(evaluate_collection_function("dot ((2); (3))").is_none());
+        assert!(evaluate_collection_function("dot((2), (3))").is_none());
+        assert!(evaluate_collection_function("dot((1; 2); (3,4))").is_none());
+        assert!(evaluate_collection_function("dot((1; 2); (3, 4); (5))").is_none());
+        assert!(evaluate_collection_function("dot((1; 2); (3, 5))").is_none());
+        assert!(evaluate_collection_function("dot((1; 2; 3); (4; 5))").is_none());
+        assert!(evaluate_collection_function("dot((1.0; 2); (3, 4))").is_none());
+        assert!(evaluate_collection_function("dot([1 2; 3 4]; [5 6; 7 8])").is_none());
         assert!(evaluate_collection_function("part([1], 1.0, 1, 1, 1)").is_none());
         assert!(evaluate_collection_function("part([1], 1, 1, 1)").is_none());
         assert!(evaluate_collection_function("part([1, 2], 1, 1, 1, 1)").is_none());

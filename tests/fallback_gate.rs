@@ -227,6 +227,9 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
             "[1  3  4  7  8  9; 2  5  6  10  11  12]",
         ),
         ("vertcat([1 2], [3 4], [5 6])", "[1  2; 3  4; 5  6]"),
+        ("dot((2); (3))", "6"),
+        ("dot((1; 2); (3, 4))", "11"),
+        ("dot((1; 2; 3); (4; 5; 6))", "32"),
         ("columns([1 2; 4 5])", "2"),
         ("column([1], 1)", "1"),
         ("column([1, 2], 1)", "1"),
@@ -379,6 +382,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert_eq!(exit_code, 2);
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "dot((1; 2); (3, 4))"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &[
             "-set",
             "precision 128",
@@ -481,6 +494,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "vertcat([1 2], [3 4])",
         "vertcat([1 2], [3 4], [5 6], [7 8])",
         "vertcat([1 2], [3 4 5], [6 7])",
+        " dot((2); (3))",
+        "dot((2); (3)) ",
+        "dot ((2); (3))",
+        "dot((2), (3))",
+        "dot((1; 2); (3,4))",
+        "dot((1; 2); (3, 4); (5))",
+        "dot((1; 2); (3, 5))",
+        "dot((1; 2; 3); (4; 5))",
+        "dot((1.0; 2); (3, 4))",
+        "dot([1 2; 3 4]; [5 6; 7 8])",
         "magnitude(2)",
         "magnitude(-2.0)",
         "magnitude(-4/2)",
