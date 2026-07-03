@@ -197,11 +197,28 @@ where
             Some(format!("{}({})", function.id(), formatted_args.join(", ")))
         }
         Expression::Vector(items) => {
-            let formatted = items
-                .iter()
-                .map(|item| format_result_with_numbers(item, format_number))
-                .collect::<Option<Vec<_>>>()?;
-            Some(format!("[{}]", formatted.join("  ")))
+            if crate::matrix::is_rectangular_matrix(expr) {
+                let rows = items
+                    .iter()
+                    .map(|item| {
+                        let Expression::Vector(row_items) = item else {
+                            return None;
+                        };
+                        row_items
+                            .iter()
+                            .map(|cell| format_result_with_numbers(cell, format_number))
+                            .collect::<Option<Vec<_>>>()
+                            .map(|row| row.join("  "))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(format!("[{}]", rows.join("; ")))
+            } else {
+                let formatted = items
+                    .iter()
+                    .map(|item| format_result_with_numbers(item, format_number))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(format!("[{}]", formatted.join("  ")))
+            }
         }
         Expression::Remainder { lhs, rhs } => {
             let l = format_result_with_numbers(lhs, format_number)?;

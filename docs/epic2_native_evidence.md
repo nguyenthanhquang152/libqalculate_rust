@@ -17,7 +17,9 @@ the cases listed here only; it does not claim full `Number.cc` parity.
 
 ## Native-Pass Batch Rows
 
-`docs/batch_manifest.md` now marks 55 rows as `native-pass`.
+This Epic 2 note covers 55 numeric/native scaffold rows that were promoted to
+`native-pass` in `docs/batch_manifest.md`. Later epics may add additional
+native-pass rows outside this note's scope.
 
 - `parser.batch`: lines 1, 3, 5, 7, 9, 18, 20, 22, 24, 28, 32, 34, 36, 41,
   43, 45, 47, 49, 53.

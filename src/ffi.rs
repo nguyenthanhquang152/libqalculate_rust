@@ -516,6 +516,51 @@ fn conversion_target_is_hex(expr: &crate::ast::Expression) -> bool {
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
 
+    if let Some(collection) = crate::matrix::parse_collection_literal(expr) {
+        let mut context = crate::context::CalculatorContext::default();
+        for cmd in settings {
+            let _ = context.apply_command(cmd);
+        }
+        if let Some(output) = evaluate_general_expression_natively(
+            profile,
+            &collection,
+            &mut context,
+            parsed_settings.precision_digits(),
+        ) {
+            return Some(output);
+        }
+    }
+
+    if let Some(collection_result) = crate::matrix::evaluate_collection_function(expr) {
+        let mut context = crate::context::CalculatorContext::default();
+        for cmd in settings {
+            let _ = context.apply_command(cmd);
+        }
+        if let Some(output) = evaluate_general_expression_natively(
+            profile,
+            &collection_result,
+            &mut context,
+            parsed_settings.precision_digits(),
+        ) {
+            return Some(output);
+        }
+    }
+
+    if let Some(collection_result) = crate::matrix::evaluate_collection_arithmetic(expr) {
+        let mut context = crate::context::CalculatorContext::default();
+        for cmd in settings {
+            let _ = context.apply_command(cmd);
+        }
+        if let Some(output) = evaluate_general_expression_natively(
+            profile,
+            &collection_result,
+            &mut context,
+            parsed_settings.precision_digits(),
+        ) {
+            return Some(output);
+        }
+    }
+
     let parsed = crate::parser::operators::parse_expression(expr).ok();
     if let Some(ref ast) = parsed {
         if contains_bitwise_ops(ast)
