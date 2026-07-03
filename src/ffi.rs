@@ -551,6 +551,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return None;
     }
 
+    if !settings.is_empty() && crate::matrix::is_promoted_sort_function(expr) {
+        return None;
+    }
+
     if let Some(collection_result) = crate::matrix::evaluate_collection_function(expr) {
         let mut context = crate::context::CalculatorContext::default();
         for cmd in settings {

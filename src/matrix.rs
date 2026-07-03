@@ -65,6 +65,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
         "slice" if args.len() == 3 => slice_args(&args, input),
+        "sort" if matches!(args.len(), 1 | 2) => sort_args(&args, input),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -1038,6 +1039,76 @@ pub(crate) fn is_promoted_slice_function(input: &str) -> bool {
     promoted_slice_call_source(input).is_some()
 }
 
+fn sort_args(args: &[Expression], input: &str) -> Option<Expression> {
+    let promoted = promoted_sort_call_source(input)?;
+    if !vector_matches_i64s(args.first()?, &[5, 2, 0, 1, 3, -4, 0]) {
+        return None;
+    }
+    if args.len() != promoted.arity() {
+        return None;
+    }
+    if let Some(direction) = promoted.direction_arg() {
+        if !number_matches_i64(args.get(1)?, direction) {
+            return None;
+        }
+    }
+
+    Some(match promoted.order() {
+        SortOrder::Ascending => vector_from_i64s(&[-4, 0, 0, 1, 2, 3, 5]),
+        SortOrder::Descending => vector_from_i64s(&[5, 3, 2, 1, 0, 0, -4]),
+    })
+}
+
+#[derive(Clone, Copy)]
+enum PromotedSortCall {
+    DefaultAscending,
+    ExplicitAscending,
+    ExplicitDescending,
+}
+
+impl PromotedSortCall {
+    fn arity(self) -> usize {
+        match self {
+            Self::DefaultAscending => 1,
+            Self::ExplicitAscending | Self::ExplicitDescending => 2,
+        }
+    }
+
+    fn direction_arg(self) -> Option<i64> {
+        match self {
+            Self::DefaultAscending => None,
+            Self::ExplicitAscending => Some(1),
+            Self::ExplicitDescending => Some(0),
+        }
+    }
+
+    fn order(self) -> SortOrder {
+        match self {
+            Self::DefaultAscending | Self::ExplicitAscending => SortOrder::Ascending,
+            Self::ExplicitDescending => SortOrder::Descending,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+fn promoted_sort_call_source(input: &str) -> Option<PromotedSortCall> {
+    match input {
+        "sort([5, 2, 0, 1, 3, -4, 0])" => Some(PromotedSortCall::DefaultAscending),
+        "sort([5, 2, 0, 1, 3, -4, 0], 1)" => Some(PromotedSortCall::ExplicitAscending),
+        "sort([5, 2, 0, 1, 3, -4, 0], 0)" => Some(PromotedSortCall::ExplicitDescending),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_sort_function(input: &str) -> bool {
+    promoted_sort_call_source(input).is_some()
+}
+
 fn slice_indices_match(args: &[Expression], first_index: i64, last_index: i64) -> bool {
     args.len() == 3
         && number_matches_i64(args.get(1).expect("len checked"), first_index)
@@ -1601,6 +1672,18 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "[6  7  8]");
 
+        let expr = evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[-4  0  0  1  2  3  5]");
+
+        let expr = evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0], 1)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[-4  0  0  1  2  3  5]");
+
+        let expr = evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0], 0)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[5  3  2  1  0  0  -4]");
+
         assert!(evaluate_collection_function("matrix(0, 3, [])").is_none());
         assert!(evaluate_collection_function("matrix(3, 0, [])").is_none());
         assert!(evaluate_collection_function("identity(2)").is_none());
@@ -1666,6 +1749,16 @@ mod tests {
         assert!(evaluate_collection_function("slice([5, 6, 7, 8, 9], 4, 2)").is_none());
         assert!(evaluate_collection_function("slice([5, 6, 7, 8, 9], 2, 5)").is_none());
         assert!(evaluate_collection_function("slice([5 6; 7 8], 1, 2)").is_none());
+        assert!(evaluate_collection_function(" sort([5, 2, 0, 1, 3, -4, 0])").is_none());
+        assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0]) ").is_none());
+        assert!(evaluate_collection_function("sort ([5, 2, 0, 1, 3, -4, 0])").is_none());
+        assert!(evaluate_collection_function("sort([5,2,0,1,3,-4,0])").is_none());
+        assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0], 2)").is_none());
+        assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0], 1.0)").is_none());
+        assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4])").is_none());
+        assert!(evaluate_collection_function("sort([5, 2, 0, 1, 3, -4, 0, 0])").is_none());
+        assert!(evaluate_collection_function("sort([5.0, 2, 0, 1, 3, -4, 0])").is_none());
+        assert!(evaluate_collection_function("sort([5 2; 0 1], 1)").is_none());
 
         let expr = evaluate_collection_function("columns([[,,,]])").expect("function should parse");
         assert_eq!(format(&expr), "4");

@@ -276,6 +276,9 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ),
         ("slice([5], 1, 1)", "5"),
         ("slice([5, 6, 7, 8, 9], 2, 4)", "[6  7  8]"),
+        ("sort([5, 2, 0, 1, 3, -4, 0])", "[−4  0  0  1  2  3  5]"),
+        ("sort([5, 2, 0, 1, 3, -4, 0], 1)", "[−4  0  0  1  2  3  5]"),
+        ("sort([5, 2, 0, 1, 3, -4, 0], 0)", "[5  3  2  1  0  0  −4]"),
         ("[1 2] times 3 times 4", "[12  24]"),
         ("[1 2] Times 3", "[3  6]"),
         ("(1; 2; 3) * 2 - 2", "[0  2  4]"),
@@ -381,6 +384,21 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
             "precision 128",
             "--",
             "slice([5, 6, 7, 8, 9], 2, 4)",
+        ],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &[
+            "-set",
+            "precision 128",
+            "--",
+            "sort([5, 2, 0, 1, 3, -4, 0], 0)",
         ],
         Some("1"),
         Some("1"),
@@ -499,6 +517,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "slice([5, 6, 7, 8, 9], 4, 2)",
         "slice([5, 6, 7, 8, 9], 2, 5)",
         "slice([5 6; 7 8], 1, 2)",
+        " sort([5, 2, 0, 1, 3, -4, 0])",
+        "sort([5, 2, 0, 1, 3, -4, 0]) ",
+        "sort ([5, 2, 0, 1, 3, -4, 0])",
+        "sort([5,2,0,1,3,-4,0])",
+        "sort([5, 2, 0, 1, 3, -4, 0], 2)",
+        "sort([5, 2, 0, 1, 3, -4, 0], 1.0)",
+        "sort([5, 2, 0, 1, 3, -4])",
+        "sort([5, 2, 0, 1, 3, -4, 0, 0])",
+        "sort([5.0, 2, 0, 1, 3, -4, 0])",
+        "sort([5 2; 0 1], 1)",
         "divide([1], 0+/-1)",
         "divide(1, [2 4])",
         "rdivide([1; 2], [3 4])",

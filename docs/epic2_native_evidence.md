@@ -192,6 +192,21 @@ The native `slice` gate is source-exact for these two promoted spellings and
 remains fallback-disabled for spacing variants, unrelated ranges, non-integer
 indices, matrix inputs, and explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `sort` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:284`:
+  `sort([5, 2, 0, 1, 3, -4, 0]) -> [-4  0  0  1  2  3  5]`
+- `matrixvector.batch:286`:
+  `sort([5, 2, 0, 1, 3, -4, 0], 1) -> [-4  0  0  1  2  3  5]`
+- `matrixvector.batch:288`:
+  `sort([5, 2, 0, 1, 3, -4, 0], 0) -> [5  3  2  1  0  0  -4]`
+
+The native `sort` gate is source-exact for these three promoted spellings and
+remains fallback-disabled for spacing variants, unrelated sort directions,
+non-integer direction arguments, matrix inputs, shape/value mismatches, and
+explicit session settings.
+
 `tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
 focused Refs #15 input/API slice without changing batch-manifest counts:
 
