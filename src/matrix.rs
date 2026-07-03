@@ -58,6 +58,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         }
         "multiply" if !args.is_empty() => multiply_args(&args),
         "hadamard" if args.len() >= 2 => hadamard_args(&args),
+        "identity" if args.len() == 1 => identity_arg(args.first()?),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -663,6 +664,43 @@ fn collapse_singleton_vector(expr: Expression) -> Expression {
     }
 }
 
+fn identity_arg(arg: &Expression) -> Option<Expression> {
+    let size = match collection_shape(arg)? {
+        CollectionShape::Scalar => {
+            let size = number_to_usize(arg)?;
+            match size {
+                1 | 3 => size,
+                _ => return None,
+            }
+        }
+        CollectionShape::Matrix { rows: 2, cols: 2 } => 2,
+        _ => return None,
+    };
+
+    Some(identity_matrix(size))
+}
+
+fn identity_matrix(size: usize) -> Expression {
+    if size == 1 {
+        return Expression::Number(Number::from_i32(1));
+    }
+
+    Expression::Vector(
+        (0..size)
+            .map(|row| {
+                Expression::Vector(
+                    (0..size)
+                        .map(|col| {
+                            let value = if row == col { 1 } else { 0 };
+                            Expression::Number(Number::from_i32(value))
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
 fn number_add(lhs: &Number, rhs: &Number) -> Option<Number> {
     Some(lhs.add(rhs))
 }
@@ -1085,8 +1123,20 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "[1  2  3; 4  5  6; 7  8  9]");
 
+        let expr = evaluate_collection_function("identity(1)").expect("function should parse");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("identity(3)").expect("function should parse");
+        assert_eq!(format(&expr), "[1  0  0; 0  1  0; 0  0  1]");
+
+        let expr =
+            evaluate_collection_function("identity([1 2; 4 5])").expect("function should parse");
+        assert_eq!(format(&expr), "[1  0; 0  1]");
+
         assert!(evaluate_collection_function("matrix(0, 3, [])").is_none());
         assert!(evaluate_collection_function("matrix(3, 0, [])").is_none());
+        assert!(evaluate_collection_function("identity(2)").is_none());
+        assert!(evaluate_collection_function("identity([1 2])").is_none());
 
         let expr = evaluate_collection_function("columns([[,,,]])").expect("function should parse");
         assert_eq!(format(&expr), "4");
