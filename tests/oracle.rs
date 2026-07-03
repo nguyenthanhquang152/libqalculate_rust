@@ -1415,6 +1415,41 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-multiply-scalar",
+            "multiply(1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-multiply-matrix-scalar",
+            "multiply([1 2; 4 5], 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-multiply-vector-scalars",
+            "multiply([1 2], 3, 4)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-multiply-vector-scalar",
+            "multiply([1 2], 3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-multiply-matrix-scalars",
+            "multiply([1 2; 4 5], 2, 3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-times-vector-scalars",
+            "[1 2] times 3 times 4",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-times-vector-scalar-mixed-case",
+            "[1 2] Times 3",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-vector-scale-subtract",
             "(1; 2; 3) * 2 - 2",
             default_settings,
@@ -1430,8 +1465,73 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-times-matrix-multiply",
+            "[1 2; 3 4] times [5 6; 7 8]",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-elementwise-vector-multiply",
+            "[1 2].*[3 4]",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-elementwise-broadcast-multiply",
+            "[1; 2].*[3 4]",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-elementwise-multiply",
             "[1 2; 3 4].*[1 2; 3 4]",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-vector-divide-scalar",
+            "[2 4 12] / 2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-divide-function",
+            "divide([2 4 12], 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-rdivide-alias",
+            "rdivide([2 4 12], 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-divide-function-matrix-scalar",
+            "divide([2 4; 6 12], 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-rdivide-vector-denominator",
+            "rdivide([2 4], [1 2])",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-elementwise-divide-scalar",
+            "[2 4 12]./2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-elementwise-divide-left-associative",
+            "[2 4]./1/2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-matrix-divide-scalar",
+            "[[2, 4], [6, 12]] / 2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-divide-function-matrix",
+            "divide([2 4; 6 12], [1 2; 3 4])",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-elementwise-matrix-divide",
+            "[2 4; 6 12]./[1 2; 3 4]",
             default_settings,
         ),
     ];
