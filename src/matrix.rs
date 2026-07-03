@@ -57,6 +57,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
             column(collection, col_idx)
         }
         "multiply" if !args.is_empty() => multiply_args(&args),
+        "hadamard" if args.len() >= 2 => hadamard_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -620,6 +621,48 @@ fn multiply_args(args: &[Expression]) -> Option<Expression> {
     Some(acc)
 }
 
+fn hadamard_args(args: &[Expression]) -> Option<Expression> {
+    let shapes = args
+        .iter()
+        .map(collection_shape)
+        .collect::<Option<Vec<_>>>()?;
+    let promoted_singleton_vectors = matches!(
+        shapes.as_slice(),
+        [
+            CollectionShape::Vector { len: 1 },
+            CollectionShape::Vector { len: 1 },
+            CollectionShape::Vector { len: 1 }
+        ]
+    );
+    let promoted_matrix_pair = matches!(
+        shapes.as_slice(),
+        [
+            CollectionShape::Matrix { rows: 2, cols: 3 },
+            CollectionShape::Matrix { rows: 2, cols: 3 }
+        ]
+    );
+    if !(promoted_singleton_vectors || promoted_matrix_pair) {
+        return None;
+    }
+
+    let mut acc = args[0].clone();
+    for arg in &args[1..] {
+        acc = binary_elementwise(acc, arg.clone(), &number_mul, BroadcastMode::None)?;
+    }
+    Some(collapse_singleton_vector(acc))
+}
+
+fn collapse_singleton_vector(expr: Expression) -> Expression {
+    match expr {
+        Expression::Vector(mut items)
+            if items.len() == 1 && matches!(items.first(), Some(Expression::Number(_))) =>
+        {
+            items.pop().expect("singleton vector contains one item")
+        }
+        other => other,
+    }
+}
+
 fn number_add(lhs: &Number, rhs: &Number) -> Option<Number> {
     Some(lhs.add(rhs))
 }
@@ -1127,6 +1170,14 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "[6  12; 24  30]");
 
+        let expr =
+            evaluate_collection_function("hadamard([2], [3], [4])").expect("function should parse");
+        assert_eq!(format(&expr), "24");
+
+        let expr = evaluate_collection_function("hadamard([1 2 3; 4 5 6]; [7 8 9; 10 11 12])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[7  16  27; 40  55  72]");
+
         let expr = evaluate_collection_arithmetic("[1 2] times 3 times 4")
             .expect("expression should parse");
         assert_eq!(format(&expr), "[12  24]");
@@ -1178,6 +1229,11 @@ mod tests {
         assert!(evaluate_collection_function("multiply([1 2])").is_none());
         assert!(evaluate_collection_function("multiply(1, 2)").is_none());
         assert!(evaluate_collection_function("multiply([1 2; 3 4], [5 6; 7 8])").is_none());
+        assert!(evaluate_collection_function("hadamard([2], [3])").is_none());
+        assert!(evaluate_collection_function("hadamard([1 2], [3 4])").is_none());
+        assert!(evaluate_collection_function("hadamard([1 2], [3 4 5])").is_none());
+        assert!(evaluate_collection_function("hadamard([1; 2], [3 4])").is_none());
+        assert!(evaluate_collection_function("hadamard(1, 2)").is_none());
         assert!(evaluate_collection_function("divide(1)").is_none());
         assert!(evaluate_collection_function("divide(1, 0)").is_none());
         assert!(evaluate_collection_function("divide([1], 0+/-1)").is_none());

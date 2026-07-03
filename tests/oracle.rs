@@ -1440,6 +1440,16 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-hadamard-singleton-vectors",
+            "hadamard([2], [3], [4])",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-hadamard-matrices",
+            "hadamard([1 2 3; 4 5 6]; [7 8 9; 10 11 12])",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-times-vector-scalars",
             "[1 2] times 3 times 4",
             default_settings,
