@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **281** |
-| Inventory-only test cases | **375** |
+| Native-pass test cases | **283** |
+| Inventory-only test cases | **373** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -496,8 +496,8 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 46 | `matrixvector.batch:106` | `dot((2); (3))` | `6` | — | native-pass |
 | 47 | `matrixvector.batch:108` | `dot((1; 2); (3, 4))` | `11` | — | native-pass |
 | 48 | `matrixvector.batch:110` | `dot((1; 2; 3); (4; 5; 6))` | `32` | — | native-pass |
-| 49 | `matrixvector.batch:112` | `(1; 2; 3).(4; 5; 6)` | `32` | — | inventory-only |
-| 50 | `matrixvector.batch:114` | `(1; 2; 3, 4) . (5; 6; 7, 8)` | `70` | — | inventory-only |
+| 49 | `matrixvector.batch:112` | `(1; 2; 3).(4; 5; 6)` | `32` | — | native-pass |
+| 50 | `matrixvector.batch:114` | `(1; 2; 3, 4) . (5; 6; 7, 8)` | `70` | — | native-pass |
 | 51 | `matrixvector.batch:117` | `element([1 2; 3 4], 1)` | `[1  2]` | — | native-pass |
 | 52 | `matrixvector.batch:119` | `element([1 2 3; 4 5 6; 1 0 9], 1, 3)` | `3` | — | native-pass |
 | 53 | `matrixvector.batch:121` | `element([1 2 3; 4 5 6], 2, 1)` | `4` | — | native-pass |
