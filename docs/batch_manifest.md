@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **276** |
-| Inventory-only test cases | **380** |
+| Native-pass test cases | **280** |
+| Inventory-only test cases | **376** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -561,10 +561,10 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 111 | `matrixvector.batch:253` | `norm([2])` | `2` | — | native-pass |
 | 112 | `matrixvector.batch:255` | `norm([3, 4])` | `5` | — | native-pass |
 | 113 | `matrixvector.batch:257` | `norm([2, 3, 6])` | `7` | — | native-pass |
-| 114 | `matrixvector.batch:260` | `permanent([1])` | `1` | — | inventory-only |
-| 115 | `matrixvector.batch:262` | `permanent([1 2; 4 5])` | `13` | — | inventory-only |
-| 116 | `matrixvector.batch:264` | `permanent([1 2 3; 4 5 6; 1 0 9])` | `144` | — | inventory-only |
-| 117 | `matrixvector.batch:266` | `permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `11028` | — | inventory-only |
+| 114 | `matrixvector.batch:260` | `permanent([1])` | `1` | — | native-pass |
+| 115 | `matrixvector.batch:262` | `permanent([1 2; 4 5])` | `13` | — | native-pass |
+| 116 | `matrixvector.batch:264` | `permanent([1 2 3; 4 5 6; 1 0 9])` | `144` | — | native-pass |
+| 117 | `matrixvector.batch:266` | `permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `11028` | — | native-pass |
 | 118 | `matrixvector.batch:269` | `rank([6, 7, 1, 4])` | `[3  4  1  2]` | — | native-pass |
 | 119 | `matrixvector.batch:271` | `rank([-1, 2, 5, 10], 1)` | `[1  2  3  4]` | — | native-pass |
 | 120 | `matrixvector.batch:273` | `rank([-1, 2, 5, 10], 0)` | `[4  3  2  1]` | — | native-pass |
