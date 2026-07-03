@@ -176,6 +176,70 @@ fn cli_native_expression_succeeds_when_fallback_disabled() {
 }
 
 #[test]
+fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
+    let native_cases = [
+        ("(1,)", "[1  0]"),
+        ("1,", "[1  0]"),
+        ("[,,,]", "[0  0  0  0]"),
+        ("(,,,-2)", "[0  0  0  −2]"),
+        ("(1;;2)", "[1  0  2]"),
+        ("(1,1)", "[1  1]"),
+        ("((1, 2), (4, 5))", "[1  2; 4  5]"),
+        ("((1; 2; 3); (4; 5; 6))", "[1  2  3; 4  5  6]"),
+        ("[[1, 2], [4, 5]]", "[1  2; 4  5]"),
+        (
+            "[-0.1, 1.23, ], [.1, , -.2], [,,]",
+            "[−0.1  1.23  0; 0.1  0  −0.2; 0  0  0]",
+        ),
+        ("columns([])", "0"),
+        ("columns([1])", "1"),
+        ("columns([[,,,]])", "4"),
+        ("matrix(1, 1, [2])", "2"),
+        ("matrix(1, 3, 2)", "[2  0  0]"),
+        ("matrix(3, 1, [1 2])", "[1; 2; 0]"),
+        ("vector(1, 2, 3)", "[1  2  3]"),
+        ("vector()", "[]"),
+        ("vector(,)", "[0  0]"),
+        ("matrix(3, 3, [])", "[0  0  0; 0  0  0; 0  0  0]"),
+        (
+            "matrix(3, 3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)",
+            "[1  2  3; 4  5  6; 7  8  9]",
+        ),
+        ("matrix2vector([[0]])", "0"),
+        ("matrix2vector([1 2; 4 5])", "[1  2  4  5]"),
+        (
+            "matrix2vector([1 2 3; 4 5 6; 7 8 9])",
+            "[1  2  3  4  5  6  7  8  9]",
+        ),
+        ("columns([1 2; 4 5])", "2"),
+        ("element([1 2; 3 4], 1)", "[1  2]"),
+        ("element([1 2 3; 4 5 6; 1 0 9], 1, 3)", "3"),
+        ("element([1 2 3; 4 5 6], 2, 1)", "4"),
+        ("elements([])", "0"),
+        ("elements([1 2])", "2"),
+        ("elements([1 2; 3 4])", "4"),
+        ("[1,2] + [3,4]", "[4  6]"),
+        ("(1; 2; 3) * 2 - 2", "[0  2  4]"),
+        ("[1 2; 4 5] * 2", "[2  4; 8  10]"),
+        (
+            "((1; 2; 3); (4; 5; 6)) * ((7; 8); (9; 10); (11; 12))",
+            "[58  64; 139  154]",
+        ),
+        ("[1 2; 3 4].*[1 2; 3 4]", "[1  4; 9  16]"),
+    ];
+
+    for (expression, expected) in native_cases {
+        let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
+        assert_eq!(stdout, expected, "{expression} produced unexpected output");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression} did not report native fallback state: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression} returned unexpected exit code");
+    }
+}
+
+#[test]
 fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     let (stdout, stderr, exit_code) = run_qalc_rs("1 / 0", Some("1"), Some("1"));
     assert!(stdout.is_empty());
@@ -208,8 +272,10 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "inf",
         "nan",
         "Ei(3+/-0.3)",
-        "[1,2]",
-        "[1,2] + [3,4]",
+        "matrix(0, 3, [])",
+        "matrix(3, 0, [])",
+        "[1,2] + [3,4,5]",
+        "columns([[1], [2,3]])",
         "1/[2,3]",
         "(1 + i) < (1 + 2i)",
         "(1 + i) <= (1 + 2i)",

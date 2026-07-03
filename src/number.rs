@@ -7477,7 +7477,7 @@ impl Number {
     /// Computes the factorial of a non-negative integer.
     ///
     /// Returns NaN for negative numbers, non-integers, complex numbers,
-    /// and values exceeding [`MAX_FACTORIAL_INPUT`].
+    /// and values exceeding `MAX_FACTORIAL_INPUT`.
     /// Uses `rug::Integer::factorial()` for efficient computation.
     pub fn factorial(&self) -> Self {
         let (real, imag) = self.to_canonical_ref();
@@ -7535,7 +7535,7 @@ impl Number {
     /// Computes the double factorial n!! = n * (n-2) * (n-4) * ...
     ///
     /// Returns NaN for values less than -1, non-integers, complex numbers,
-    /// and values exceeding [`MAX_FACTORIAL_INPUT`].
+    /// and values exceeding `MAX_FACTORIAL_INPUT`.
     pub fn double_factorial(&self) -> Self {
         let (real, imag) = self.to_canonical_ref();
         if !imag.is_real_zero() {

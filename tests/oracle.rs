@@ -1187,6 +1187,204 @@ fn assert_native_oracle_cases(qalc: &Path, defs: &Path, cases: &[NativeOracleCas
 }
 
 #[test]
+fn focused_issue41_vector_matrix_literal_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue41_vector_matrix_literal_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let default_settings = &[][..];
+    let cases: &[NativeOracleCase<'_>] = &[
+        (
+            "matrixvector-literal-trailing-zero",
+            "(1,)",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-top-level-trailing-zero",
+            "1,",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-empty-slots",
+            "[,,,]",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-parenthesized-empty-slots",
+            "(,,,-2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-semicolon-empty-slot",
+            "(1;;2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-parenthesized-vector",
+            "(1,1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-parenthesized-matrix",
+            "((1, 2), (4, 5))",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-semicolon-matrix",
+            "((1; 2; 3); (4; 5; 6))",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-bracket-nested-matrix",
+            "[[1, 2], [4, 5]]",
+            default_settings,
+        ),
+        (
+            "matrixvector-literal-decimal-matrix",
+            "[-0.1, 1.23, ], [.1, , -.2], [,,]",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-columns-empty",
+            "columns([])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-columns-vector",
+            "columns([1])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-columns-nested-empty",
+            "columns([[,,,]])",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-singleton-matrix",
+            "matrix(1, 1, [2])",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-row-matrix",
+            "matrix(1, 3, 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-column-matrix",
+            "matrix(3, 1, [1 2])",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-vector",
+            "vector(1, 2, 3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-empty-vector",
+            "vector()",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-omitted-vector",
+            "vector(,)",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-zero-matrix",
+            "matrix(3, 3, [])",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-filled-matrix",
+            "matrix(3, 3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-matrix2vector-singleton",
+            "matrix2vector([[0]])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-matrix2vector",
+            "matrix2vector([1 2; 4 5])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-matrix2vector-3x3",
+            "matrix2vector([1 2 3; 4 5 6; 7 8 9])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-columns",
+            "columns([1 2; 4 5])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-element-row",
+            "element([1 2; 3 4], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-element-cell",
+            "element([1 2 3; 4 5 6; 1 0 9], 1, 3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-element",
+            "element([1 2 3; 4 5 6], 2, 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-elements-empty",
+            "elements([])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-elements-vector",
+            "elements([1 2])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-elements",
+            "elements([1 2; 3 4])",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-vector-addition",
+            "[1,2] + [3,4]",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-vector-scale-subtract",
+            "(1; 2; 3) * 2 - 2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-matrix-scale",
+            "[1 2; 4 5] * 2",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-matrix-multiply",
+            "((1; 2; 3); (4; 5; 6)) * ((7; 8); (9; 10); (11; 12))",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-elementwise-multiply",
+            "[1 2; 3 4].*[1 2; 3 4]",
+            default_settings,
+        ),
+    ];
+
+    assert_native_oracle_cases(&qalc, &defs, cases);
+}
+
+#[test]
 fn focused_issue15_uncertainty_input_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
         eprintln!(
