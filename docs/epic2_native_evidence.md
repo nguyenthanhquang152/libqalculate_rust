@@ -179,6 +179,16 @@ remains fallback-disabled for spacing variants, comma-separated scalar
 arguments, no-space vector arguments, unrelated arities, value/shape
 mismatches, matrix inputs, and explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `cross` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:87`: `cross((1; 2; 3); (4; 5; 6)) -> [-3  6  -3]`
+
+The native `cross` gate is source-exact for this promoted spelling and
+remains fallback-disabled for spacing variants, comma-separated scalar
+arguments, no-space vector arguments, unrelated arities, value/shape
+mismatches, matrix inputs, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `part` rows
 promoted in Refs #41:
 
