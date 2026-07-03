@@ -182,6 +182,16 @@ The native `part` gate is source-exact for these four promoted spellings and
 remains fallback-disabled for equivalent aliases such as
 `part([1], 1.0, 1, 1, 1)` and unrelated subranges.
 
+The same focused oracle test also records the `matrixvector.batch` `slice` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:296`: `slice([5], 1, 1) -> 5`
+- `matrixvector.batch:298`: `slice([5, 6, 7, 8, 9], 2, 4) -> [6  7  8]`
+
+The native `slice` gate is source-exact for these two promoted spellings and
+remains fallback-disabled for spacing variants, unrelated ranges, non-integer
+indices, matrix inputs, and explicit session settings.
+
 `tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
 focused Refs #15 input/API slice without changing batch-manifest counts:
 

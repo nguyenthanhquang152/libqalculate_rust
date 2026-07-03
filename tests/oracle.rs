@@ -1540,6 +1540,16 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-slice-singleton",
+            "slice([5], 1, 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-slice-vector-range",
+            "slice([5, 6, 7, 8, 9], 2, 4)",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-times-vector-scalars",
             "[1 2] times 3 times 4",
             default_settings,
