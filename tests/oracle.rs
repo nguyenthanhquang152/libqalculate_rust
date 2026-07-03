@@ -1450,6 +1450,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-constructor-identity-singleton",
+            "identity(1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-identity-3x3",
+            "identity(3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-constructor-identity-from-matrix",
+            "identity([1 2; 4 5])",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-times-vector-scalars",
             "[1 2] times 3 times 4",
             default_settings,
