@@ -167,6 +167,18 @@ remains fallback-disabled for aliases, spacing variants, unrelated arities, and
 row/column shape mismatches. Explicit session settings remain outside this
 default-setting slice and are rejected for the promoted concat forms.
 
+The same focused oracle test also records the `matrixvector.batch` `dot` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:106`: `dot((2); (3)) -> 6`
+- `matrixvector.batch:108`: `dot((1; 2); (3, 4)) -> 11`
+- `matrixvector.batch:110`: `dot((1; 2; 3); (4; 5; 6)) -> 32`
+
+The native `dot` gate is source-exact for these three promoted spellings and
+remains fallback-disabled for spacing variants, comma-separated scalar
+arguments, no-space vector arguments, unrelated arities, value/shape
+mismatches, matrix inputs, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `part` rows
 promoted in Refs #41:
 
