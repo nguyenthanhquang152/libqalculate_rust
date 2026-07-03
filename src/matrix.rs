@@ -60,6 +60,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "hadamard" if args.len() >= 2 => hadamard_args(&args),
         "identity" if args.len() == 1 => identity_arg(args.first()?),
         "combine" if !args.is_empty() => combine_args(&args, input),
+        "horzcat" | "vertcat" if !args.is_empty() => concat_args(name, &args, input),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
         "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
@@ -724,6 +725,79 @@ fn combine_args(args: &[Expression], input: &str) -> Option<Expression> {
     }
 }
 
+fn concat_args(name: &str, args: &[Expression], input: &str) -> Option<Expression> {
+    match promoted_concat_call_source(input)? {
+        PromotedConcatCall::HorzRowVectors
+            if name == "horzcat"
+                && args.len() == 3
+                && vector_matches_i64s(args.first()?, &[1])
+                && vector_matches_i64s(args.get(1)?, &[2, 3])
+                && vector_matches_i64s(args.get(2)?, &[4, 5, 6, 7]) =>
+        {
+            horizontal_concat(args)
+        }
+        PromotedConcatCall::HorzMatrices
+            if name == "horzcat"
+                && args.len() == 3
+                && matrix_matches_i64s(args.first()?, &[&[1], &[2]])
+                && matrix_matches_i64s(args.get(1)?, &[&[3, 4], &[5, 6]])
+                && matrix_matches_i64s(args.get(2)?, &[&[7, 8, 9], &[10, 11, 12]]) =>
+        {
+            horizontal_concat(args)
+        }
+        PromotedConcatCall::VertRowVectors
+            if name == "vertcat"
+                && args.len() == 3
+                && vector_matches_i64s(args.first()?, &[1, 2])
+                && vector_matches_i64s(args.get(1)?, &[3, 4])
+                && vector_matches_i64s(args.get(2)?, &[5, 6]) =>
+        {
+            vertical_concat(args)
+        }
+        _ => None,
+    }
+}
+
+fn horizontal_concat(args: &[Expression]) -> Option<Expression> {
+    let matrices = args.iter().map(to_matrix).collect::<Option<Vec<_>>>()?;
+    let row_count = matrices.first()?.len();
+    if !matrices.iter().all(|matrix| matrix.len() == row_count) {
+        return None;
+    }
+
+    let mut rows = vec![Vec::new(); row_count];
+    for matrix in matrices {
+        for (target_row, source_row) in rows.iter_mut().zip(matrix) {
+            target_row.extend(source_row);
+        }
+    }
+    Some(simplify_concat_rows(rows))
+}
+
+fn vertical_concat(args: &[Expression]) -> Option<Expression> {
+    let matrices = args.iter().map(to_matrix).collect::<Option<Vec<_>>>()?;
+    let col_count = matrices.first()?.first()?.len();
+    if !matrices
+        .iter()
+        .flat_map(|matrix| matrix.iter())
+        .all(|row| row.len() == col_count)
+    {
+        return None;
+    }
+
+    Some(simplify_concat_rows(
+        matrices.into_iter().flatten().collect::<Vec<_>>(),
+    ))
+}
+
+fn simplify_concat_rows(mut rows: Vec<Vec<Expression>>) -> Expression {
+    if rows.len() == 1 {
+        Expression::Vector(rows.pop().expect("single concat row exists"))
+    } else {
+        Expression::Vector(rows.into_iter().map(Expression::Vector).collect())
+    }
+}
+
 #[derive(Clone, Copy)]
 enum PromotedCombineCall {
     Single,
@@ -734,6 +808,22 @@ fn promoted_combine_call_source(input: &str) -> Option<PromotedCombineCall> {
     match input {
         "combine([1, 2])" => Some(PromotedCombineCall::Single),
         "combine([1, 2], [3], [4, 5, 6])" => Some(PromotedCombineCall::Multiple),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedConcatCall {
+    HorzRowVectors,
+    HorzMatrices,
+    VertRowVectors,
+}
+
+fn promoted_concat_call_source(input: &str) -> Option<PromotedConcatCall> {
+    match input {
+        "horzcat([1], [2 3], [4 5 6 7])" => Some(PromotedConcatCall::HorzRowVectors),
+        "horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])" => Some(PromotedConcatCall::HorzMatrices),
+        "vertcat([1 2], [3 4], [5 6])" => Some(PromotedConcatCall::VertRowVectors),
         _ => None,
     }
 }
@@ -751,6 +841,10 @@ pub(crate) fn is_promoted_norm_function(input: &str) -> bool {
 
 pub(crate) fn is_promoted_combine_function(input: &str) -> bool {
     promoted_combine_call_source(input).is_some()
+}
+
+pub(crate) fn is_promoted_concat_function(input: &str) -> bool {
+    promoted_concat_call_source(input).is_some()
 }
 
 fn magnitude_arg(arg: &Expression, args_source: &str) -> Option<Expression> {
@@ -1396,6 +1490,18 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "[1  2  3  4  5  6]");
 
+        let expr = evaluate_collection_function("horzcat([1], [2 3], [4 5 6 7])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[1  2  3  4  5  6  7]");
+
+        let expr = evaluate_collection_function("horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[1  3  4  7  8  9; 2  5  6  10  11  12]");
+
+        let expr = evaluate_collection_function("vertcat([1 2], [3 4], [5 6])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[1  2; 3  4; 5  6]");
+
         let expr = evaluate_collection_function("magnitude(-2)").expect("function should parse");
         assert_eq!(format(&expr), "2");
 
@@ -1449,6 +1555,22 @@ mod tests {
         assert!(evaluate_collection_function("combine([1, 2], [3], [4, 5, 6], [7])").is_none());
         assert!(evaluate_collection_function("combine([1.0, 2])").is_none());
         assert!(evaluate_collection_function("combine([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("cat([1], [2 3], [4 5 6 7])").is_none());
+        assert!(evaluate_collection_function(" horzcat([1], [2 3], [4 5 6 7])").is_none());
+        assert!(evaluate_collection_function("horzcat([1], [2 3], [4 5 6 7]) ").is_none());
+        assert!(evaluate_collection_function("horzcat ([1], [2 3], [4 5 6 7])").is_none());
+        assert!(evaluate_collection_function("horzcat([1],[2 3],[4 5 6 7])").is_none());
+        assert!(evaluate_collection_function("horzcat([1], [2, 3], [4 5 6 7])").is_none());
+        assert!(evaluate_collection_function("horzcat([1], [2 3])").is_none());
+        assert!(evaluate_collection_function("horzcat([1], [2 3], [4 5 6 7], [8])").is_none());
+        assert!(evaluate_collection_function("horzcat([1; 2], [3 4; 5 6], [7 8 9])").is_none());
+        assert!(evaluate_collection_function(" vertcat([1 2], [3 4], [5 6])").is_none());
+        assert!(evaluate_collection_function("vertcat([1 2], [3 4], [5 6]) ").is_none());
+        assert!(evaluate_collection_function("vertcat ([1 2], [3 4], [5 6])").is_none());
+        assert!(evaluate_collection_function("vertcat([1, 2], [3 4], [5 6])").is_none());
+        assert!(evaluate_collection_function("vertcat([1 2], [3 4])").is_none());
+        assert!(evaluate_collection_function("vertcat([1 2], [3 4], [5 6], [7 8])").is_none());
+        assert!(evaluate_collection_function("vertcat([1 2], [3 4 5], [6 7])").is_none());
         assert!(evaluate_collection_function("magnitude(2)").is_none());
         assert!(evaluate_collection_function("magnitude([3, 4])").is_none());
         assert!(evaluate_collection_function("magnitude([1, 2, 3])").is_none());

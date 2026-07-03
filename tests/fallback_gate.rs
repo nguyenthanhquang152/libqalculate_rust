@@ -221,6 +221,12 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
             "matrix2vector([1 2 3; 4 5 6; 7 8 9])",
             "[1  2  3  4  5  6  7  8  9]",
         ),
+        ("horzcat([1], [2 3], [4 5 6 7])", "[1  2  3  4  5  6  7]"),
+        (
+            "horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])",
+            "[1  3  4  7  8  9; 2  5  6  10  11  12]",
+        ),
+        ("vertcat([1 2], [3 4], [5 6])", "[1  2; 3  4; 5  6]"),
         ("columns([1 2; 4 5])", "2"),
         ("column([1], 1)", "1"),
         ("column([1, 2], 1)", "1"),
@@ -338,6 +344,36 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert_eq!(exit_code, 2);
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &[
+            "-set",
+            "precision 128",
+            "--",
+            "horzcat([1], [2 3], [4 5 6 7])",
+        ],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &[
+            "-set",
+            "precision 128",
+            "--",
+            "vertcat([1 2], [3 4], [5 6])",
+        ],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "norm([3, 4])"],
         Some("1"),
         Some("1"),
@@ -394,6 +430,22 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "combine([1, 2], [3], [4, 5, 6], [7])",
         "combine([1.0, 2])",
         "combine([1 2; 3 4])",
+        "cat([1], [2 3], [4 5 6 7])",
+        " horzcat([1], [2 3], [4 5 6 7])",
+        "horzcat([1], [2 3], [4 5 6 7]) ",
+        "horzcat ([1], [2 3], [4 5 6 7])",
+        "horzcat([1],[2 3],[4 5 6 7])",
+        "horzcat([1], [2, 3], [4 5 6 7])",
+        "horzcat([1], [2 3])",
+        "horzcat([1], [2 3], [4 5 6 7], [8])",
+        "horzcat([1; 2], [3 4; 5 6], [7 8 9])",
+        " vertcat([1 2], [3 4], [5 6])",
+        "vertcat([1 2], [3 4], [5 6]) ",
+        "vertcat ([1 2], [3 4], [5 6])",
+        "vertcat([1, 2], [3 4], [5 6])",
+        "vertcat([1 2], [3 4])",
+        "vertcat([1 2], [3 4], [5 6], [7 8])",
+        "vertcat([1 2], [3 4 5], [6 7])",
         "magnitude(2)",
         "magnitude(-2.0)",
         "magnitude(-4/2)",

@@ -153,6 +153,20 @@ argument variants such as `combine([1,2])`, unrelated arities, and whole-call
 whitespace variants. Explicit session settings remain outside this
 default-setting slice and are rejected for the promoted combine forms.
 
+The focused vector/matrix oracle test also records the `matrixvector.batch`
+`horzcat` and `vertcat` rows promoted in Refs #41:
+
+- `matrixvector.batch:77`:
+  `horzcat([1], [2 3], [4 5 6 7]) -> [1  2  3  4  5  6  7]`
+- `matrixvector.batch:79`:
+  `horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12]) -> [1  3  4  7  8  9; 2  5  6  10  11  12]`
+- `matrixvector.batch:81`: `vertcat([1 2], [3 4], [5 6]) -> [1  2; 3  4; 5  6]`
+
+The native concat gate is source-exact for these three promoted spellings and
+remains fallback-disabled for aliases, spacing variants, unrelated arities, and
+row/column shape mismatches. Explicit session settings remain outside this
+default-setting slice and are rejected for the promoted concat forms.
+
 The same focused oracle test also records the `matrixvector.batch` `part` rows
 promoted in Refs #41:
 
