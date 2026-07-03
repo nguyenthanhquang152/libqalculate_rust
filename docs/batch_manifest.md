@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **55** |
-| Inventory-only test cases | **601** |
+| Native-pass test cases | **231** |
+| Inventory-only test cases | **425** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -536,8 +536,8 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 86 | `matrixvector.batch:195` | `genvector(x+10, -1, 2, 7, x, 0)` | `[9  9.5  10  10.5  11  11.5  12]` | — | inventory-only |
 | 87 | `matrixvector.batch:197` | `genvector(x+100, -3, 5, 2, x, 1)` | `[97  99  101  103  105]` | — | inventory-only |
 | 88 | `matrixvector.batch:199` | `genvector(x+100, 1, 2, 1, y, 1)` | `[(x + 100)  (x + 100)]` | — | inventory-only |
-| 89 | `matrixvector.batch:202` | `hadamard([2], [3], [4])` | `24` | — | inventory-only |
-| 90 | `matrixvector.batch:204` | `hadamard([1 2 3; 4 5 6]; [7 8 9; 10 11 12])` | `[7  16  27; 40  55  72]` | — | inventory-only |
+| 89 | `matrixvector.batch:202` | `hadamard([2], [3], [4])` | `24` | — | native-pass |
+| 90 | `matrixvector.batch:204` | `hadamard([1 2 3; 4 5 6]; [7 8 9; 10 11 12])` | `[7  16  27; 40  55  72]` | — | native-pass |
 | 91 | `matrixvector.batch:207` | `identity(1)` | `1` | — | inventory-only |
 | 92 | `matrixvector.batch:209` | `identity(3)` | `[1  0  0; 0  1  0; 0  0  1]` | — | inventory-only |
 | 93 | `matrixvector.batch:211` | `identity([1 2; 4 5])` | `[1  0; 0  1]` | — | inventory-only |
