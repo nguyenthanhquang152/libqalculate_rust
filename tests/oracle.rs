@@ -1656,6 +1656,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-entrywise-identity",
+            "entrywise(x, [4 10 12], x)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-entrywise-divide",
+            "entrywise(x / y, [4 10 12], x, [2 2 4], y)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-entrywise-divide-add",
+            "entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-pow-function",
             "pow([1 2; 3 4], 2)",
             default_settings,

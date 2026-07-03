@@ -311,6 +311,12 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("rank([6, 7, 1, 4])", "[3  4  1  2]"),
         ("rank([-1, 2, 5, 10], 1)", "[1  2  3  4]"),
         ("rank([-1, 2, 5, 10], 0)", "[4  3  2  1]"),
+        ("entrywise(x, [4 10 12], x)", "[4  10  12]"),
+        ("entrywise(x / y, [4 10 12], x, [2 2 4], y)", "[2  5  3]"),
+        (
+            "entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)",
+            "[3  7  6]",
+        ),
         ("transpose([1 2; 3 4])", "[1  3; 2  4]"),
         ("[1 2 3; 4 5 6].'", "[1  4; 2  5; 3  6]"),
         ("[1 2] times 3 times 4", "[12  24]"),
@@ -468,6 +474,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "rank([-1, 2, 5, 10], 0)"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "entrywise(x, [4 10 12], x)"],
         Some("1"),
         Some("1"),
     );
@@ -750,6 +766,15 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "rank([-1,2,5,10], 1)",
         "rank([-1, 2, 5, 10], 2)",
         "rank([-1, 2, 5, 11], 1)",
+        " entrywise(x, [4 10 12], x)",
+        "entrywise(x, [4 10 12], x) ",
+        "entrywise(x,[4 10 12],x)",
+        "entrywise(y, [4 10 12], x)",
+        "entrywise(x, [4 10 11], x)",
+        "entrywise(x, [4 10 12 0], x)",
+        "entrywise(x / y, [4 10 12], x, [2 2 0], y)",
+        "entrywise(x / y, [4 10 12], x, [2 2], y)",
+        "entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 4], z)",
         "pow([1 2; 3 4])",
         "pow([1 2; 3 4], 2, 3)",
         "pow(1, 2)",

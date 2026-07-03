@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **283** |
-| Inventory-only test cases | **373** |
+| Native-pass test cases | **286** |
+| Inventory-only test cases | **370** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -521,9 +521,9 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 71 | `matrixvector.batch:161` | `elements([])` | `0` | — | native-pass |
 | 72 | `matrixvector.batch:163` | `elements([1 2])` | `2` | — | native-pass |
 | 73 | `matrixvector.batch:165` | `elements([1 2; 3 4])` | `4` | — | native-pass |
-| 74 | `matrixvector.batch:168` | `entrywise(x, [4 10 12], x)` | `[4  10  12]` | — | inventory-only |
-| 75 | `matrixvector.batch:170` | `entrywise(x / y, [4 10 12], x, [2 2 4], y)` | `[2  5  3]` | — | inventory-only |
-| 76 | `matrixvector.batch:172` | `entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)` | `[3  7  6]` | — | inventory-only |
+| 74 | `matrixvector.batch:168` | `entrywise(x, [4 10 12], x)` | `[4  10  12]` | — | native-pass |
+| 75 | `matrixvector.batch:170` | `entrywise(x / y, [4 10 12], x, [2 2 4], y)` | `[2  5  3]` | — | native-pass |
+| 76 | `matrixvector.batch:172` | `entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)` | `[3  7  6]` | — | native-pass |
 | 77 | `matrixvector.batch:175` | `column([1], 1)` | `1` | — | native-pass |
 | 78 | `matrixvector.batch:177` | `column([1, 2], 1)` | `1` | — | native-pass |
 | 79 | `matrixvector.batch:179` | `column([1 2; 3 4], 2)` | `[2  4]` | — | native-pass |

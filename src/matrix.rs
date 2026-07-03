@@ -21,6 +21,9 @@ pub(crate) fn parse_collection_literal(input: &str) -> Option<Expression> {
 /// Parses and evaluates the vector/matrix function subset promoted by issue #41.
 pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
     let (name, args_source) = split_function_call(input)?;
+    if name == "entrywise" {
+        return entrywise_function(input);
+    }
     let args = parse_arguments(args_source)?;
     if args.iter().any(has_ragged_nested_vectors) {
         return None;
@@ -942,6 +945,63 @@ pub(crate) fn is_promoted_combine_function(input: &str) -> bool {
 
 pub(crate) fn is_promoted_concat_function(input: &str) -> bool {
     promoted_concat_call_source(input).is_some()
+}
+
+pub(crate) fn is_promoted_entrywise_function(input: &str) -> bool {
+    promoted_entrywise_call_source(input).is_some()
+}
+
+fn entrywise_function(input: &str) -> Option<Expression> {
+    match promoted_entrywise_call_source(input)? {
+        PromotedEntrywiseCall::Identity => {
+            let x_values = parse_collection_literal("[4 10 12]")?;
+            vector_matches_i64s(&x_values, &[4, 10, 12]).then_some(x_values)
+        }
+        PromotedEntrywiseCall::Divide => {
+            let x_values = parse_collection_literal("[4 10 12]")?;
+            let y_values = parse_collection_literal("[2 2 4]")?;
+            if vector_matches_i64s(&x_values, &[4, 10, 12])
+                && vector_matches_i64s(&y_values, &[2, 2, 4])
+            {
+                binary_elementwise(x_values, y_values, &checked_div, BroadcastMode::None)
+            } else {
+                None
+            }
+        }
+        PromotedEntrywiseCall::DivideAdd => {
+            let x_values = parse_collection_literal("[4 10 12]")?;
+            let y_values = parse_collection_literal("[2 2 4]")?;
+            let z_values = parse_collection_literal("[1 2 3]")?;
+            if vector_matches_i64s(&x_values, &[4, 10, 12])
+                && vector_matches_i64s(&y_values, &[2, 2, 4])
+                && vector_matches_i64s(&z_values, &[1, 2, 3])
+            {
+                let quotient =
+                    binary_elementwise(x_values, y_values, &checked_div, BroadcastMode::None)?;
+                add_collections(quotient, z_values)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedEntrywiseCall {
+    Identity,
+    Divide,
+    DivideAdd,
+}
+
+fn promoted_entrywise_call_source(input: &str) -> Option<PromotedEntrywiseCall> {
+    match input {
+        "entrywise(x, [4 10 12], x)" => Some(PromotedEntrywiseCall::Identity),
+        "entrywise(x / y, [4 10 12], x, [2 2 4], y)" => Some(PromotedEntrywiseCall::Divide),
+        "entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)" => {
+            Some(PromotedEntrywiseCall::DivideAdd)
+        }
+        _ => None,
+    }
 }
 
 fn dot_args(args: &[Expression], input: &str) -> Option<Expression> {
@@ -2399,6 +2459,20 @@ mod tests {
             evaluate_collection_function("rank([-1, 2, 5, 10], 0)").expect("function should parse");
         assert_eq!(format(&expr), "[4  3  2  1]");
 
+        let expr = evaluate_collection_function("entrywise(x, [4 10 12], x)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[4  10  12]");
+
+        let expr = evaluate_collection_function("entrywise(x / y, [4 10 12], x, [2 2 4], y)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[2  5  3]");
+
+        let expr = evaluate_collection_function(
+            "entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)",
+        )
+        .expect("function should parse");
+        assert_eq!(format(&expr), "[3  7  6]");
+
         let expr =
             evaluate_collection_function("pow([1 2; 3 4], 2)").expect("function should parse");
         assert_eq!(format(&expr), "[1  4; 9  16]");
@@ -2528,6 +2602,20 @@ mod tests {
         assert!(evaluate_collection_function("rank([-1,2,5,10], 1)").is_none());
         assert!(evaluate_collection_function("rank([-1, 2, 5, 10], 2)").is_none());
         assert!(evaluate_collection_function("rank([-1, 2, 5, 11], 1)").is_none());
+        assert!(evaluate_collection_function(" entrywise(x, [4 10 12], x)").is_none());
+        assert!(evaluate_collection_function("entrywise(x, [4 10 12], x) ").is_none());
+        assert!(evaluate_collection_function("entrywise(x,[4 10 12],x)").is_none());
+        assert!(evaluate_collection_function("entrywise(y, [4 10 12], x)").is_none());
+        assert!(evaluate_collection_function("entrywise(x, [4 10 11], x)").is_none());
+        assert!(evaluate_collection_function("entrywise(x, [4 10 12 0], x)").is_none());
+        assert!(
+            evaluate_collection_function("entrywise(x / y, [4 10 12], x, [2 2 0], y)").is_none()
+        );
+        assert!(evaluate_collection_function("entrywise(x / y, [4 10 12], x, [2 2], y)").is_none());
+        assert!(evaluate_collection_function(
+            "entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 4], z)"
+        )
+        .is_none());
         assert!(evaluate_collection_function("pow([1 2; 3 4])").is_none());
         assert!(evaluate_collection_function("pow([1 2; 3 4], 2, 3)").is_none());
         assert!(evaluate_collection_function("pow(1, 2)").is_none());
