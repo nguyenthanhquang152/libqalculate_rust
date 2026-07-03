@@ -267,6 +267,21 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("norm([2])", "2"),
         ("norm([3, 4])", "5"),
         ("norm([2, 3, 6])", "7"),
+        ("adj([1 2; 4 5])", "[5  −2; −4  1]"),
+        (
+            "adj([1, 2, 3; 4, 5, 6; 1, 0, 9])",
+            "[45  −18  −3; −30  6  6; −5  2  −3]",
+        ),
+        (
+            "adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])",
+            "[240  264  −177  −259; −284  −436  194  370; 16  100  −53  −31; −12  28  14  −54]",
+        ),
+        ("cofactor([1 2; 4 5], 1, 1)", "5"),
+        ("cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2)", "−30"),
+        (
+            "cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)",
+            "−54",
+        ),
         ("det([[1]])", "1"),
         ("det([1 2; 4 5])", "−3"),
         ("det([1 2 3; 4 5 6; 1 0 9])", "−30"),
@@ -494,6 +509,26 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
 
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "adj([1 2; 4 5])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "cofactor([1 2; 4 5], 1, 1)"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
     let (stdout, stderr, exit_code) = run_qalc_rs("1 2", Some("1"), Some("1"));
     assert!(stdout.is_empty());
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
@@ -589,6 +624,25 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "norm([3, 4.0])",
         "norm([2, 3, 6, 0])",
         "norm([1 2; 3 4])",
+        "adj([1 2; 4 5]) ",
+        " adj([1 2; 4 5])",
+        "adj ([1 2; 4 5])",
+        "adj([1 2])",
+        "adj([[1]])",
+        "adj([1.0 2; 4 5])",
+        "adj([1 2; 4 5], 1)",
+        "cofactor([1 2; 4 5], 1, 1) ",
+        " cofactor([1 2; 4 5], 1, 1)",
+        "cofactor ([1 2; 4 5], 1, 1)",
+        "cofactor([1 2; 4 5], 1.0, 1)",
+        "cofactor([1 2; 4 5], 0, 1)",
+        "cofactor([1 2; 4 5], 1, 0)",
+        "cofactor([1 2; 4 5], 3, 1)",
+        "cofactor([1 2; 4 5], 1, 3)",
+        "cofactor([1 2], 1, 1)",
+        "cofactor([[1]], 1, 1)",
+        "cofactor([1.0 2; 4 5], 1, 1)",
+        "cofactor([1 2; 4 5], 1, 1, 1)",
         "det([[1.0]])",
         "det([1 2])",
         "det(1)",

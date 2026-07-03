@@ -219,6 +219,24 @@ remains fallback-disabled for spacing variants, unrelated sort directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `adj` and
+`cofactor` rows promoted in Refs #41:
+
+- `matrixvector.batch:27`: `adj([1 2; 4 5]) -> [5  -2; -4  1]`
+- `matrixvector.batch:29`:
+  `adj([1, 2, 3; 4, 5, 6; 1, 0, 9]) -> [45  -18  -3; -30  6  6; -5  2  -3]`
+- `matrixvector.batch:31`:
+  `adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9]) -> [240  264  -177  -259; -284  -436  194  370; 16  100  -53  -31; -12  28  14  -54]`
+- `matrixvector.batch:34`: `cofactor([1 2; 4 5], 1, 1) -> 5`
+- `matrixvector.batch:36`: `cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2) -> -30`
+- `matrixvector.batch:38`:
+  `cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4) -> -54`
+
+The native `adj`/`cofactor` gate is source-exact for these six promoted
+spellings and remains fallback-disabled for spacing variants, non-square or
+singleton matrices, approximate matrix entries, non-integer or out-of-range
+cofactor indexes, arity mismatches, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `det` rows
 promoted in Refs #41:
 

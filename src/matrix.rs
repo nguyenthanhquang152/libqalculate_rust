@@ -69,6 +69,8 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "slice" if args.len() == 3 => slice_args(&args, input),
         "sort" if matches!(args.len(), 1 | 2) => sort_args(&args, input),
         "rank" if matches!(args.len(), 1 | 2) => rank_args(&args, input),
+        "adj" if args.len() == 1 => adj_arg(args.first()?, input),
+        "cofactor" if args.len() == 3 => cofactor_args(&args, input),
         "det" if args.len() == 1 => det_arg(args.first()?, input),
         "pow" if args.len() == 2 => pow_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
@@ -1518,10 +1520,60 @@ pub(crate) fn is_promoted_det_function(input: &str) -> bool {
     )
 }
 
+pub(crate) fn is_promoted_adjoint_or_cofactor_function(input: &str) -> bool {
+    matches!(
+        input,
+        "adj([1 2; 4 5])"
+            | "adj([1, 2, 3; 4, 5, 6; 1, 0, 9])"
+            | "adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])"
+            | "cofactor([1 2; 4 5], 1, 1)"
+            | "cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2)"
+            | "cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)"
+    )
+}
+
+fn adj_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    if !is_promoted_adjoint_or_cofactor_function(input) {
+        return None;
+    }
+    let matrix_rows = exact_square_matrix_numbers(arg)?;
+    let n = matrix_rows.len();
+    if n == 1 {
+        return Some(Expression::Number(Number::from_i32(1)));
+    }
+
+    let adj_rows = (0..n)
+        .map(|row| {
+            let values = (0..n)
+                .map(|col| cofactor_number(&matrix_rows, col, row).map(Expression::Number))
+                .collect::<Option<Vec<_>>>()?;
+            Some(Expression::Vector(values))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Expression::Vector(adj_rows))
+}
+
+fn cofactor_args(args: &[Expression], input: &str) -> Option<Expression> {
+    if !is_promoted_adjoint_or_cofactor_function(input) {
+        return None;
+    }
+    let matrix_rows = exact_square_matrix_numbers(args.first()?)?;
+    let row = number_to_usize(args.get(1)?)?.checked_sub(1)?;
+    let col = number_to_usize(args.get(2)?)?.checked_sub(1)?;
+    let cofactor = cofactor_number(&matrix_rows, row, col)?;
+    Some(Expression::Number(cofactor))
+}
+
 fn det_arg(arg: &Expression, input: &str) -> Option<Expression> {
     if !is_promoted_det_function(input) {
         return None;
     }
+    let matrix_rows = exact_square_matrix_numbers(arg)?;
+    let det = laplace_det(&matrix_rows);
+    Some(Expression::Number(det))
+}
+
+fn exact_square_matrix_numbers(arg: &Expression) -> Option<Vec<Vec<Number>>> {
     if !is_rectangular_matrix(arg) {
         return None;
     }
@@ -1540,8 +1592,35 @@ fn det_arg(arg: &Expression, input: &str) -> Option<Expression> {
             }
         }
     }
-    let det = laplace_det(&matrix_rows);
-    Some(Expression::Number(det))
+    Some(matrix_rows)
+}
+
+fn cofactor_number(matrix: &[Vec<Number>], row: usize, col: usize) -> Option<Number> {
+    let n = matrix.len();
+    if n <= 1 || row >= n || col >= n {
+        return None;
+    }
+
+    let mut submatrix = Vec::with_capacity(n - 1);
+    for (r, source_row) in matrix.iter().enumerate() {
+        if r == row {
+            continue;
+        }
+        let mut subrow = Vec::with_capacity(n - 1);
+        for (c, value) in source_row.iter().enumerate() {
+            if c != col {
+                subrow.push(value.clone());
+            }
+        }
+        submatrix.push(subrow);
+    }
+
+    let det = laplace_det(&submatrix);
+    if (row + col) % 2 == 1 {
+        Some(det.negate())
+    } else {
+        Some(det)
+    }
 }
 
 fn laplace_det(matrix: &[Vec<Number>]) -> Number {
@@ -1993,6 +2072,33 @@ mod tests {
         let expr = evaluate_collection_function("det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
             .expect("function should parse");
         assert_eq!(format(&expr), "-412");
+
+        let expr = evaluate_collection_function("adj([1 2; 4 5])").expect("function should parse");
+        assert_eq!(format(&expr), "[5  -2; -4  1]");
+
+        let expr = evaluate_collection_function("adj([1, 2, 3; 4, 5, 6; 1, 0, 9])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[45  -18  -3; -30  6  6; -5  2  -3]");
+
+        let expr = evaluate_collection_function("adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
+            .expect("function should parse");
+        assert_eq!(
+            format(&expr),
+            "[240  264  -177  -259; -284  -436  194  370; 16  100  -53  -31; -12  28  14  -54]"
+        );
+
+        let expr = evaluate_collection_function("cofactor([1 2; 4 5], 1, 1)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "5");
+
+        let expr = evaluate_collection_function("cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "-30");
+
+        let expr =
+            evaluate_collection_function("cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)")
+                .expect("function should parse");
+        assert_eq!(format(&expr), "-54");
 
         let expr = evaluate_collection_function("vector()").expect("function should parse");
         assert_eq!(format(&expr), "[]");
