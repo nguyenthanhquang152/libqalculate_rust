@@ -490,9 +490,9 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 40 | `matrixvector.batch:92` | `det([1 2; 4 5])` | `-3` | — | inventory-only |
 | 41 | `matrixvector.batch:94` | `det([1 2 3; 4 5 6; 1 0 9])` | `-30` | — | inventory-only |
 | 42 | `matrixvector.batch:96` | `det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `-412` | — | inventory-only |
-| 43 | `matrixvector.batch:99` | `dimension([])` | `0` | — | inventory-only |
-| 44 | `matrixvector.batch:101` | `dimension([0])` | `1` | — | inventory-only |
-| 45 | `matrixvector.batch:103` | `dimension([1 2 3 4])` | `4` | — | inventory-only |
+| 43 | `matrixvector.batch:99` | `dimension([])` | `0` | — | native-pass |
+| 44 | `matrixvector.batch:101` | `dimension([0])` | `1` | — | native-pass |
+| 45 | `matrixvector.batch:103` | `dimension([1 2 3 4])` | `4` | — | native-pass |
 | 46 | `matrixvector.batch:106` | `dot((2); (3))` | `6` | — | inventory-only |
 | 47 | `matrixvector.batch:108` | `dot((1; 2); (3, 4))` | `11` | — | inventory-only |
 | 48 | `matrixvector.batch:110` | `dot((1; 2; 3); (4; 5; 6))` | `32` | — | inventory-only |
@@ -524,12 +524,12 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 74 | `matrixvector.batch:168` | `entrywise(x, [4 10 12], x)` | `[4  10  12]` | — | inventory-only |
 | 75 | `matrixvector.batch:170` | `entrywise(x / y, [4 10 12], x, [2 2 4], y)` | `[2  5  3]` | — | inventory-only |
 | 76 | `matrixvector.batch:172` | `entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z)` | `[3  7  6]` | — | inventory-only |
-| 77 | `matrixvector.batch:175` | `column([1], 1)` | `1` | — | inventory-only |
-| 78 | `matrixvector.batch:177` | `column([1, 2], 1)` | `1` | — | inventory-only |
-| 79 | `matrixvector.batch:179` | `column([1 2; 3 4], 2)` | `[2  4]` | — | inventory-only |
-| 80 | `matrixvector.batch:182` | `row([1], 1)` | `1` | — | inventory-only |
-| 81 | `matrixvector.batch:184` | `row([1 2], 1)` | `[1  2]` | — | inventory-only |
-| 82 | `matrixvector.batch:186` | `row([1 2; 3 4], 2)` | `[3  4]` | — | inventory-only |
+| 77 | `matrixvector.batch:175` | `column([1], 1)` | `1` | — | native-pass |
+| 78 | `matrixvector.batch:177` | `column([1, 2], 1)` | `1` | — | native-pass |
+| 79 | `matrixvector.batch:179` | `column([1 2; 3 4], 2)` | `[2  4]` | — | native-pass |
+| 80 | `matrixvector.batch:182` | `row([1], 1)` | `1` | — | native-pass |
+| 81 | `matrixvector.batch:184` | `row([1 2], 1)` | `[1  2]` | — | native-pass |
+| 82 | `matrixvector.batch:186` | `row([1 2; 3 4], 2)` | `[3  4]` | — | native-pass |
 | 83 | `matrixvector.batch:189` | `genvector(x+10, 1, 2, 2)` | `[11  12]` | — | inventory-only |
 | 84 | `matrixvector.batch:191` | `genvector(x+10, 1, 2, 3)` | `[11  11.5  12]` | — | inventory-only |
 | 85 | `matrixvector.batch:193` | `genvector(x+10, -1, 2, 5)` | `[9  9.75  10.5  11.25  12]` | — | inventory-only |
@@ -569,8 +569,8 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 119 | `matrixvector.batch:271` | `rank([-1, 2, 5, 10], 1)` | `[1  2  3  4]` | — | inventory-only |
 | 120 | `matrixvector.batch:273` | `rank([-1, 2, 5, 10], 0)` | `[4  3  2  1]` | — | inventory-only |
 | 121 | `matrixvector.batch:276` | `rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])` | `[1  0  -2  -3; 0  1  1  4; 0  0  0  0]` | — | inventory-only |
-| 122 | `matrixvector.batch:279` | `rows([1])` | `1` | — | inventory-only |
-| 123 | `matrixvector.batch:281` | `rows([1 2; 3 4])` | `2` | — | inventory-only |
+| 122 | `matrixvector.batch:279` | `rows([1])` | `1` | — | native-pass |
+| 123 | `matrixvector.batch:281` | `rows([1 2; 3 4])` | `2` | — | native-pass |
 | 124 | `matrixvector.batch:284` | `sort([5, 2, 0, 1, 3, -4, 0])` | `[-4  0  0  1  2  3  5]` | — | inventory-only |
 | 125 | `matrixvector.batch:286` | `sort([5, 2, 0, 1, 3, -4, 0], 1)` | `[-4  0  0  1  2  3  5]` | — | inventory-only |
 | 126 | `matrixvector.batch:288` | `sort([5, 2, 0, 1, 3, -4, 0], 0)` | `[5  3  2  1  0  0  -4]` | — | inventory-only |
