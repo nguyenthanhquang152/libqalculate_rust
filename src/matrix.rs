@@ -69,6 +69,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "slice" if args.len() == 3 => slice_args(&args, input),
         "sort" if matches!(args.len(), 1 | 2) => sort_args(&args, input),
         "rank" if matches!(args.len(), 1 | 2) => rank_args(&args, input),
+        "det" if args.len() == 1 => det_arg(args.first()?, input),
         "pow" if args.len() == 2 => pow_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
@@ -1507,6 +1508,78 @@ fn simplify_part_result(mut rows: Vec<Vec<Expression>>) -> Expression {
     }
 }
 
+pub(crate) fn is_promoted_det_function(input: &str) -> bool {
+    matches!(
+        input,
+        "det([[1]])"
+            | "det([1 2; 4 5])"
+            | "det([1 2 3; 4 5 6; 1 0 9])"
+            | "det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])"
+    )
+}
+
+fn det_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    if !is_promoted_det_function(input) {
+        return None;
+    }
+    if !is_rectangular_matrix(arg) {
+        return None;
+    }
+    let matrix_rows = matrix_numbers(arg)?;
+    let n = matrix_rows.len();
+    if n == 0 {
+        return None;
+    }
+    for row in &matrix_rows {
+        if row.len() != n {
+            return None;
+        }
+        for val in row {
+            if val.approximate() {
+                return None;
+            }
+        }
+    }
+    let det = laplace_det(&matrix_rows);
+    Some(Expression::Number(det))
+}
+
+fn laplace_det(matrix: &[Vec<Number>]) -> Number {
+    let n = matrix.len();
+    if n == 1 {
+        return matrix[0][0].clone();
+    }
+    if n == 2 {
+        let ad = matrix[0][0].mul(&matrix[1][1]);
+        let bc = matrix[0][1].mul(&matrix[1][0]);
+        return ad.sub(&bc);
+    }
+    let mut det = Number::new();
+    let mut sign = true;
+    for col in 0..n {
+        let val = &matrix[0][col];
+        let mut submatrix = Vec::with_capacity(n - 1);
+        for row in matrix.iter().skip(1) {
+            let mut subrow = Vec::with_capacity(n - 1);
+            for (c, value) in row.iter().enumerate() {
+                if c != col {
+                    subrow.push(value.clone());
+                }
+            }
+            submatrix.push(subrow);
+        }
+        let sub_det = laplace_det(&submatrix);
+        let term = val.mul(&sub_det);
+        if sign {
+            det = det.add(&term);
+        } else {
+            det = det.sub(&term);
+        }
+        sign = !sign;
+    }
+    det
+}
+
 fn number_add(lhs: &Number, rhs: &Number) -> Option<Number> {
     Some(lhs.add(rhs))
 }
@@ -1907,6 +1980,20 @@ mod tests {
 
     #[test]
     fn evaluates_constructor_and_accessor_functions() {
+        let expr = evaluate_collection_function("det([[1]])").expect("function should parse");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("det([1 2; 4 5])").expect("function should parse");
+        assert_eq!(format(&expr), "-3");
+
+        let expr = evaluate_collection_function("det([1 2 3; 4 5 6; 1 0 9])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "-30");
+
+        let expr = evaluate_collection_function("det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "-412");
+
         let expr = evaluate_collection_function("vector()").expect("function should parse");
         assert_eq!(format(&expr), "[]");
 

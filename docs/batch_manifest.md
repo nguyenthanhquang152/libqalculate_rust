@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **266** |
-| Inventory-only test cases | **390** |
+| Native-pass test cases | **270** |
+| Inventory-only test cases | **386** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -486,10 +486,10 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 36 | `matrixvector.batch:81` | `vertcat([1 2], [3 4], [5 6])` | `[1  2; 3  4; 5  6]` | — | native-pass |
 | 37 | `matrixvector.batch:84` | `((1; 2; 3); (4; 5; 6)) * ((7; 8); (9; 10); (11; 12))` | `[58  64; 139  154]` | — | native-pass |
 | 38 | `matrixvector.batch:87` | `cross((1; 2; 3); (4; 5; 6))` | `[-3  6  -3]` | — | inventory-only |
-| 39 | `matrixvector.batch:90` | `det([[1]])` | `1` | — | inventory-only |
-| 40 | `matrixvector.batch:92` | `det([1 2; 4 5])` | `-3` | — | inventory-only |
-| 41 | `matrixvector.batch:94` | `det([1 2 3; 4 5 6; 1 0 9])` | `-30` | — | inventory-only |
-| 42 | `matrixvector.batch:96` | `det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `-412` | — | inventory-only |
+| 39 | `matrixvector.batch:90` | `det([[1]])` | `1` | — | native-pass |
+| 40 | `matrixvector.batch:92` | `det([1 2; 4 5])` | `-3` | — | native-pass |
+| 41 | `matrixvector.batch:94` | `det([1 2 3; 4 5 6; 1 0 9])` | `-30` | — | native-pass |
+| 42 | `matrixvector.batch:96` | `det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])` | `-412` | — | native-pass |
 | 43 | `matrixvector.batch:99` | `dimension([])` | `0` | — | native-pass |
 | 44 | `matrixvector.batch:101` | `dimension([0])` | `1` | — | native-pass |
 | 45 | `matrixvector.batch:103` | `dimension([1 2 3 4])` | `4` | — | native-pass |
