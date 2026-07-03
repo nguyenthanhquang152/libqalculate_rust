@@ -69,6 +69,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "slice" if args.len() == 3 => slice_args(&args, input),
         "sort" if matches!(args.len(), 1 | 2) => sort_args(&args, input),
         "rank" if matches!(args.len(), 1 | 2) => rank_args(&args, input),
+        "pow" if args.len() == 2 => pow_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -147,7 +148,10 @@ impl<'a> CollectionParser<'a> {
         let mut lhs = self.parse_value()?;
         loop {
             self.skip_ws();
-            if self.consume_operator(".*") {
+            if self.consume_operator(".^") {
+                let rhs = self.parse_operator_rhs_value()?;
+                lhs = elementwise_pow_collections(lhs, rhs)?;
+            } else if self.consume_operator(".*") {
                 let rhs = self.parse_operator_rhs_value()?;
                 lhs = elementwise_mul_collections(lhs, rhs)?;
             } else if self.consume_operator("./") {
@@ -346,7 +350,11 @@ impl<'a> CollectionParser<'a> {
         {
             return false;
         }
-        rest.starts_with('/') || rest.starts_with('*')
+        rest.starts_with('/')
+            || rest.starts_with('*')
+            || rest.starts_with(".^")
+            || rest.starts_with(".*")
+            || rest.starts_with("./")
     }
 }
 
@@ -448,6 +456,10 @@ fn elementwise_mul_collections(lhs: Expression, rhs: Expression) -> Option<Expre
     binary_elementwise(lhs, rhs, &number_mul, BroadcastMode::Outer)
 }
 
+fn elementwise_pow_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
+    binary_elementwise(lhs, rhs, &checked_pow, BroadcastMode::Outer)
+}
+
 fn multiply_function_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
     match (collection_shape(&lhs)?, collection_shape(&rhs)?) {
         (CollectionShape::Scalar, _) | (_, CollectionShape::Scalar) => {
@@ -503,14 +515,14 @@ fn binary_elementwise(
         }
         (lhs_shape, rhs_shape) if lhs_shape == rhs_shape => zip_numbers(&lhs, &rhs, op),
         _ if broadcast_mode == BroadcastMode::None => None,
-        // Broadcast case 1: Matrix { rows: r, cols: 1 } and Vector { len: c }
+        // Broadcast a column matrix against a row vector.
         (CollectionShape::Matrix { cols: 1, .. }, CollectionShape::Vector { .. }) => {
             let lhs_rows = matrix_numbers(&lhs)?;
             let lhs_col = first_column_numbers(&lhs_rows)?;
             let rhs_items = vector_numbers(&rhs)?;
             broadcast_outer(&lhs_col, &rhs_items, op)
         }
-        // Broadcast case 2: Vector { len: c } and Matrix { rows: r, cols: 1 }
+        // Broadcast a row vector against a column matrix.
         (CollectionShape::Vector { .. }, CollectionShape::Matrix { cols: 1, .. }) => {
             let lhs_items = vector_numbers(&lhs)?;
             let rhs_rows = matrix_numbers(&rhs)?;
@@ -518,7 +530,23 @@ fn binary_elementwise(
             let reversed = |rhs: &Number, lhs: &Number| op(lhs, rhs);
             broadcast_outer(&rhs_col, &lhs_items, &reversed)
         }
-        // Broadcast case 3: Matrix { rows: r, cols: 1 } and Matrix { rows: 1, cols: c }
+        // Broadcast a right-hand column matrix across each left-hand matrix row.
+        (
+            CollectionShape::Matrix { rows: lhs_rows, .. },
+            CollectionShape::Matrix {
+                rows: rhs_rows,
+                cols: 1,
+            },
+        ) if lhs_rows == rhs_rows => broadcast_matrix_with_column(&lhs, &rhs, op),
+        // Broadcast a left-hand column matrix across each right-hand matrix row.
+        (
+            CollectionShape::Matrix {
+                rows: lhs_rows,
+                cols: 1,
+            },
+            CollectionShape::Matrix { rows: rhs_rows, .. },
+        ) if lhs_rows == rhs_rows => broadcast_column_with_matrix(&lhs, &rhs, op),
+        // Broadcast a column matrix against a single-row matrix.
         (CollectionShape::Matrix { cols: 1, .. }, CollectionShape::Matrix { rows: 1, .. }) => {
             let lhs_rows = matrix_numbers(&lhs)?;
             let lhs_col = first_column_numbers(&lhs_rows)?;
@@ -526,7 +554,7 @@ fn binary_elementwise(
             let rhs_row = rhs_rows.first()?;
             broadcast_outer(&lhs_col, rhs_row, op)
         }
-        // Broadcast case 4: Matrix { rows: 1, cols: c } and Matrix { rows: r, cols: 1 }
+        // Broadcast a single-row matrix against a column matrix.
         (CollectionShape::Matrix { rows: 1, .. }, CollectionShape::Matrix { cols: 1, .. }) => {
             let lhs_rows = matrix_numbers(&lhs)?;
             let lhs_row = lhs_rows.first()?;
@@ -552,6 +580,58 @@ fn broadcast_outer(
                     column_values
                         .iter()
                         .map(|column_value| Some(Expression::Number(op(row_value, column_value)?)))
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()?,
+    ))
+}
+
+fn broadcast_matrix_with_column(
+    matrix: &Expression,
+    column: &Expression,
+    op: &dyn Fn(&Number, &Number) -> Option<Number>,
+) -> Option<Expression> {
+    let matrix_rows = matrix_numbers(matrix)?;
+    let column_rows = matrix_numbers(column)?;
+    let column_values = first_column_numbers(&column_rows)?;
+    Some(Expression::Vector(
+        matrix_rows
+            .iter()
+            .zip(column_values.iter())
+            .map(|(row_values, column_value)| {
+                Some(Expression::Vector(
+                    row_values
+                        .iter()
+                        .map(|matrix_value| {
+                            Some(Expression::Number(op(matrix_value, column_value)?))
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()?,
+    ))
+}
+
+fn broadcast_column_with_matrix(
+    column: &Expression,
+    matrix: &Expression,
+    op: &dyn Fn(&Number, &Number) -> Option<Number>,
+) -> Option<Expression> {
+    let column_rows = matrix_numbers(column)?;
+    let column_values = first_column_numbers(&column_rows)?;
+    let matrix_rows = matrix_numbers(matrix)?;
+    Some(Expression::Vector(
+        column_values
+            .iter()
+            .zip(matrix_rows.iter())
+            .map(|(column_value, row_values)| {
+                Some(Expression::Vector(
+                    row_values
+                        .iter()
+                        .map(|matrix_value| {
+                            Some(Expression::Number(op(column_value, matrix_value)?))
+                        })
                         .collect::<Option<Vec<_>>>()?,
                 ))
             })
@@ -1322,6 +1402,44 @@ pub(crate) fn is_promoted_rank_function(input: &str) -> bool {
     promoted_rank_call_source(input).is_some()
 }
 
+fn pow_args(args: &[Expression]) -> Option<Expression> {
+    let lhs_shape = collection_shape(args.first()?)?;
+    let rhs_shape = collection_shape(args.get(1)?)?;
+    if matches!(
+        (lhs_shape, rhs_shape),
+        (CollectionShape::Scalar, CollectionShape::Scalar)
+    ) {
+        return None;
+    }
+
+    elementwise_pow_collections(args[0].clone(), args[1].clone())
+}
+
+fn is_collection_power_function(input: &str) -> bool {
+    let Some((name, args_source)) = split_function_call(input) else {
+        return false;
+    };
+    if name != "pow" {
+        return false;
+    }
+    let Some(args) = parse_arguments(args_source) else {
+        return false;
+    };
+    if args.iter().any(has_ragged_nested_vectors) {
+        return false;
+    }
+
+    args.len() == 2 && pow_args(&args).is_some()
+}
+
+fn is_collection_power_operator(input: &str) -> bool {
+    input.contains(".^") && evaluate_collection_arithmetic(input).is_some()
+}
+
+pub(crate) fn is_promoted_power_expression(input: &str) -> bool {
+    is_collection_power_function(input) || is_collection_power_operator(input)
+}
+
 fn slice_indices_match(args: &[Expression], first_index: i64, last_index: i64) -> bool {
     args.len() == 3
         && number_matches_i64(args.get(1).expect("len checked"), first_index)
@@ -1399,6 +1517,11 @@ fn number_sub(lhs: &Number, rhs: &Number) -> Option<Number> {
 
 fn number_mul(lhs: &Number, rhs: &Number) -> Option<Number> {
     Some(lhs.mul(rhs))
+}
+
+fn checked_pow(lhs: &Number, rhs: &Number) -> Option<Number> {
+    let result = lhs.pow(rhs);
+    (!result.is_nan()).then_some(result)
 }
 
 fn checked_div(lhs: &Number, rhs: &Number) -> Option<Number> {
@@ -1921,6 +2044,22 @@ mod tests {
         assert_eq!(format(&expr), "[4  3  2  1]");
 
         let expr =
+            evaluate_collection_function("pow([1 2; 3 4], 2)").expect("function should parse");
+        assert_eq!(format(&expr), "[1  4; 9  16]");
+
+        let expr =
+            evaluate_collection_arithmetic("[1 2; 3 4].^2").expect("expression should parse");
+        assert_eq!(format(&expr), "[1  4; 9  16]");
+
+        let expr =
+            evaluate_collection_arithmetic("[2 4; 3 4].^[-1; 2]").expect("expression should parse");
+        assert_eq!(format(&expr), "[0.5  0.25; 9  16]");
+
+        let expr =
+            evaluate_collection_arithmetic("[2; 3].^[3 4]").expect("expression should parse");
+        assert_eq!(format(&expr), "[8  16; 27  81]");
+
+        let expr =
             evaluate_collection_function("transpose([1 2; 3 4])").expect("function should parse");
         assert_eq!(format(&expr), "[1  3; 2  4]");
 
@@ -2026,6 +2165,9 @@ mod tests {
         assert!(evaluate_collection_function("rank([-1,2,5,10], 1)").is_none());
         assert!(evaluate_collection_function("rank([-1, 2, 5, 10], 2)").is_none());
         assert!(evaluate_collection_function("rank([-1, 2, 5, 11], 1)").is_none());
+        assert!(evaluate_collection_function("pow([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("pow([1 2; 3 4], 2, 3)").is_none());
+        assert!(evaluate_collection_function("pow(1, 2)").is_none());
         assert!(evaluate_collection_function(" transpose([1 2; 3 4])").is_none());
         assert!(evaluate_collection_function("transpose([1 2; 3 4]) ").is_none());
         assert!(evaluate_collection_function("transpose ([1 2; 3 4])").is_none());
@@ -2185,6 +2327,8 @@ mod tests {
         assert!(evaluate_collection_function("hadamard([1 2], [3 4 5])").is_none());
         assert!(evaluate_collection_function("hadamard([1; 2], [3 4])").is_none());
         assert!(evaluate_collection_function("hadamard(1, 2)").is_none());
+        assert!(evaluate_collection_function("pow([1 2], [3 4 5])").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2].^[3 4 5]").is_none());
         assert!(evaluate_collection_function("divide(1)").is_none());
         assert!(evaluate_collection_function("divide(1, 0)").is_none());
         assert!(evaluate_collection_function("divide([1], 0+/-1)").is_none());
