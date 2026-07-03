@@ -13,6 +13,14 @@ fn run_qalc_rs(
     disable_fallback: Option<&str>,
     report_fallback: Option<&str>,
 ) -> (String, String, i32) {
+    run_qalc_rs_args(&["--", expression], disable_fallback, report_fallback)
+}
+
+fn run_qalc_rs_args(
+    args: &[&str],
+    disable_fallback: Option<&str>,
+    report_fallback: Option<&str>,
+) -> (String, String, i32) {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
@@ -24,8 +32,7 @@ fn run_qalc_rs(
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
         .arg("--")
-        .arg("--")
-        .arg(expression)
+        .args(args)
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
         .env("QALCULATE_DEFINITIONS_DIR", defs_dir())
@@ -243,6 +250,9 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("identity(1)", "1"),
         ("identity(3)", "[1  0  0; 0  1  0; 0  0  1]"),
         ("identity([1 2; 4 5])", "[1  0; 0  1]"),
+        ("magnitude(-2)", "2"),
+        ("magnitude([-2])", "2"),
+        ("magnitude([-2, 3, 4])", "5.385164807"),
         ("[1 2] times 3 times 4", "[12  24]"),
         ("[1 2] Times 3", "[3  6]"),
         ("(1; 2; 3) * 2 - 2", "[0  2  4]"),
@@ -292,6 +302,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
 
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "magnitude([-2, 3, 4])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
     let (stdout, stderr, exit_code) = run_qalc_rs("1 2", Some("1"), Some("1"));
     assert!(stdout.is_empty());
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
@@ -328,6 +348,15 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "hadamard(1, 2)",
         "identity(2)",
         "identity([1 2])",
+        "magnitude(2)",
+        "magnitude(-2.0)",
+        "magnitude(-4/2)",
+        "magnitude([3, 4])",
+        "magnitude([-2.0])",
+        "magnitude([-4/2])",
+        "magnitude([1, 2, 3])",
+        "magnitude([-2.0, 3, 4])",
+        "magnitude([1 2; 3 4])",
         "divide([1], 0+/-1)",
         "divide(1, [2 4])",
         "rdivide([1; 2], [3 4])",

@@ -531,6 +531,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         }
     }
 
+    if parsed_settings.has_precision() && crate::matrix::is_promoted_magnitude_function(expr) {
+        return None;
+    }
+
     if let Some(collection_result) = crate::matrix::evaluate_collection_function(expr) {
         let mut context = crate::context::CalculatorContext::default();
         for cmd in settings {

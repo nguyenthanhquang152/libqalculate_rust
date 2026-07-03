@@ -115,6 +115,19 @@ focused expressions with fallback disabled:
 - `(2+/-3)^3.2`
 - `10 +/- 0`
 
+`tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases` adds
+focused matrix/vector evidence outside the Epic 2 numeric row count. The
+`matrixvector.batch` magnitude rows promoted in Refs #41 are:
+
+- `matrixvector.batch:214`: `magnitude(-2) -> 2`
+- `matrixvector.batch:216`: `magnitude([-2]) -> 2`
+- `matrixvector.batch:218`: `magnitude([-2, 3, 4]) -> 5.385164807`
+
+The native gate is source-exact for these three promoted spellings and remains
+fallback-disabled for equivalent aliases such as `magnitude(-2.0)` and
+`magnitude(-4/2)`. Precision settings remain outside this slice because the
+vector path computes default-precision `sqrt(29)` before formatting.
+
 `tests/oracle.rs::focused_issue15_uncertainty_input_oracle_cases` adds a
 focused Refs #15 input/API slice without changing batch-manifest counts:
 
