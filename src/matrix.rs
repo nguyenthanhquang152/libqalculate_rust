@@ -59,6 +59,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "multiply" if !args.is_empty() => multiply_args(&args),
         "hadamard" if args.len() >= 2 => hadamard_args(&args),
         "identity" if args.len() == 1 => identity_arg(args.first()?),
+        "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -701,6 +702,67 @@ fn identity_matrix(size: usize) -> Expression {
     )
 }
 
+pub(crate) fn is_promoted_magnitude_function(input: &str) -> bool {
+    let Some((name, args_source)) = split_function_call(input) else {
+        return false;
+    };
+    name == "magnitude" && promoted_magnitude_arg_source(args_source).is_some()
+}
+
+fn magnitude_arg(arg: &Expression, args_source: &str) -> Option<Expression> {
+    match promoted_magnitude_arg_source(args_source)? {
+        PromotedMagnitudeArg::Scalar if number_matches_i64(arg, -2) => {
+            Some(Expression::Number(as_number(arg)?.abs()))
+        }
+        PromotedMagnitudeArg::SingletonVector if vector_matches_i64s(arg, &[-2]) => {
+            vector_magnitude(arg)
+        }
+        PromotedMagnitudeArg::ThreeVector if vector_matches_i64s(arg, &[-2, 3, 4]) => {
+            vector_magnitude(arg)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedMagnitudeArg {
+    Scalar,
+    SingletonVector,
+    ThreeVector,
+}
+
+fn promoted_magnitude_arg_source(args_source: &str) -> Option<PromotedMagnitudeArg> {
+    match args_source.trim() {
+        "-2" => Some(PromotedMagnitudeArg::Scalar),
+        "[-2]" => Some(PromotedMagnitudeArg::SingletonVector),
+        "[-2, 3, 4]" => Some(PromotedMagnitudeArg::ThreeVector),
+        _ => None,
+    }
+}
+
+fn vector_matches_i64s(expr: &Expression, expected: &[i64]) -> bool {
+    let Expression::Vector(items) = expr else {
+        return false;
+    };
+    items.len() == expected.len()
+        && items
+            .iter()
+            .zip(expected)
+            .all(|(item, expected)| number_matches_i64(item, *expected))
+}
+
+fn number_matches_i64(expr: &Expression, expected: i64) -> bool {
+    as_number(expr).and_then(Number::to_i64) == Some(expected)
+}
+
+fn vector_magnitude(expr: &Expression) -> Option<Expression> {
+    let values = vector_numbers(expr)?;
+    let sum = values
+        .iter()
+        .fold(Number::from_i32(0), |acc, value| acc.add(&value.mul(value)));
+    Some(Expression::Number(sum.sqrt()))
+}
+
 fn number_add(lhs: &Number, rhs: &Number) -> Option<Number> {
     Some(lhs.add(rhs))
 }
@@ -1133,10 +1195,24 @@ mod tests {
             evaluate_collection_function("identity([1 2; 4 5])").expect("function should parse");
         assert_eq!(format(&expr), "[1  0; 0  1]");
 
+        let expr = evaluate_collection_function("magnitude(-2)").expect("function should parse");
+        assert_eq!(format(&expr), "2");
+
+        let expr = evaluate_collection_function("magnitude([-2])").expect("function should parse");
+        assert_eq!(format(&expr), "2");
+
+        let expr =
+            evaluate_collection_function("magnitude([-2, 3, 4])").expect("function should parse");
+        assert_eq!(format(&expr), "5.3851648071345037");
+
         assert!(evaluate_collection_function("matrix(0, 3, [])").is_none());
         assert!(evaluate_collection_function("matrix(3, 0, [])").is_none());
         assert!(evaluate_collection_function("identity(2)").is_none());
         assert!(evaluate_collection_function("identity([1 2])").is_none());
+        assert!(evaluate_collection_function("magnitude(2)").is_none());
+        assert!(evaluate_collection_function("magnitude([3, 4])").is_none());
+        assert!(evaluate_collection_function("magnitude([1, 2, 3])").is_none());
+        assert!(evaluate_collection_function("magnitude([1 2; 3 4])").is_none());
 
         let expr = evaluate_collection_function("columns([[,,,]])").expect("function should parse");
         assert_eq!(format(&expr), "4");
