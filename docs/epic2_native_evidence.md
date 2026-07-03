@@ -219,6 +219,20 @@ remains fallback-disabled for spacing variants, unrelated sort directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `det` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:90`: `det([[1]]) -> 1`
+- `matrixvector.batch:92`: `det([1 2; 4 5]) -> -3`
+- `matrixvector.batch:94`: `det([1 2 3; 4 5 6; 1 0 9]) -> -30`
+- `matrixvector.batch:96`:
+  `det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9]) -> -412`
+
+The native `det` gate is source-exact for these four promoted spellings and
+remains fallback-disabled for non-square matrices, scalar inputs, approximate
+matrix entries, arity mismatches, spacing variants, and explicit session
+settings.
+
 The same focused oracle test also records the `matrixvector.batch` `rank` rows
 promoted in Refs #41:
 
