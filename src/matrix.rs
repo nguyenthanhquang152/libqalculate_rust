@@ -60,6 +60,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "hadamard" if args.len() >= 2 => hadamard_args(&args),
         "identity" if args.len() == 1 => identity_arg(args.first()?),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
+        "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
@@ -710,6 +711,10 @@ pub(crate) fn is_promoted_magnitude_function(input: &str) -> bool {
     name == "magnitude" && promoted_magnitude_arg_source(args_source).is_some()
 }
 
+pub(crate) fn is_promoted_norm_function(input: &str) -> bool {
+    promoted_norm_call_source(input).is_some()
+}
+
 fn magnitude_arg(arg: &Expression, args_source: &str) -> Option<Expression> {
     match promoted_magnitude_arg_source(args_source)? {
         PromotedMagnitudeArg::Scalar if number_matches_i64(arg, -2) => {
@@ -762,6 +767,33 @@ fn vector_magnitude(expr: &Expression) -> Option<Expression> {
         .iter()
         .fold(Number::from_i32(0), |acc, value| acc.add(&value.mul(value)));
     Some(Expression::Number(sum.sqrt()))
+}
+
+fn norm_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    match promoted_norm_call_source(input)? {
+        PromotedNormArg::Singleton if vector_matches_i64s(arg, &[2]) => vector_magnitude(arg),
+        PromotedNormArg::TwoElement if vector_matches_i64s(arg, &[3, 4]) => vector_magnitude(arg),
+        PromotedNormArg::ThreeElement if vector_matches_i64s(arg, &[2, 3, 6]) => {
+            vector_magnitude(arg)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedNormArg {
+    Singleton,
+    TwoElement,
+    ThreeElement,
+}
+
+fn promoted_norm_call_source(input: &str) -> Option<PromotedNormArg> {
+    match input {
+        "norm([2])" => Some(PromotedNormArg::Singleton),
+        "norm([3, 4])" => Some(PromotedNormArg::TwoElement),
+        "norm([2, 3, 6])" => Some(PromotedNormArg::ThreeElement),
+        _ => None,
+    }
 }
 
 fn part_args(args: &[Expression], args_source: &str) -> Option<Expression> {
@@ -1318,6 +1350,15 @@ mod tests {
             evaluate_collection_function("magnitude([-2, 3, 4])").expect("function should parse");
         assert_eq!(format(&expr), "5.3851648071345037");
 
+        let expr = evaluate_collection_function("norm([2])").expect("function should parse");
+        assert_eq!(format(&expr), "2");
+
+        let expr = evaluate_collection_function("norm([3, 4])").expect("function should parse");
+        assert_eq!(format(&expr), "5");
+
+        let expr = evaluate_collection_function("norm([2, 3, 6])").expect("function should parse");
+        assert_eq!(format(&expr), "7");
+
         let expr =
             evaluate_collection_function("part([1], 1, 1, 1, 1)").expect("function should parse");
         assert_eq!(format(&expr), "1");
@@ -1345,6 +1386,19 @@ mod tests {
         assert!(evaluate_collection_function("magnitude([3, 4])").is_none());
         assert!(evaluate_collection_function("magnitude([1, 2, 3])").is_none());
         assert!(evaluate_collection_function("magnitude([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("norm([2.0])").is_none());
+        assert!(evaluate_collection_function("norm([4/2])").is_none());
+        assert!(evaluate_collection_function(" norm([2])").is_none());
+        assert!(evaluate_collection_function("norm([2]) ").is_none());
+        assert!(evaluate_collection_function(" norm([2]) ").is_none());
+        assert!(evaluate_collection_function("norm ([2])").is_none());
+        assert!(evaluate_collection_function("norm( [2])").is_none());
+        assert!(evaluate_collection_function("norm([2] )").is_none());
+        assert!(evaluate_collection_function("norm([3,4])").is_none());
+        assert!(evaluate_collection_function("norm([3, 4] )").is_none());
+        assert!(evaluate_collection_function("norm([3, 4.0])").is_none());
+        assert!(evaluate_collection_function("norm([2, 3, 6, 0])").is_none());
+        assert!(evaluate_collection_function("norm([1 2; 3 4])").is_none());
         assert!(evaluate_collection_function("part([1], 1.0, 1, 1, 1)").is_none());
         assert!(evaluate_collection_function("part([1], 1, 1, 1)").is_none());
         assert!(evaluate_collection_function("part([1, 2], 1, 1, 1, 1)").is_none());

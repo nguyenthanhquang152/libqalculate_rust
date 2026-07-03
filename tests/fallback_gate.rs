@@ -253,6 +253,9 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("magnitude(-2)", "2"),
         ("magnitude([-2])", "2"),
         ("magnitude([-2, 3, 4])", "5.385164807"),
+        ("norm([2])", "2"),
+        ("norm([3, 4])", "5"),
+        ("norm([2, 3, 6])", "7"),
         ("part([1], 1, 1, 1, 1)", "1"),
         ("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)", "5"),
         (
@@ -322,6 +325,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
 
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "norm([3, 4])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
     let (stdout, stderr, exit_code) = run_qalc_rs("1 2", Some("1"), Some("1"));
     assert!(stdout.is_empty());
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
@@ -367,6 +380,19 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "magnitude([1, 2, 3])",
         "magnitude([-2.0, 3, 4])",
         "magnitude([1 2; 3 4])",
+        "norm([2.0])",
+        "norm([4/2])",
+        " norm([2])",
+        "norm([2]) ",
+        " norm([2]) ",
+        "norm ([2])",
+        "norm( [2])",
+        "norm([2] )",
+        "norm([3,4])",
+        "norm([3, 4] )",
+        "norm([3, 4.0])",
+        "norm([2, 3, 6, 0])",
+        "norm([1 2; 3 4])",
         "part([1], 1.0, 1, 1, 1)",
         "part([1], 1, 1, 1)",
         "part([1, 2], 1, 1, 1, 1)",

@@ -128,6 +128,18 @@ fallback-disabled for equivalent aliases such as `magnitude(-2.0)` and
 `magnitude(-4/2)`. Precision settings remain outside this slice because the
 vector path computes default-precision `sqrt(29)` before formatting.
 
+The focused vector/matrix oracle test also records the `matrixvector.batch`
+`norm` rows promoted in Refs #41:
+
+- `matrixvector.batch:253`: `norm([2]) -> 2`
+- `matrixvector.batch:255`: `norm([3, 4]) -> 5`
+- `matrixvector.batch:257`: `norm([2, 3, 6]) -> 7`
+
+The native `norm` gate is source-exact for these three promoted spellings and
+remains fallback-disabled for equivalent aliases such as `norm([2.0])`,
+`norm([4/2])`, and `norm([3,4])`. Explicit session settings remain outside
+this default-setting slice and are rejected for the promoted norm forms.
+
 The same focused oracle test also records the `matrixvector.batch` `part` rows
 promoted in Refs #41:
 

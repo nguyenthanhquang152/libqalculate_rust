@@ -1480,6 +1480,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-norm-singleton",
+            "norm([2])",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-norm-two-vector",
+            "norm([3, 4])",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-norm-three-vector",
+            "norm([2, 3, 6])",
+            default_settings,
+        ),
+        (
             "matrixvector-access-part-singleton",
             "part([1], 1, 1, 1, 1)",
             default_settings,
