@@ -251,6 +251,20 @@ remains fallback-disabled for non-square matrices, scalar inputs, approximate
 matrix entries, arity mismatches, spacing variants, and explicit session
 settings.
 
+The same focused oracle test also records the `matrixvector.batch` `permanent`
+rows promoted in Refs #41:
+
+- `matrixvector.batch:260`: `permanent([1]) -> 1`
+- `matrixvector.batch:262`: `permanent([1 2; 4 5]) -> 13`
+- `matrixvector.batch:264`: `permanent([1 2 3; 4 5 6; 1 0 9]) -> 144`
+- `matrixvector.batch:266`:
+  `permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9]) -> 11028`
+
+The native `permanent` gate is source-exact for these four promoted spellings
+and remains fallback-disabled for spacing variants, non-square matrices, scalar
+inputs, approximate matrix entries, arity mismatches, and explicit session
+settings.
+
 The same focused oracle test also records the `matrixvector.batch` `rank` rows
 promoted in Refs #41:
 

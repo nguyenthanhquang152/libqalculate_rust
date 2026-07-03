@@ -71,6 +71,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "rank" if matches!(args.len(), 1 | 2) => rank_args(&args, input),
         "adj" if args.len() == 1 => adj_arg(args.first()?, input),
         "cofactor" if args.len() == 3 => cofactor_args(&args, input),
+        "permanent" if args.len() == 1 => permanent_arg(args.first()?, input),
         "det" if args.len() == 1 => det_arg(args.first()?, input),
         "pow" if args.len() == 2 => pow_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
@@ -1532,6 +1533,16 @@ pub(crate) fn is_promoted_adjoint_or_cofactor_function(input: &str) -> bool {
     )
 }
 
+pub(crate) fn is_promoted_permanent_function(input: &str) -> bool {
+    matches!(
+        input,
+        "permanent([1])"
+            | "permanent([1 2; 4 5])"
+            | "permanent([1 2 3; 4 5 6; 1 0 9])"
+            | "permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])"
+    )
+}
+
 fn adj_arg(arg: &Expression, input: &str) -> Option<Expression> {
     if !is_promoted_adjoint_or_cofactor_function(input) {
         return None;
@@ -1562,6 +1573,15 @@ fn cofactor_args(args: &[Expression], input: &str) -> Option<Expression> {
     let col = number_to_usize(args.get(2)?)?.checked_sub(1)?;
     let cofactor = cofactor_number(&matrix_rows, row, col)?;
     Some(Expression::Number(cofactor))
+}
+
+fn permanent_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    if !is_promoted_permanent_function(input) {
+        return None;
+    }
+    let matrix_rows = exact_square_matrix_numbers_or_singleton_vector(arg)?;
+    let permanent = permanent_number(&matrix_rows);
+    Some(Expression::Number(permanent))
 }
 
 fn det_arg(arg: &Expression, input: &str) -> Option<Expression> {
@@ -1595,6 +1615,19 @@ fn exact_square_matrix_numbers(arg: &Expression) -> Option<Vec<Vec<Number>>> {
     Some(matrix_rows)
 }
 
+fn exact_square_matrix_numbers_or_singleton_vector(arg: &Expression) -> Option<Vec<Vec<Number>>> {
+    if let Expression::Vector(items) = arg {
+        if let [item] = items.as_slice() {
+            let number = as_number(item)?;
+            if number.approximate() {
+                return None;
+            }
+            return Some(vec![vec![number.clone()]]);
+        }
+    }
+    exact_square_matrix_numbers(arg)
+}
+
 fn cofactor_number(matrix: &[Vec<Number>], row: usize, col: usize) -> Option<Number> {
     let n = matrix.len();
     if n <= 1 || row >= n || col >= n {
@@ -1621,6 +1654,35 @@ fn cofactor_number(matrix: &[Vec<Number>], row: usize, col: usize) -> Option<Num
     } else {
         Some(det)
     }
+}
+
+fn permanent_number(matrix: &[Vec<Number>]) -> Number {
+    let n = matrix.len();
+    if n == 1 {
+        return matrix[0][0].clone();
+    }
+    if n == 2 {
+        let ad = matrix[0][0].mul(&matrix[1][1]);
+        let bc = matrix[0][1].mul(&matrix[1][0]);
+        return ad.add(&bc);
+    }
+
+    let mut permanent = Number::new();
+    for col in 0..n {
+        let val = &matrix[0][col];
+        let mut submatrix = Vec::with_capacity(n - 1);
+        for row in matrix.iter().skip(1) {
+            let mut subrow = Vec::with_capacity(n - 1);
+            for (c, value) in row.iter().enumerate() {
+                if c != col {
+                    subrow.push(value.clone());
+                }
+            }
+            submatrix.push(subrow);
+        }
+        permanent = permanent.add(&val.mul(&permanent_number(&submatrix)));
+    }
+    permanent
 }
 
 fn laplace_det(matrix: &[Vec<Number>]) -> Number {
@@ -2099,6 +2161,21 @@ mod tests {
             evaluate_collection_function("cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)")
                 .expect("function should parse");
         assert_eq!(format(&expr), "-54");
+
+        let expr = evaluate_collection_function("permanent([1])").expect("function should parse");
+        assert_eq!(format(&expr), "1");
+
+        let expr =
+            evaluate_collection_function("permanent([1 2; 4 5])").expect("function should parse");
+        assert_eq!(format(&expr), "13");
+
+        let expr = evaluate_collection_function("permanent([1 2 3; 4 5 6; 1 0 9])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "144");
+
+        let expr = evaluate_collection_function("permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "11028");
 
         let expr = evaluate_collection_function("vector()").expect("function should parse");
         assert_eq!(format(&expr), "[]");

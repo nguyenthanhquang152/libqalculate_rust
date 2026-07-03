@@ -282,6 +282,10 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
             "cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)",
             "−54",
         ),
+        ("permanent([1])", "1"),
+        ("permanent([1 2; 4 5])", "13"),
+        ("permanent([1 2 3; 4 5 6; 1 0 9])", "144"),
+        ("permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])", "11028"),
         ("det([[1]])", "1"),
         ("det([1 2; 4 5])", "−3"),
         ("det([1 2 3; 4 5 6; 1 0 9])", "−30"),
@@ -529,6 +533,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
 
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "permanent([1 2; 4 5])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
     let (stdout, stderr, exit_code) = run_qalc_rs("1 2", Some("1"), Some("1"));
     assert!(stdout.is_empty());
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
@@ -643,6 +657,13 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "cofactor([[1]], 1, 1)",
         "cofactor([1.0 2; 4 5], 1, 1)",
         "cofactor([1 2; 4 5], 1, 1, 1)",
+        "permanent([1]) ",
+        " permanent([1])",
+        "permanent ([1])",
+        "permanent([1.0])",
+        "permanent([1 2])",
+        "permanent(1)",
+        "permanent([1], 1)",
         "det([[1.0]])",
         "det([1 2])",
         "det(1)",

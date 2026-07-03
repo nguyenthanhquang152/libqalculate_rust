@@ -543,6 +543,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return None;
     }
 
+    if !settings.is_empty() && crate::matrix::is_promoted_permanent_function(expr) {
+        return None;
+    }
+
     if !settings.is_empty() && crate::matrix::is_promoted_norm_function(expr) {
         return None;
     }
