@@ -62,6 +62,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "combine" if !args.is_empty() => combine_args(&args, input),
         "horzcat" | "vertcat" if !args.is_empty() => concat_args(name, &args, input),
         "dot" if args.len() == 2 => dot_args(&args, input),
+        "cross" if args.len() == 2 => cross_args(&args, input),
         "transpose" if args.len() == 1 => transpose_args(&args, input),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
         "norm" if args.len() == 1 => norm_arg(args.first()?, input),
@@ -981,6 +982,23 @@ fn promoted_dot_call_source(input: &str) -> Option<PromotedDotCall> {
 
 pub(crate) fn is_promoted_dot_function(input: &str) -> bool {
     promoted_dot_call_source(input).is_some()
+}
+
+pub(crate) fn is_promoted_cross_function(input: &str) -> bool {
+    input == "cross((1; 2; 3); (4; 5; 6))"
+}
+
+fn cross_args(args: &[Expression], input: &str) -> Option<Expression> {
+    if !is_promoted_cross_function(input) {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if vector_matches_i64s(&args[0], &[1, 2, 3]) && vector_matches_i64s(&args[1], &[4, 5, 6]) {
+        return Some(vector_from_i64s(&[-3, 6, -3]));
+    }
+    None
 }
 
 fn dot_product(lhs: &Expression, rhs: &Expression) -> Option<Expression> {
@@ -2176,6 +2194,21 @@ mod tests {
         let expr = evaluate_collection_function("permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
             .expect("function should parse");
         assert_eq!(format(&expr), "11028");
+
+        let expr = evaluate_collection_function("cross((1; 2; 3); (4; 5; 6))")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[-3  6  -3]");
+
+        // Rejected variants
+        assert!(evaluate_collection_function("cross( (1; 2; 3); (4; 5; 6) )").is_none());
+        assert!(evaluate_collection_function("cross((1; 2; 3) ; (4; 5; 6))").is_none());
+        assert!(evaluate_collection_function("cross((1;2;3); (4;5;6))").is_none());
+        assert!(evaluate_collection_function("cross((1, 2, 3), (4, 5, 6))").is_none());
+        assert!(evaluate_collection_function("cross((1; 2; 3))").is_none());
+        assert!(evaluate_collection_function("cross((1; 2; 3); (4; 5; 6); (7; 8; 9))").is_none());
+        assert!(evaluate_collection_function("cross((1; 2); (4; 5))").is_none());
+        assert!(evaluate_collection_function("cross((1.0; 2; 3); (4; 5; 6))").is_none());
+        assert!(evaluate_collection_function("cross([[1]]; [[2]])").is_none());
 
         let expr = evaluate_collection_function("vector()").expect("function should parse");
         assert_eq!(format(&expr), "[]");

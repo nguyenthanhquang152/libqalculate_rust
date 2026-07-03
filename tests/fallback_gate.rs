@@ -230,6 +230,7 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("dot((2); (3))", "6"),
         ("dot((1; 2); (3, 4))", "11"),
         ("dot((1; 2; 3); (4; 5; 6))", "32"),
+        ("cross((1; 2; 3); (4; 5; 6))", "[−3  6  −3]"),
         ("columns([1 2; 4 5])", "2"),
         ("column([1], 1)", "1"),
         ("column([1, 2], 1)", "1"),
@@ -543,6 +544,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
 
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "cross((1; 2; 3); (4; 5; 6))"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
     let (stdout, stderr, exit_code) = run_qalc_rs("1 2", Some("1"), Some("1"));
     assert!(stdout.is_empty());
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
@@ -616,6 +627,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "dot((1; 2; 3); (4; 5))",
         "dot((1.0; 2); (3, 4))",
         "dot([1 2; 3 4]; [5 6; 7 8])",
+        " cross((1; 2; 3); (4; 5; 6))",
+        "cross((1; 2; 3); (4; 5; 6)) ",
+        "cross ((1; 2; 3); (4; 5; 6))",
+        "cross((1;2;3); (4;5;6))",
+        "cross((1; 2; 3), (4; 5; 6))",
+        "cross((1; 2; 3); (4; 5; 6); (7; 8; 9))",
+        "cross((1; 2; 3))",
+        "cross((1; 2); (4; 5))",
+        "cross((1.0; 2; 3); (4; 5; 6))",
+        "cross([[1]]; [[2]])",
         "magnitude(2)",
         "magnitude(-2.0)",
         "magnitude(-4/2)",
