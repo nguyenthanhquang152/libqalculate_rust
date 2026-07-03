@@ -1465,6 +1465,16 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-combine-single-vector",
+            "combine([1, 2])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-combine-multiple-vectors",
+            "combine([1, 2], [3], [4, 5, 6])",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-magnitude-scalar",
             "magnitude(-2)",
             default_settings,

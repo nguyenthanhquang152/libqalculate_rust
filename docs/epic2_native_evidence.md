@@ -140,6 +140,19 @@ remains fallback-disabled for equivalent aliases such as `norm([2.0])`,
 `norm([4/2])`, and `norm([3,4])`. Explicit session settings remain outside
 this default-setting slice and are rejected for the promoted norm forms.
 
+The focused vector/matrix oracle test also records the `matrixvector.batch`
+`combine` rows promoted in Refs #41:
+
+- `matrixvector.batch:248`: `combine([1, 2]) -> [1  2]`
+- `matrixvector.batch:250`:
+  `combine([1, 2], [3], [4, 5, 6]) -> [1  2  3  4  5  6]`
+
+The native `combine` gate is source-exact for these two promoted spellings and
+remains fallback-disabled for aliases such as `mergevectors([1, 2])`, no-space
+argument variants such as `combine([1,2])`, unrelated arities, and whole-call
+whitespace variants. Explicit session settings remain outside this
+default-setting slice and are rejected for the promoted combine forms.
+
 The same focused oracle test also records the `matrixvector.batch` `part` rows
 promoted in Refs #41:
 
