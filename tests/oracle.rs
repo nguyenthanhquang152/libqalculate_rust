@@ -1534,6 +1534,32 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             "norm([2, 3, 6])",
             default_settings,
         ),
+        ("matrixvector-adj-2x2", "adj([1 2; 4 5])", default_settings),
+        (
+            "matrixvector-adj-3x3",
+            "adj([1, 2, 3; 4, 5, 6; 1, 0, 9])",
+            default_settings,
+        ),
+        (
+            "matrixvector-adj-4x4",
+            "adj([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])",
+            default_settings,
+        ),
+        (
+            "matrixvector-cofactor-2x2",
+            "cofactor([1 2; 4 5], 1, 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-cofactor-3x3",
+            "cofactor([1 2 3; 4 5 6; 1 0 9], 1, 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-cofactor-4x4",
+            "cofactor([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9], 4, 4)",
+            default_settings,
+        ),
         (
             "matrixvector-access-part-singleton",
             "part([1], 1, 1, 1, 1)",
