@@ -1265,6 +1265,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-shape-dimension-empty",
+            "dimension([])",
+            default_settings,
+        ),
+        (
+            "matrixvector-shape-dimension-singleton",
+            "dimension([0])",
+            default_settings,
+        ),
+        (
+            "matrixvector-shape-dimension-vector",
+            "dimension([1 2 3 4])",
+            default_settings,
+        ),
+        (
             "matrixvector-constructor-singleton-matrix",
             "matrix(1, 1, [2])",
             default_settings,
@@ -1325,6 +1340,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-column-scalar",
+            "column([1], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-column-vector",
+            "column([1, 2], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-column-matrix",
+            "column([1 2; 3 4], 2)",
+            default_settings,
+        ),
+        (
             "matrixvector-access-element-row",
             "element([1 2; 3 4], 1)",
             default_settings,
@@ -1352,6 +1382,31 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
         (
             "matrixvector-access-elements",
             "elements([1 2; 3 4])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-row-scalar",
+            "row([1], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-row-vector",
+            "row([1 2], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-row-matrix",
+            "row([1 2; 3 4], 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-shape-rows-vector",
+            "rows([1])",
+            default_settings,
+        ),
+        (
+            "matrixvector-shape-rows-matrix",
+            "rows([1 2; 3 4])",
             default_settings,
         ),
         (

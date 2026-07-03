@@ -38,6 +38,24 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
             Some(Expression::Number(Number::from_i64(count as i64)))
         }
         "element" => element(&args),
+        "dimension" if args.len() == 1 => {
+            let count = dimension(args.first()?)?;
+            Some(Expression::Number(Number::from_i64(count as i64)))
+        }
+        "rows" if args.len() == 1 => {
+            let count = rows_count(args.first()?)?;
+            Some(Expression::Number(Number::from_i64(count as i64)))
+        }
+        "row" if args.len() == 2 => {
+            let collection = args.first()?;
+            let row_idx = number_to_i64(args.get(1)?)?;
+            row(collection, row_idx)
+        }
+        "column" if args.len() == 2 => {
+            let collection = args.first()?;
+            let col_idx = number_to_i64(args.get(1)?)?;
+            column(collection, col_idx)
+        }
         _ => None,
     }
 }
@@ -622,6 +640,88 @@ fn number_to_usize(expr: &Expression) -> Option<usize> {
     (value >= 0).then_some(value as usize)
 }
 
+fn number_to_i64(expr: &Expression) -> Option<i64> {
+    let Expression::Number(number) = expr else {
+        return None;
+    };
+    number.to_i64()
+}
+
+fn dimension(expr: &Expression) -> Option<usize> {
+    match expr {
+        Expression::Vector(items) => Some(items.len()),
+        _ => None,
+    }
+}
+
+fn rows_count(expr: &Expression) -> Option<usize> {
+    let matrix = to_matrix(expr)?;
+    Some(matrix.len())
+}
+
+fn row(expr: &Expression, row_idx: i64) -> Option<Expression> {
+    let matrix = to_matrix(expr)?;
+    let num_rows = matrix.len();
+    let idx = resolve_index(row_idx, num_rows)?;
+    let r = matrix.get(idx)?;
+    Some(simplify_result(r.clone()))
+}
+
+fn column(expr: &Expression, col_idx: i64) -> Option<Expression> {
+    let matrix = to_matrix(expr)?;
+    let num_cols = matrix.first()?.len();
+    let idx = resolve_index(col_idx, num_cols)?;
+    let mut col_vec = Vec::new();
+    for r in matrix {
+        col_vec.push(r.get(idx)?.clone());
+    }
+    Some(simplify_result(col_vec))
+}
+
+fn resolve_index(idx: i64, len: usize) -> Option<usize> {
+    let mut resolved = idx;
+    if resolved < 0 {
+        resolved += len as i64 + 1;
+    }
+    if resolved <= 0 || resolved > len as i64 {
+        None
+    } else {
+        Some((resolved - 1) as usize)
+    }
+}
+
+fn to_matrix(expr: &Expression) -> Option<Vec<Vec<Expression>>> {
+    match expr {
+        Expression::Vector(items) => {
+            if items.is_empty() {
+                Some(Vec::new())
+            } else if is_rectangular_matrix(expr) {
+                let mut matrix = Vec::new();
+                for row_expr in items {
+                    if let Expression::Vector(row_items) = row_expr {
+                        matrix.push(row_items.clone());
+                    } else {
+                        return None;
+                    }
+                }
+                Some(matrix)
+            } else {
+                Some(vec![items.clone()])
+            }
+        }
+        Expression::Number(_) => Some(vec![vec![expr.clone()]]),
+        _ => None,
+    }
+}
+
+fn simplify_result(vec: Vec<Expression>) -> Expression {
+    if vec.len() == 1 {
+        vec.into_iter().next().unwrap()
+    } else {
+        Expression::Vector(vec)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -780,5 +880,49 @@ mod tests {
         assert_eq!(format(&expr), "[1  4; 9  16]");
 
         assert!(evaluate_collection_arithmetic("[1 2] + [3 4 5]").is_none());
+    }
+
+    #[test]
+    fn evaluates_dimension_rows_row_column() {
+        let expr = evaluate_collection_function("dimension([])").expect("should evaluate");
+        assert_eq!(format(&expr), "0");
+
+        let expr = evaluate_collection_function("dimension([0])").expect("should evaluate");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("dimension([1 2 3 4])").expect("should evaluate");
+        assert_eq!(format(&expr), "4");
+
+        let expr = evaluate_collection_function("rows([1])").expect("should evaluate");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("rows([1 2; 3 4])").expect("should evaluate");
+        assert_eq!(format(&expr), "2");
+
+        let expr = evaluate_collection_function("row([1], 1)").expect("should evaluate");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("row([1 2], 1)").expect("should evaluate");
+        assert_eq!(format(&expr), "[1  2]");
+
+        let expr = evaluate_collection_function("row([1 2; 3 4], 2)").expect("should evaluate");
+        assert_eq!(format(&expr), "[3  4]");
+
+        let expr = evaluate_collection_function("column([1], 1)").expect("should evaluate");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("column([1, 2], 1)").expect("should evaluate");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("column([1 2; 3 4], 2)").expect("should evaluate");
+        assert_eq!(format(&expr), "[2  4]");
+    }
+
+    #[test]
+    fn shape_accessors_fail_closed_on_unsupported_arity() {
+        assert!(evaluate_collection_function("dimension([1], 2)").is_none());
+        assert!(evaluate_collection_function("rows([1], 2)").is_none());
+        assert!(evaluate_collection_function("row([1], 1, 2)").is_none());
+        assert!(evaluate_collection_function("column([1], 1, 2)").is_none());
     }
 }
