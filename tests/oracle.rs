@@ -1335,6 +1335,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-horzcat-row-vectors",
+            "horzcat([1], [2 3], [4 5 6 7])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-horzcat-matrices",
+            "horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-vertcat-row-vectors",
+            "vertcat([1 2], [3 4], [5 6])",
+            default_settings,
+        ),
+        (
             "matrixvector-access-columns",
             "columns([1 2; 4 5])",
             default_settings,

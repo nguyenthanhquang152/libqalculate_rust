@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **246** |
-| Inventory-only test cases | **410** |
+| Native-pass test cases | **249** |
+| Inventory-only test cases | **407** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -481,9 +481,9 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 31 | `matrixvector.batch:70` | `matrix2vector([[0]])` | `0` | — | native-pass |
 | 32 | `matrixvector.batch:72` | `matrix2vector([1 2; 4 5])` | `[1  2  4  5]` | — | native-pass |
 | 33 | `matrixvector.batch:74` | `matrix2vector([1 2 3; 4 5 6; 7 8 9])` | `[1  2  3  4  5  6  7  8  9]` | — | native-pass |
-| 34 | `matrixvector.batch:77` | `horzcat([1], [2 3], [4 5 6 7])` | `[1  2  3  4  5  6  7]` | — | inventory-only |
-| 35 | `matrixvector.batch:79` | `horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])` | `[1  3  4  7  8  9; 2  5  6  10  11  12]` | — | inventory-only |
-| 36 | `matrixvector.batch:81` | `vertcat([1 2], [3 4], [5 6])` | `[1  2; 3  4; 5  6]` | — | inventory-only |
+| 34 | `matrixvector.batch:77` | `horzcat([1], [2 3], [4 5 6 7])` | `[1  2  3  4  5  6  7]` | — | native-pass |
+| 35 | `matrixvector.batch:79` | `horzcat([1; 2], [3 4; 5 6], [7 8 9; 10 11 12])` | `[1  3  4  7  8  9; 2  5  6  10  11  12]` | — | native-pass |
+| 36 | `matrixvector.batch:81` | `vertcat([1 2], [3 4], [5 6])` | `[1  2; 3  4; 5  6]` | — | native-pass |
 | 37 | `matrixvector.batch:84` | `((1; 2; 3); (4; 5; 6)) * ((7; 8); (9; 10); (11; 12))` | `[58  64; 139  154]` | — | native-pass |
 | 38 | `matrixvector.batch:87` | `cross((1; 2; 3); (4; 5; 6))` | `[-3  6  -3]` | — | inventory-only |
 | 39 | `matrixvector.batch:90` | `det([[1]])` | `1` | — | inventory-only |
