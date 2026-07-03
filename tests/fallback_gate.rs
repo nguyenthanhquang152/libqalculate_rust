@@ -250,6 +250,8 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("identity(1)", "1"),
         ("identity(3)", "[1  0  0; 0  1  0; 0  0  1]"),
         ("identity([1 2; 4 5])", "[1  0; 0  1]"),
+        ("combine([1, 2])", "[1  2]"),
+        ("combine([1, 2], [3], [4, 5, 6])", "[1  2  3  4  5  6]"),
         ("magnitude(-2)", "2"),
         ("magnitude([-2])", "2"),
         ("magnitude([-2, 3, 4])", "5.385164807"),
@@ -326,6 +328,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert_eq!(exit_code, 2);
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "combine([1, 2])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "norm([3, 4])"],
         Some("1"),
         Some("1"),
@@ -371,6 +383,17 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "hadamard(1, 2)",
         "identity(2)",
         "identity([1 2])",
+        "mergevectors([1, 2])",
+        " combine([1, 2])",
+        "combine([1, 2]) ",
+        "combine ([1, 2])",
+        "combine( [1, 2])",
+        "combine([1, 2] )",
+        "combine([1,2])",
+        "combine([1, 2], [3])",
+        "combine([1, 2], [3], [4, 5, 6], [7])",
+        "combine([1.0, 2])",
+        "combine([1 2; 3 4])",
         "magnitude(2)",
         "magnitude(-2.0)",
         "magnitude(-4/2)",
