@@ -1550,6 +1550,21 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-sort-default",
+            "sort([5, 2, 0, 1, 3, -4, 0])",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-sort-ascending",
+            "sort([5, 2, 0, 1, 3, -4, 0], 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-sort-descending",
+            "sort([5, 2, 0, 1, 3, -4, 0], 0)",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-times-vector-scalars",
             "[1 2] times 3 times 4",
             default_settings,
