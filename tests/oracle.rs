@@ -1365,6 +1365,16 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-arithmetic-dot-operator-three-vectors",
+            "(1; 2; 3).(4; 5; 6)",
+            default_settings,
+        ),
+        (
+            "matrixvector-arithmetic-dot-operator-four-vectors",
+            "(1; 2; 3, 4) . (5; 6; 7, 8)",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-cross-three-vectors",
             "cross((1; 2; 3); (4; 5; 6))",
             default_settings,

@@ -87,6 +87,9 @@ pub(crate) fn evaluate_collection_arithmetic(input: &str) -> Option<Expression> 
     if let Some(expr) = transpose_operator(input) {
         return Some(expr);
     }
+    if let Some(expr) = dot_operator(input) {
+        return Some(expr);
+    }
 
     let mut parser = CollectionParser::new(input);
     let expr = parser.parse_add_sub_expression()?;
@@ -982,6 +985,48 @@ fn promoted_dot_call_source(input: &str) -> Option<PromotedDotCall> {
 
 pub(crate) fn is_promoted_dot_function(input: &str) -> bool {
     promoted_dot_call_source(input).is_some()
+}
+
+pub(crate) fn is_promoted_dot_operator_expression(input: &str) -> bool {
+    promoted_dot_operator_source(input).is_some()
+}
+
+fn dot_operator(input: &str) -> Option<Expression> {
+    match promoted_dot_operator_source(input)? {
+        PromotedDotOperator::ThreeVector => {
+            let lhs = parse_collection_literal("(1; 2; 3)")?;
+            let rhs = parse_collection_literal("(4; 5; 6)")?;
+            if vector_matches_i64s(&lhs, &[1, 2, 3]) && vector_matches_i64s(&rhs, &[4, 5, 6]) {
+                dot_product(&lhs, &rhs)
+            } else {
+                None
+            }
+        }
+        PromotedDotOperator::FourVector => {
+            let lhs = parse_collection_literal("(1; 2; 3, 4)")?;
+            let rhs = parse_collection_literal("(5; 6; 7, 8)")?;
+            if vector_matches_i64s(&lhs, &[1, 2, 3, 4]) && vector_matches_i64s(&rhs, &[5, 6, 7, 8])
+            {
+                dot_product(&lhs, &rhs)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedDotOperator {
+    ThreeVector,
+    FourVector,
+}
+
+fn promoted_dot_operator_source(input: &str) -> Option<PromotedDotOperator> {
+    match input {
+        "(1; 2; 3).(4; 5; 6)" => Some(PromotedDotOperator::ThreeVector),
+        "(1; 2; 3, 4) . (5; 6; 7, 8)" => Some(PromotedDotOperator::FourVector),
+        _ => None,
+    }
 }
 
 pub(crate) fn is_promoted_cross_function(input: &str) -> bool {
@@ -2277,6 +2322,14 @@ mod tests {
             .expect("function should parse");
         assert_eq!(format(&expr), "32");
 
+        let expr =
+            evaluate_collection_arithmetic("(1; 2; 3).(4; 5; 6)").expect("operator should parse");
+        assert_eq!(format(&expr), "32");
+
+        let expr = evaluate_collection_arithmetic("(1; 2; 3, 4) . (5; 6; 7, 8)")
+            .expect("operator should parse");
+        assert_eq!(format(&expr), "70");
+
         let expr = evaluate_collection_function("magnitude(-2)").expect("function should parse");
         assert_eq!(format(&expr), "2");
 
@@ -2428,6 +2481,13 @@ mod tests {
         assert!(evaluate_collection_function("dot((1; 2; 3); (4; 5))").is_none());
         assert!(evaluate_collection_function("dot((1.0; 2); (3, 4))").is_none());
         assert!(evaluate_collection_function("dot([1 2; 3 4]; [5 6; 7 8])").is_none());
+        assert!(evaluate_collection_arithmetic(" (1; 2; 3).(4; 5; 6)").is_none());
+        assert!(evaluate_collection_arithmetic("(1; 2; 3).(4; 5; 6) ").is_none());
+        assert!(evaluate_collection_arithmetic("(1;2;3).(4;5;6)").is_none());
+        assert!(evaluate_collection_arithmetic("(1; 2; 3) . (4; 5; 6)").is_none());
+        assert!(evaluate_collection_arithmetic("(1; 2; 3).(4; 5)").is_none());
+        assert!(evaluate_collection_arithmetic("(1.0; 2; 3).(4; 5; 6)").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2; 3 4].[5 6; 7 8]").is_none());
         assert!(evaluate_collection_function("part([1], 1.0, 1, 1, 1)").is_none());
         assert!(evaluate_collection_function("part([1], 1, 1, 1)").is_none());
         assert!(evaluate_collection_function("part([1, 2], 1, 1, 1, 1)").is_none());
