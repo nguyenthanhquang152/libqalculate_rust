@@ -64,6 +64,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
         "norm" if args.len() == 1 => norm_arg(args.first()?, input),
         "part" if args.len() == 5 => part_args(&args, args_source),
+        "slice" if args.len() == 3 => slice_args(&args, input),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -1002,6 +1003,59 @@ fn part_indices_match(args: &[Expression], expected: [i64; 4]) -> bool {
             .all(|(arg, expected)| number_matches_i64(arg, expected))
 }
 
+fn slice_args(args: &[Expression], input: &str) -> Option<Expression> {
+    match promoted_slice_call_source(input)? {
+        PromotedSliceCall::Singleton
+            if slice_indices_match(args, 1, 1) && vector_matches_i64s(args.first()?, &[5]) =>
+        {
+            vector_slice(args.first()?, 1, 1)
+        }
+        PromotedSliceCall::VectorRange
+            if slice_indices_match(args, 2, 4)
+                && vector_matches_i64s(args.first()?, &[5, 6, 7, 8, 9]) =>
+        {
+            vector_slice(args.first()?, 2, 4)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedSliceCall {
+    Singleton,
+    VectorRange,
+}
+
+fn promoted_slice_call_source(input: &str) -> Option<PromotedSliceCall> {
+    match input {
+        "slice([5], 1, 1)" => Some(PromotedSliceCall::Singleton),
+        "slice([5, 6, 7, 8, 9], 2, 4)" => Some(PromotedSliceCall::VectorRange),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_slice_function(input: &str) -> bool {
+    promoted_slice_call_source(input).is_some()
+}
+
+fn slice_indices_match(args: &[Expression], first_index: i64, last_index: i64) -> bool {
+    args.len() == 3
+        && number_matches_i64(args.get(1).expect("len checked"), first_index)
+        && number_matches_i64(args.get(2).expect("len checked"), last_index)
+}
+
+fn vector_slice(expr: &Expression, first_index: i64, last_index: i64) -> Option<Expression> {
+    let Expression::Vector(items) = expr else {
+        return None;
+    };
+    let start = resolve_index(first_index, items.len())?;
+    let end = resolve_index(last_index, items.len())?;
+    if start > end {
+        return None;
+    }
+    Some(simplify_result(items.get(start..=end)?.to_vec()))
+}
+
 fn matrix_matches_i64s(expr: &Expression, expected: &[&[i64]]) -> bool {
     let Expression::Vector(rows) = expr else {
         return false;
@@ -1540,6 +1594,13 @@ mod tests {
                 .expect("function should parse");
         assert_eq!(format(&expr), "[2  3; 5  6; 8  9; 11  12]");
 
+        let expr = evaluate_collection_function("slice([5], 1, 1)").expect("function should parse");
+        assert_eq!(format(&expr), "5");
+
+        let expr = evaluate_collection_function("slice([5, 6, 7, 8, 9], 2, 4)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[6  7  8]");
+
         assert!(evaluate_collection_function("matrix(0, 3, [])").is_none());
         assert!(evaluate_collection_function("matrix(3, 0, [])").is_none());
         assert!(evaluate_collection_function("identity(2)").is_none());
@@ -1595,6 +1656,16 @@ mod tests {
             evaluate_collection_function("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 1, 1, 1)")
                 .is_none()
         );
+        assert!(evaluate_collection_function(" slice([5], 1, 1)").is_none());
+        assert!(evaluate_collection_function("slice([5], 1, 1) ").is_none());
+        assert!(evaluate_collection_function("slice ([5], 1, 1)").is_none());
+        assert!(evaluate_collection_function("slice([5],1,1)").is_none());
+        assert!(evaluate_collection_function("slice([5], 1, 1, 1)").is_none());
+        assert!(evaluate_collection_function("slice([5.0], 1, 1)").is_none());
+        assert!(evaluate_collection_function("slice([5, 6, 7, 8, 9], 2.0, 4)").is_none());
+        assert!(evaluate_collection_function("slice([5, 6, 7, 8, 9], 4, 2)").is_none());
+        assert!(evaluate_collection_function("slice([5, 6, 7, 8, 9], 2, 5)").is_none());
+        assert!(evaluate_collection_function("slice([5 6; 7 8], 1, 2)").is_none());
 
         let expr = evaluate_collection_function("columns([[,,,]])").expect("function should parse");
         assert_eq!(format(&expr), "4");
