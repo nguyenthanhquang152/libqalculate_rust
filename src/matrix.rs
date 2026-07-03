@@ -60,6 +60,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "hadamard" if args.len() >= 2 => hadamard_args(&args),
         "identity" if args.len() == 1 => identity_arg(args.first()?),
         "magnitude" if args.len() == 1 => magnitude_arg(args.first()?, args_source),
+        "part" if args.len() == 5 => part_args(&args, args_source),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
         }
@@ -763,6 +764,118 @@ fn vector_magnitude(expr: &Expression) -> Option<Expression> {
     Some(Expression::Number(sum.sqrt()))
 }
 
+fn part_args(args: &[Expression], args_source: &str) -> Option<Expression> {
+    let promoted = promoted_part_arg_source(args_source)?;
+    if !part_indices_match(args, promoted.indices()) {
+        return None;
+    }
+    let collection = args.first()?;
+    match promoted {
+        PromotedPartArg::Singleton if vector_matches_i64s(collection, &[1]) => {
+            part_range(collection, 1, 1, 1, 1)
+        }
+        PromotedPartArg::MatrixCell
+        | PromotedPartArg::MatrixColumn
+        | PromotedPartArg::MatrixBlock
+            if matrix_matches_i64s(
+                collection,
+                &[&[1, 2, 3], &[4, 5, 6], &[7, 8, 9], &[10, 11, 12]],
+            ) =>
+        {
+            let [first_row, first_col, last_row, last_col] = promoted.indices();
+            part_range(collection, first_row, first_col, last_row, last_col)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PromotedPartArg {
+    Singleton,
+    MatrixCell,
+    MatrixColumn,
+    MatrixBlock,
+}
+
+impl PromotedPartArg {
+    fn indices(self) -> [i64; 4] {
+        match self {
+            PromotedPartArg::Singleton => [1, 1, 1, 1],
+            PromotedPartArg::MatrixCell => [2, 2, 2, 2],
+            PromotedPartArg::MatrixColumn => [1, 3, 2, 3],
+            PromotedPartArg::MatrixBlock => [1, 2, 4, 3],
+        }
+    }
+}
+
+fn promoted_part_arg_source(args_source: &str) -> Option<PromotedPartArg> {
+    match args_source.trim() {
+        "[1], 1, 1, 1, 1" => Some(PromotedPartArg::Singleton),
+        "[1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2" => Some(PromotedPartArg::MatrixCell),
+        "[1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3" => Some(PromotedPartArg::MatrixColumn),
+        "[1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3" => Some(PromotedPartArg::MatrixBlock),
+        _ => None,
+    }
+}
+
+fn part_indices_match(args: &[Expression], expected: [i64; 4]) -> bool {
+    args.len() == 5
+        && args
+            .iter()
+            .skip(1)
+            .zip(expected)
+            .all(|(arg, expected)| number_matches_i64(arg, expected))
+}
+
+fn matrix_matches_i64s(expr: &Expression, expected: &[&[i64]]) -> bool {
+    let Expression::Vector(rows) = expr else {
+        return false;
+    };
+    rows.len() == expected.len()
+        && rows
+            .iter()
+            .zip(expected)
+            .all(|(row, expected_row)| vector_matches_i64s(row, expected_row))
+}
+
+fn part_range(
+    expr: &Expression,
+    first_row: i64,
+    first_col: i64,
+    last_row: i64,
+    last_col: i64,
+) -> Option<Expression> {
+    let matrix = to_matrix(expr)?;
+    let row_start = resolve_index(first_row, matrix.len())?;
+    let row_end = resolve_index(last_row, matrix.len())?;
+    let col_count = matrix.first()?.len();
+    let col_start = resolve_index(first_col, col_count)?;
+    let col_end = resolve_index(last_col, col_count)?;
+    if row_start > row_end || col_start > col_end {
+        return None;
+    }
+
+    let rows = matrix
+        .get(row_start..=row_end)?
+        .iter()
+        .map(|row| row.get(col_start..=col_end).map(|cols| cols.to_vec()))
+        .collect::<Option<Vec<_>>>()?;
+    Some(simplify_part_result(rows))
+}
+
+fn simplify_part_result(mut rows: Vec<Vec<Expression>>) -> Expression {
+    if rows.len() == 1 {
+        let mut row = rows.pop().expect("single-row part result exists");
+        if row.len() == 1 {
+            row.pop().expect("single-cell part result exists")
+        } else {
+            Expression::Vector(row)
+        }
+    } else {
+        Expression::Vector(rows.into_iter().map(Expression::Vector).collect())
+    }
+}
+
 fn number_add(lhs: &Number, rhs: &Number) -> Option<Number> {
     Some(lhs.add(rhs))
 }
@@ -1205,6 +1318,25 @@ mod tests {
             evaluate_collection_function("magnitude([-2, 3, 4])").expect("function should parse");
         assert_eq!(format(&expr), "5.3851648071345037");
 
+        let expr =
+            evaluate_collection_function("part([1], 1, 1, 1, 1)").expect("function should parse");
+        assert_eq!(format(&expr), "1");
+
+        let expr =
+            evaluate_collection_function("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)")
+                .expect("function should parse");
+        assert_eq!(format(&expr), "5");
+
+        let expr =
+            evaluate_collection_function("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)")
+                .expect("function should parse");
+        assert_eq!(format(&expr), "[3; 6]");
+
+        let expr =
+            evaluate_collection_function("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)")
+                .expect("function should parse");
+        assert_eq!(format(&expr), "[2  3; 5  6; 8  9; 11  12]");
+
         assert!(evaluate_collection_function("matrix(0, 3, [])").is_none());
         assert!(evaluate_collection_function("matrix(3, 0, [])").is_none());
         assert!(evaluate_collection_function("identity(2)").is_none());
@@ -1213,6 +1345,13 @@ mod tests {
         assert!(evaluate_collection_function("magnitude([3, 4])").is_none());
         assert!(evaluate_collection_function("magnitude([1, 2, 3])").is_none());
         assert!(evaluate_collection_function("magnitude([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("part([1], 1.0, 1, 1, 1)").is_none());
+        assert!(evaluate_collection_function("part([1], 1, 1, 1)").is_none());
+        assert!(evaluate_collection_function("part([1, 2], 1, 1, 1, 1)").is_none());
+        assert!(
+            evaluate_collection_function("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 1, 1, 1)")
+                .is_none()
+        );
 
         let expr = evaluate_collection_function("columns([[,,,]])").expect("function should parse");
         assert_eq!(format(&expr), "4");

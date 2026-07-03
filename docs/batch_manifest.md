@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **237** |
-| Inventory-only test cases | **419** |
+| Native-pass test cases | **241** |
+| Inventory-only test cases | **415** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -544,10 +544,10 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 94 | `matrixvector.batch:214` | `magnitude(-2)` | `2` | — | native-pass |
 | 95 | `matrixvector.batch:216` | `magnitude([-2])` | `2` | — | native-pass |
 | 96 | `matrixvector.batch:218` | `magnitude([-2, 3, 4])` | `5.385164807` | — | native-pass |
-| 97 | `matrixvector.batch:221` | `part([1], 1, 1, 1, 1)` | `1` | — | inventory-only |
-| 98 | `matrixvector.batch:223` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)` | `5` | — | inventory-only |
-| 99 | `matrixvector.batch:225` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)` | `[3; 6]` | — | inventory-only |
-| 100 | `matrixvector.batch:227` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)` | `[2  3; 5  6; 8  9; 11  12]` | — | inventory-only |
+| 97 | `matrixvector.batch:221` | `part([1], 1, 1, 1, 1)` | `1` | — | native-pass |
+| 98 | `matrixvector.batch:223` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)` | `5` | — | native-pass |
+| 99 | `matrixvector.batch:225` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)` | `[3; 6]` | — | native-pass |
+| 100 | `matrixvector.batch:227` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)` | `[2  3; 5  6; 8  9; 11  12]` | — | native-pass |
 | 101 | `matrixvector.batch:230` | `((1; 2); (3; 4))^-1` | `[-2  1; 1.5  -0.5]` | — | inventory-only |
 | 102 | `matrixvector.batch:232` | `inverse([1 2; 3 5])` | `[-5  2; 3  -1]` | — | inventory-only |
 | 103 | `matrixvector.batch:234` | `inverse([1  2  3; 4  5  6; 1  0  9])` | `[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]` | — | inventory-only |

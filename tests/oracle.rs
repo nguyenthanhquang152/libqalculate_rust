@@ -1480,6 +1480,26 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-access-part-singleton",
+            "part([1], 1, 1, 1, 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-part-cell",
+            "part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-part-column",
+            "part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-access-part-block",
+            "part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)",
+            default_settings,
+        ),
+        (
             "matrixvector-arithmetic-times-vector-scalars",
             "[1 2] times 3 times 4",
             default_settings,
