@@ -56,6 +56,10 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
             let col_idx = number_to_i64(args.get(1)?)?;
             column(collection, col_idx)
         }
+        "multiply" if !args.is_empty() => multiply_args(&args),
+        "divide" | "rdivide" if args.len() == 2 => {
+            divide_function_collections(args[0].clone(), args[1].clone())
+        }
         _ => None,
     }
 }
@@ -128,11 +132,17 @@ impl<'a> CollectionParser<'a> {
         loop {
             self.skip_ws();
             if self.consume_operator(".*") {
-                let rhs = self.parse_value()?;
+                let rhs = self.parse_operator_rhs_value()?;
                 lhs = elementwise_mul_collections(lhs, rhs)?;
-            } else if self.consume_operator("*") {
-                let rhs = self.parse_value()?;
+            } else if self.consume_operator("./") {
+                let rhs = self.parse_operator_rhs_value()?;
+                lhs = elementwise_div_collections(lhs, rhs)?;
+            } else if self.consume_operator("*") || self.consume_word_operator("times") {
+                let rhs = self.parse_operator_rhs_value()?;
                 lhs = multiply_collections(lhs, rhs)?;
+            } else if self.consume_operator("/") {
+                let rhs = self.parse_operator_rhs_value()?;
+                lhs = divide_collections(lhs, rhs)?;
             } else {
                 break;
             }
@@ -141,12 +151,23 @@ impl<'a> CollectionParser<'a> {
     }
 
     fn parse_value(&mut self) -> Option<Expression> {
+        self.parse_value_with_number_stop(false)
+    }
+
+    fn parse_operator_rhs_value(&mut self) -> Option<Expression> {
+        self.parse_value_with_number_stop(true)
+    }
+
+    fn parse_value_with_number_stop(
+        &mut self,
+        stop_at_multiplicative_operator: bool,
+    ) -> Option<Expression> {
         self.skip_ws();
         match self.peek_char()? {
             '[' => self.parse_container('[', ']'),
             '(' => self.parse_container('(', ')'),
             ',' | ';' | ']' | ')' => Some(zero()),
-            _ => self.parse_number(),
+            _ => self.parse_number(stop_at_multiplicative_operator),
         }
     }
 
@@ -211,10 +232,13 @@ impl<'a> CollectionParser<'a> {
         }
     }
 
-    fn parse_number(&mut self) -> Option<Expression> {
+    fn parse_number(&mut self, stop_at_multiplicative_operator: bool) -> Option<Expression> {
         let start = self.position;
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace() || matches!(ch, ',' | ';' | ']' | ')') {
+                break;
+            }
+            if stop_at_multiplicative_operator && self.starts_multiplicative_operator_token() {
                 break;
             }
             self.position += ch.len_utf8();
@@ -260,6 +284,27 @@ impl<'a> CollectionParser<'a> {
         }
     }
 
+    fn consume_word_operator(&mut self, expected: &str) -> bool {
+        self.skip_ws();
+        if !self.input[self.position..]
+            .get(..expected.len())
+            .is_some_and(|word| word.eq_ignore_ascii_case(expected))
+        {
+            return false;
+        }
+
+        let start = self.position;
+        let end = start + expected.len();
+        if has_word_operator_left_boundary(self.input, start)
+            && has_word_operator_right_boundary(self.input, end)
+        {
+            self.position = end;
+            true
+        } else {
+            false
+        }
+    }
+
     fn peek_char(&self) -> Option<char> {
         self.input[self.position..].chars().next()
     }
@@ -276,6 +321,31 @@ impl<'a> CollectionParser<'a> {
     fn is_at_end(&self) -> bool {
         self.position >= self.input.len()
     }
+
+    fn starts_multiplicative_operator_token(&self) -> bool {
+        let rest = &self.input[self.position..];
+        if rest.starts_with('/')
+            && self.input[..self.position].ends_with('+')
+            && rest.starts_with("/-")
+        {
+            return false;
+        }
+        rest.starts_with('/') || rest.starts_with('*')
+    }
+}
+
+fn has_word_operator_left_boundary(input: &str, start: usize) -> bool {
+    input[..start]
+        .chars()
+        .next_back()
+        .is_none_or(|ch| ch.is_whitespace() || matches!(ch, '(' | '[' | ',' | ';' | ':'))
+}
+
+fn has_word_operator_right_boundary(input: &str, end: usize) -> bool {
+    input[end..]
+        .chars()
+        .next()
+        .is_none_or(|ch| ch.is_whitespace() || matches!(ch, ')' | ']' | ',' | ';' | ':'))
 }
 
 fn zero() -> Expression {
@@ -351,15 +421,24 @@ fn build_matrix(args: &[Expression]) -> Option<Expression> {
 }
 
 fn add_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
-    binary_elementwise(lhs, rhs, Number::add)
+    binary_elementwise(lhs, rhs, &number_add, BroadcastMode::None)
 }
 
 fn sub_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
-    binary_elementwise(lhs, rhs, Number::sub)
+    binary_elementwise(lhs, rhs, &number_sub, BroadcastMode::None)
 }
 
 fn elementwise_mul_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
-    binary_elementwise(lhs, rhs, Number::mul)
+    binary_elementwise(lhs, rhs, &number_mul, BroadcastMode::Outer)
+}
+
+fn multiply_function_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
+    match (collection_shape(&lhs)?, collection_shape(&rhs)?) {
+        (CollectionShape::Scalar, _) | (_, CollectionShape::Scalar) => {
+            elementwise_mul_collections(lhs, rhs)
+        }
+        _ => None,
+    }
 }
 
 fn multiply_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
@@ -382,26 +461,183 @@ fn multiply_collections(lhs: Expression, rhs: Expression) -> Option<Expression> 
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BroadcastMode {
+    None,
+    Outer,
+}
+
 fn binary_elementwise(
     lhs: Expression,
     rhs: Expression,
-    op: fn(&Number, &Number) -> Number,
+    op: &dyn Fn(&Number, &Number) -> Option<Number>,
+    broadcast_mode: BroadcastMode,
 ) -> Option<Expression> {
     match (collection_shape(&lhs)?, collection_shape(&rhs)?) {
         (CollectionShape::Scalar, CollectionShape::Scalar) => {
-            Some(Expression::Number(op(as_number(&lhs)?, as_number(&rhs)?)))
+            Some(Expression::Number(op(as_number(&lhs)?, as_number(&rhs)?)?))
         }
         (CollectionShape::Scalar, _) => {
             let scalar = as_number(&lhs)?;
-            map_numbers(&rhs, &|number| Some(op(scalar, number)))
+            map_numbers(&rhs, &|number| op(scalar, number))
         }
         (_, CollectionShape::Scalar) => {
             let scalar = as_number(&rhs)?;
-            map_numbers(&lhs, &|number| Some(op(number, scalar)))
+            map_numbers(&lhs, &|number| op(number, scalar))
         }
         (lhs_shape, rhs_shape) if lhs_shape == rhs_shape => zip_numbers(&lhs, &rhs, op),
+        _ if broadcast_mode == BroadcastMode::None => None,
+        // Broadcast case 1: Matrix { rows: r, cols: 1 } and Vector { len: c }
+        (CollectionShape::Matrix { cols: 1, .. }, CollectionShape::Vector { .. }) => {
+            let lhs_rows = matrix_numbers(&lhs)?;
+            let lhs_col = first_column_numbers(&lhs_rows)?;
+            let rhs_items = vector_numbers(&rhs)?;
+            broadcast_outer(&lhs_col, &rhs_items, op)
+        }
+        // Broadcast case 2: Vector { len: c } and Matrix { rows: r, cols: 1 }
+        (CollectionShape::Vector { .. }, CollectionShape::Matrix { cols: 1, .. }) => {
+            let lhs_items = vector_numbers(&lhs)?;
+            let rhs_rows = matrix_numbers(&rhs)?;
+            let rhs_col = first_column_numbers(&rhs_rows)?;
+            let reversed = |rhs: &Number, lhs: &Number| op(lhs, rhs);
+            broadcast_outer(&rhs_col, &lhs_items, &reversed)
+        }
+        // Broadcast case 3: Matrix { rows: r, cols: 1 } and Matrix { rows: 1, cols: c }
+        (CollectionShape::Matrix { cols: 1, .. }, CollectionShape::Matrix { rows: 1, .. }) => {
+            let lhs_rows = matrix_numbers(&lhs)?;
+            let lhs_col = first_column_numbers(&lhs_rows)?;
+            let rhs_rows = matrix_numbers(&rhs)?;
+            let rhs_row = rhs_rows.first()?;
+            broadcast_outer(&lhs_col, rhs_row, op)
+        }
+        // Broadcast case 4: Matrix { rows: 1, cols: c } and Matrix { rows: r, cols: 1 }
+        (CollectionShape::Matrix { rows: 1, .. }, CollectionShape::Matrix { cols: 1, .. }) => {
+            let lhs_rows = matrix_numbers(&lhs)?;
+            let lhs_row = lhs_rows.first()?;
+            let rhs_rows = matrix_numbers(&rhs)?;
+            let rhs_col = first_column_numbers(&rhs_rows)?;
+            let reversed = |rhs: &Number, lhs: &Number| op(lhs, rhs);
+            broadcast_outer(&rhs_col, lhs_row, &reversed)
+        }
         _ => None,
     }
+}
+
+fn broadcast_outer(
+    row_values: &[Number],
+    column_values: &[Number],
+    op: &dyn Fn(&Number, &Number) -> Option<Number>,
+) -> Option<Expression> {
+    Some(Expression::Vector(
+        row_values
+            .iter()
+            .map(|row_value| {
+                Some(Expression::Vector(
+                    column_values
+                        .iter()
+                        .map(|column_value| Some(Expression::Number(op(row_value, column_value)?)))
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()?,
+    ))
+}
+
+fn first_column_numbers(rows: &[Vec<Number>]) -> Option<Vec<Number>> {
+    rows.iter().map(|row| row.first().cloned()).collect()
+}
+
+fn vector_numbers(expr: &Expression) -> Option<Vec<Number>> {
+    let Expression::Vector(items) = expr else {
+        return None;
+    };
+    items.iter().map(|item| as_number(item).cloned()).collect()
+}
+
+fn divide_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
+    match (collection_shape(&lhs)?, collection_shape(&rhs)?) {
+        (CollectionShape::Scalar, CollectionShape::Scalar) => {
+            let lhs = as_number(&lhs)?;
+            let rhs = as_number(&rhs)?;
+            Some(Expression::Number(checked_div(lhs, rhs)?))
+        }
+        (_, CollectionShape::Scalar) => {
+            let scalar = as_number(&rhs)?;
+            map_numbers(&lhs, &|number| checked_div(number, scalar))
+        }
+        _ => None,
+    }
+}
+
+fn divide_function_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
+    match (collection_shape(&lhs)?, collection_shape(&rhs)?) {
+        (
+            CollectionShape::Vector { .. } | CollectionShape::Matrix { .. },
+            CollectionShape::Scalar,
+        ) => elementwise_div_collections(lhs, rhs),
+        (CollectionShape::Vector { len: lhs_len }, CollectionShape::Vector { len: rhs_len })
+            if lhs_len == rhs_len =>
+        {
+            elementwise_div_collections(lhs, rhs)
+        }
+        (
+            CollectionShape::Matrix {
+                rows: lhs_rows,
+                cols: lhs_cols,
+            },
+            CollectionShape::Matrix {
+                rows: rhs_rows,
+                cols: rhs_cols,
+            },
+        ) if lhs_rows == rhs_rows && lhs_cols == rhs_cols => elementwise_div_collections(lhs, rhs),
+        _ => None,
+    }
+}
+
+fn elementwise_div_collections(lhs: Expression, rhs: Expression) -> Option<Expression> {
+    binary_elementwise(lhs, rhs, &checked_div, BroadcastMode::None)
+}
+
+fn multiply_args(args: &[Expression]) -> Option<Expression> {
+    let shapes = args
+        .iter()
+        .map(collection_shape)
+        .collect::<Option<Vec<_>>>()?;
+    match shapes.as_slice() {
+        [CollectionShape::Scalar] => {}
+        [CollectionShape::Vector { .. } | CollectionShape::Matrix { .. }, scalar_tail @ ..]
+            if !scalar_tail.is_empty()
+                && scalar_tail
+                    .iter()
+                    .all(|shape| matches!(shape, CollectionShape::Scalar)) => {}
+        _ => return None,
+    }
+
+    let mut acc = args[0].clone();
+    for arg in &args[1..] {
+        acc = multiply_function_collections(acc, arg.clone())?;
+    }
+    Some(acc)
+}
+
+fn number_add(lhs: &Number, rhs: &Number) -> Option<Number> {
+    Some(lhs.add(rhs))
+}
+
+fn number_sub(lhs: &Number, rhs: &Number) -> Option<Number> {
+    Some(lhs.sub(rhs))
+}
+
+fn number_mul(lhs: &Number, rhs: &Number) -> Option<Number> {
+    Some(lhs.mul(rhs))
+}
+
+fn checked_div(lhs: &Number, rhs: &Number) -> Option<Number> {
+    if !rhs.is_nonzero() {
+        return None;
+    }
+    let result = lhs.div(rhs);
+    (!result.is_nan()).then_some(result)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -455,11 +691,11 @@ fn map_numbers(expr: &Expression, op: &dyn Fn(&Number) -> Option<Number>) -> Opt
 fn zip_numbers(
     lhs: &Expression,
     rhs: &Expression,
-    op: fn(&Number, &Number) -> Number,
+    op: &dyn Fn(&Number, &Number) -> Option<Number>,
 ) -> Option<Expression> {
     match (lhs, rhs) {
         (Expression::Number(lhs), Expression::Number(rhs)) => {
-            Some(Expression::Number(op(lhs, rhs)))
+            Some(Expression::Number(op(lhs, rhs)?))
         }
         (Expression::Vector(lhs_items), Expression::Vector(rhs_items))
             if lhs_items.len() == rhs_items.len() =>
@@ -879,7 +1115,76 @@ mod tests {
             .expect("expression should parse");
         assert_eq!(format(&expr), "[1  4; 9  16]");
 
+        let expr =
+            evaluate_collection_function("multiply([1 2], 3, 4)").expect("function should parse");
+        assert_eq!(format(&expr), "[12  24]");
+
+        let expr =
+            evaluate_collection_function("multiply([1 2], 3)").expect("function should parse");
+        assert_eq!(format(&expr), "[3  6]");
+
+        let expr = evaluate_collection_function("multiply([1 2; 4 5], 2, 3)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[6  12; 24  30]");
+
+        let expr = evaluate_collection_arithmetic("[1 2] times 3 times 4")
+            .expect("expression should parse");
+        assert_eq!(format(&expr), "[12  24]");
+
+        let expr =
+            evaluate_collection_arithmetic("[1 2] Times 3").expect("expression should parse");
+        assert_eq!(format(&expr), "[3  6]");
+
+        let expr = evaluate_collection_arithmetic("[1 2; 3 4] times [5 6; 7 8]")
+            .expect("expression should parse");
+        assert_eq!(format(&expr), "[19  22; 43  50]");
+
+        let expr =
+            evaluate_collection_arithmetic("[1; 2].*[3 4]").expect("expression should parse");
+        assert_eq!(format(&expr), "[3  4; 6  8]");
+
+        let expr =
+            evaluate_collection_function("divide([2 4 12], 2)").expect("function should parse");
+        assert_eq!(format(&expr), "[1  2  6]");
+
+        let expr =
+            evaluate_collection_function("rdivide([2 4 12], 2)").expect("function should parse");
+        assert_eq!(format(&expr), "[1  2  6]");
+
+        let expr =
+            evaluate_collection_function("divide([2 4; 6 12], 2)").expect("function should parse");
+        assert_eq!(format(&expr), "[1  2; 3  6]");
+
+        let expr =
+            evaluate_collection_function("rdivide([2 4], [1 2])").expect("function should parse");
+        assert_eq!(format(&expr), "[2  2]");
+
+        let expr = evaluate_collection_function("divide([2 4; 6 12], [1 2; 3 4])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[2  2; 2  3]");
+
+        let expr = evaluate_collection_arithmetic("[2 4; 6 12]./[1 2; 3 4]")
+            .expect("expression should parse");
+        assert_eq!(format(&expr), "[2  2; 2  3]");
+
+        let expr = evaluate_collection_arithmetic("[2 4]./1/2").expect("expression should parse");
+        assert_eq!(format(&expr), "[1  2]");
+
         assert!(evaluate_collection_arithmetic("[1 2] + [3 4 5]").is_none());
+        assert!(evaluate_collection_arithmetic("[1; 2] + [3 4]").is_none());
+        assert!(evaluate_collection_arithmetic("[2; 4]./[1 2]").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2]times 3").is_none());
+        assert!(evaluate_collection_arithmetic("[1 2] times3").is_none());
+        assert!(evaluate_collection_function("multiply([1 2])").is_none());
+        assert!(evaluate_collection_function("multiply(1, 2)").is_none());
+        assert!(evaluate_collection_function("multiply([1 2; 3 4], [5 6; 7 8])").is_none());
+        assert!(evaluate_collection_function("divide(1)").is_none());
+        assert!(evaluate_collection_function("divide(1, 0)").is_none());
+        assert!(evaluate_collection_function("divide([1], 0+/-1)").is_none());
+        assert!(evaluate_collection_function("divide(1, [2 4])").is_none());
+        assert!(evaluate_collection_function("rdivide([1; 2], [3 4])").is_none());
+        assert!(evaluate_collection_arithmetic("[2 4]./0").is_none());
+        assert!(evaluate_collection_function("divide([8 4], 2, 2)").is_none());
     }
 
     #[test]
