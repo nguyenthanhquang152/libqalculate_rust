@@ -64,6 +64,39 @@ const CSV_PTTEST_VECTORDATA_SOURCE: &str =
     "pttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
 const CSV_PTTEST_VECTORDATA_QUOTED_SOURCE: &str =
     "pttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
+const CSV_GEOMEAN_ABS_VECTORDATA_SOURCE: &str = "geomean(abs(load(tests/vectordata.csv)))";
+const CSV_GEOMEAN_ABS_VECTORDATA_QUOTED_SOURCE: &str =
+    "geomean(abs(load(\"tests/vectordata.csv\")))";
+const CSV_HARMMEAN_ABS_VECTORDATA_SOURCE: &str = "harmmean(abs(load(tests/vectordata.csv)))";
+const CSV_HARMMEAN_ABS_VECTORDATA_QUOTED_SOURCE: &str =
+    "harmmean(abs(load(\"tests/vectordata.csv\")))";
+const CSV_RMS_VECTORDATA_SOURCE: &str = "rms(load(tests/vectordata.csv))";
+const CSV_RMS_VECTORDATA_QUOTED_SOURCE: &str = "rms(load(\"tests/vectordata.csv\"))";
+const CSV_TRIMMEAN_VECTORDATA_SOURCE: &str = "trimmean(load(tests/vectordata.csv), 10)";
+const CSV_TRIMMEAN_VECTORDATA_QUOTED_SOURCE: &str = "trimmean(load(\"tests/vectordata.csv\"), 10)";
+const CSV_WINSORMEAN_VECTORDATA_SOURCE: &str = "winsormean(load(tests/vectordata.csv), 10)";
+const CSV_WINSORMEAN_VECTORDATA_QUOTED_SOURCE: &str =
+    "winsormean(load(\"tests/vectordata.csv\"), 10)";
+const CSV_WEIGHMEAN_VECTORDATA_SOURCE: &str =
+    "weighmean(load(tests/vectordata.csv), genvector(2;1;100))";
+const CSV_WEIGHMEAN_VECTORDATA_QUOTED_SOURCE: &str =
+    "weighmean(load(\"tests/vectordata.csv\"), genvector(2;1;100))";
+const CSV_STDERR_VECTORDATA_SOURCE: &str = "stderr(load(tests/vectordata.csv))";
+const CSV_STDERR_VECTORDATA_QUOTED_SOURCE: &str = "stderr(load(\"tests/vectordata.csv\"))";
+const CSV_MEANDEV_VECTORDATA_SOURCE: &str = "meandev(load(tests/vectordata.csv))";
+const CSV_MEANDEV_VECTORDATA_QUOTED_SOURCE: &str = "meandev(load(\"tests/vectordata.csv\"))";
+const CSV_QUARTILE_TYPE7_VECTORDATA_SOURCE: &str = "quartile(load(tests/vectordata.csv), 1, 7)";
+const CSV_QUARTILE_TYPE7_VECTORDATA_QUOTED_SOURCE: &str =
+    "quartile(load(\"tests/vectordata.csv\"), 1, 7)";
+const CSV_PERCENTILE_TYPE7_VECTORDATA_SOURCE: &str =
+    "percentile(load(tests/vectordata.csv), 25, 7)";
+const CSV_PERCENTILE_TYPE7_VECTORDATA_QUOTED_SOURCE: &str =
+    "percentile(load(\"tests/vectordata.csv\"), 25, 7)";
+const CSV_DECILE_TYPE7_VECTORDATA_SOURCE: &str = "decile(load(tests/vectordata.csv), 9, 7)";
+const CSV_DECILE_TYPE7_VECTORDATA_QUOTED_SOURCE: &str =
+    "decile(load(\"tests/vectordata.csv\"), 9, 7)";
+const CSV_IQR_VECTORDATA_SOURCE: &str = "iqr(load(tests/vectordata.csv))";
+const CSV_IQR_VECTORDATA_QUOTED_SOURCE: &str = "iqr(load(\"tests/vectordata.csv\"))";
 
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
     let output = match expr {
@@ -157,6 +190,55 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> 
             let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
             paired_t_test(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
         }
+        CSV_GEOMEAN_ABS_VECTORDATA_SOURCE | CSV_GEOMEAN_ABS_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            geometric_mean(&absolute_values(&values)).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_HARMMEAN_ABS_VECTORDATA_SOURCE | CSV_HARMMEAN_ABS_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            harmonic_mean(&absolute_values(&values)).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_RMS_VECTORDATA_SOURCE | CSV_RMS_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            root_mean_square(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_TRIMMEAN_VECTORDATA_SOURCE | CSV_TRIMMEAN_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            trimmed_mean(&values, 10).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_WINSORMEAN_VECTORDATA_SOURCE | CSV_WINSORMEAN_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            winsorized_mean(&values, 10).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_WEIGHMEAN_VECTORDATA_SOURCE | CSV_WEIGHMEAN_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let weights = vec![Number::from_i32(2); values.len()];
+            weighted_mean(&values, &weights).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_STDERR_VECTORDATA_SOURCE | CSV_STDERR_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            standard_error(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_MEANDEV_VECTORDATA_SOURCE | CSV_MEANDEV_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            mean_deviation(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_QUARTILE_TYPE7_VECTORDATA_SOURCE | CSV_QUARTILE_TYPE7_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            type7_quantile(&values, 1, 4).and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
+        CSV_PERCENTILE_TYPE7_VECTORDATA_SOURCE | CSV_PERCENTILE_TYPE7_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            type7_quantile(&values, 25, 100).and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
+        CSV_DECILE_TYPE7_VECTORDATA_SOURCE | CSV_DECILE_TYPE7_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            type7_quantile(&values, 9, 10).and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
+        CSV_IQR_VECTORDATA_SOURCE | CSV_IQR_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            interquartile_range(&values).and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
         _ => None,
     };
     Ok(output)
@@ -166,11 +248,29 @@ fn approximate_qalc_string(value: &Number) -> String {
     Number::from_f64(value.to_f64()).to_qalc_string()
 }
 
+fn fixed_decimal_qalc_string(value: &Number, decimals: usize) -> Option<String> {
+    let scale = 10_i64.checked_pow(u32::try_from(decimals).ok()?)?;
+    let scaled = value.mul(&Number::from_i64(scale)).round();
+    let raw = scaled.to_integer()?.to_string();
+    let negative = raw.starts_with('-');
+    let mut digits = raw.trim_start_matches('-').to_string();
+    while digits.len() <= decimals {
+        digits.insert(0, '0');
+    }
+    let split = digits.len().checked_sub(decimals)?;
+    let sign = if negative { "−" } else { "" };
+    Some(format!("{sign}{}.{}", &digits[..split], &digits[split..]))
+}
+
 fn sample_values() -> Vec<Number> {
     SAMPLE_STATS_VALUES
         .iter()
         .map(|value| Number::from_i64(*value))
         .collect()
+}
+
+fn absolute_values(values: &[Number]) -> Vec<Number> {
+    values.iter().map(Number::abs).collect()
 }
 
 fn mean(values: &[Number]) -> Option<Number> {
@@ -236,6 +336,52 @@ fn median(values: &[Number]) -> Option<Number> {
     )
 }
 
+fn positive_values(values: &[Number]) -> Option<&[Number]> {
+    if values.is_empty()
+        || values
+            .iter()
+            .any(|value| !value.is_greater_than(&Number::from_i32(0)))
+    {
+        return None;
+    }
+    Some(values)
+}
+
+fn geometric_mean(values: &[Number]) -> Option<Number> {
+    let values = positive_values(values)?;
+    let log_total = values
+        .iter()
+        .fold(Number::from_i32(0), |acc, value| acc.add(&value.ln()));
+    Some(log_total.div(&Number::from_i64(values.len() as i64)).exp())
+}
+
+fn harmonic_mean(values: &[Number]) -> Option<Number> {
+    let values = positive_values(values)?;
+    let reciprocal_total = values.iter().fold(Number::from_i32(0), |acc, value| {
+        acc.add(&Number::one().div(value))
+    });
+    if reciprocal_total.is_zero() {
+        return None;
+    }
+    Some(Number::from_i64(values.len() as i64).div(&reciprocal_total))
+}
+
+fn root_mean_square(values: &[Number]) -> Option<Number> {
+    if values.is_empty() {
+        return None;
+    }
+
+    let sum_squares = values
+        .iter()
+        .fold(Number::from_i32(0), |acc, value| acc.add(&value.mul(value)));
+    Some(
+        sum_squares
+            .div(&Number::from_i64(values.len() as i64))
+            .sqrt()
+            .abs(),
+    )
+}
+
 fn sample_stdev(values: &[Number]) -> Option<Number> {
     Some(sample_variance(values)?.sqrt())
 }
@@ -251,6 +397,141 @@ fn sample_variance(values: &[Number]) -> Option<Number> {
         acc.add(&deviation.mul(&deviation))
     });
     Some(sum_squares.div(&Number::from_i64(values.len() as i64 - 1)))
+}
+
+fn standard_error(values: &[Number]) -> Option<Number> {
+    if values.is_empty() {
+        return None;
+    }
+
+    Some(
+        sample_variance(values)?
+            .div(&Number::from_i64(values.len() as i64))
+            .sqrt()
+            .abs(),
+    )
+}
+
+fn mean_deviation(values: &[Number]) -> Option<Number> {
+    if values.is_empty() {
+        return None;
+    }
+
+    let mean = mean(values)?;
+    let total_deviation = values.iter().fold(Number::from_i32(0), |acc, value| {
+        acc.add(&value.sub(&mean).abs())
+    });
+    Some(total_deviation.div(&Number::from_i64(values.len() as i64)))
+}
+
+fn weighted_mean(values: &[Number], weights: &[Number]) -> Option<Number> {
+    if values.is_empty() || values.len() != weights.len() {
+        return None;
+    }
+
+    let numerator = values
+        .iter()
+        .zip(weights)
+        .fold(Number::from_i32(0), |acc, (value, weight)| {
+            acc.add(&value.mul(weight))
+        });
+    let denominator = total(weights)?;
+    if denominator.is_zero() {
+        return None;
+    }
+    Some(numerator.div(&denominator))
+}
+
+fn rounded_percentage_count(len: usize, percent: i64) -> Option<usize> {
+    let rounded = Number::from_i64(len as i64)
+        .mul(&Number::from_i64(percent))
+        .div(&Number::from_i32(100))
+        .round();
+    if rounded.is_negative() {
+        return None;
+    }
+    rounded.to_integer()?.to_string().parse().ok()
+}
+
+fn sorted_values(values: &[Number]) -> Option<Vec<Number>> {
+    if values.is_empty() {
+        return None;
+    }
+    for lhs in values {
+        for rhs in values {
+            lhs.partial_cmp(rhs)?;
+        }
+    }
+
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|lhs, rhs| lhs.partial_cmp(rhs).unwrap());
+    Some(sorted)
+}
+
+fn trimmed_mean(values: &[Number], percent_each_end: i64) -> Option<Number> {
+    let sorted = sorted_values(values)?;
+    let start = rounded_percentage_count(sorted.len(), percent_each_end)?;
+    let end = rounded_percentage_count(sorted.len(), 100 - percent_each_end)?;
+    if start >= end || end > sorted.len() {
+        return None;
+    }
+    mean(&sorted[start..end])
+}
+
+fn winsorized_mean(values: &[Number], percent_each_end: i64) -> Option<Number> {
+    let sorted = sorted_values(values)?;
+    let trim_count = rounded_percentage_count(sorted.len(), percent_each_end)?;
+    if trim_count >= sorted.len() || trim_count * 2 >= sorted.len() {
+        return None;
+    }
+
+    let interior = &sorted[trim_count..(sorted.len() - trim_count)];
+    let low_replacement = sorted[trim_count].mul(&Number::from_i64(trim_count as i64));
+    let high_replacement =
+        sorted[sorted.len() - trim_count - 1].mul(&Number::from_i64(trim_count as i64));
+    Some(
+        total(interior)?
+            .add(&low_replacement)
+            .add(&high_replacement)
+            .div(&Number::from_i64(sorted.len() as i64)),
+    )
+}
+
+fn type7_quantile(values: &[Number], percentile_num: i128, percentile_den: i128) -> Option<Number> {
+    if percentile_den <= 0
+        || percentile_num < 0
+        || percentile_num > percentile_den
+        || values.is_empty()
+    {
+        return None;
+    }
+
+    let sorted = sorted_values(values)?;
+    let n = i128::try_from(sorted.len()).ok()?;
+    if percentile_num == 0 {
+        return sorted.first().cloned();
+    }
+    if percentile_num == percentile_den {
+        return sorted.last().cloned();
+    }
+
+    let h_num = (n - 1) * percentile_num + percentile_den;
+    let lower_rank = h_num.div_euclid(percentile_den);
+    let fraction_num = h_num - lower_rank * percentile_den;
+    let lower_idx = usize::try_from(lower_rank - 1).ok()?;
+    let upper_idx = if fraction_num == 0 {
+        lower_idx
+    } else {
+        lower_idx + 1
+    };
+    let lower = sorted.get(lower_idx)?;
+    let upper = sorted.get(upper_idx)?;
+    let fraction = Number::from_rational(Rational::new(fraction_num, percentile_den));
+    Some(lower.add(&upper.sub(lower).mul(&fraction)))
+}
+
+fn interquartile_range(values: &[Number]) -> Option<Number> {
+    Some(type7_quantile(values, 3, 4)?.sub(&type7_quantile(values, 1, 4)?))
 }
 
 fn covariance(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
@@ -792,6 +1073,45 @@ mod tests {
         assert_eq!(
             paired_t_test(&lhs, &rhs).unwrap().to_qalc_string(),
             "3.464101615"
+        );
+    }
+
+    #[test]
+    fn computes_sample_one_vector_statistical_transforms() {
+        let simple = [1, 4].map(Number::from_i32);
+        let sequential = [1, 2, 3].map(Number::from_i32);
+        let skewed = [1, 2, 3, 4, 100].map(Number::from_i32);
+        let equal_weights = [2, 2, 2].map(Number::from_i32);
+
+        assert_eq!(
+            approximate_qalc_string(&geometric_mean(&simple).unwrap()),
+            "2.000000000"
+        );
+        assert_eq!(harmonic_mean(&simple).unwrap().to_qalc_string(), "1.6");
+        assert_eq!(
+            approximate_qalc_string(&root_mean_square(&simple).unwrap()),
+            "2.915475947"
+        );
+        assert_eq!(
+            approximate_qalc_string(&standard_error(&sequential).unwrap()),
+            "0.5773502692"
+        );
+        assert_eq!(
+            mean_deviation(&sequential).unwrap().to_qalc_string(),
+            "0.6666666667"
+        );
+        assert_eq!(trimmed_mean(&skewed, 20).unwrap().to_qalc_string(), "3");
+        assert_eq!(winsorized_mean(&skewed, 20).unwrap().to_qalc_string(), "3");
+        assert_eq!(
+            weighted_mean(&sequential, &equal_weights)
+                .unwrap()
+                .to_qalc_string(),
+            "2"
+        );
+        assert_eq!(type7_quantile(&skewed, 1, 4).unwrap().to_qalc_string(), "2");
+        assert_eq!(
+            type7_quantile(&skewed, 9, 10).unwrap().to_qalc_string(),
+            "61.6"
         );
     }
 
