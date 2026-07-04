@@ -25,6 +25,7 @@ const SAMPLE_FDIST_CDF_SOURCE: &str = "fdist(5, 2, 3, 1)";
 const SAMPLE_NORMDISTINV_SOURCE: &str = "normdistinv(0.2, 5, 2)";
 const SAMPLE_CHISQDISTINV_SOURCE: &str = "chisqdistinv(0.9, 3)";
 const CSV_VECTORDATA_PATH: &str = "tests/vectordata.csv";
+const CSV_VECTORDATA2_PATH: &str = "tests/vectordata2.csv";
 const CSV_MEAN_VECTORDATA_SOURCE: &str = "mean(load(tests/vectordata.csv))";
 const CSV_MEAN_VECTORDATA_QUOTED_SOURCE: &str = "mean(load(\"tests/vectordata.csv\"))";
 const CSV_STDEV_VECTORDATA_SOURCE: &str = "stdev(load(tests/vectordata.csv))";
@@ -39,6 +40,22 @@ const CSV_RANGE_VECTORDATA_SOURCE: &str = "range(load(tests/vectordata.csv))";
 const CSV_RANGE_VECTORDATA_QUOTED_SOURCE: &str = "range(load(\"tests/vectordata.csv\"))";
 const CSV_MEDIAN_VECTORDATA_SOURCE: &str = "median(load(tests/vectordata.csv))";
 const CSV_MEDIAN_VECTORDATA_QUOTED_SOURCE: &str = "median(load(\"tests/vectordata.csv\"))";
+const CSV_PEARSON_VECTORDATA_SOURCE: &str =
+    "pearson(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
+const CSV_PEARSON_VECTORDATA_QUOTED_SOURCE: &str =
+    "pearson(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
+const CSV_SPEARMAN_VECTORDATA_SOURCE: &str =
+    "spearman(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
+const CSV_SPEARMAN_VECTORDATA_QUOTED_SOURCE: &str =
+    "spearman(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
+const CSV_COVAR_VECTORDATA_SOURCE: &str =
+    "covar(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
+const CSV_COVAR_VECTORDATA_QUOTED_SOURCE: &str =
+    "covar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
+const CSV_POOLVAR_VECTORDATA_SOURCE: &str =
+    "poolvar(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
+const CSV_POOLVAR_VECTORDATA_QUOTED_SOURCE: &str =
+    "poolvar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
 
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
     let output = match expr {
@@ -101,6 +118,26 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> 
         CSV_MEDIAN_VECTORDATA_SOURCE | CSV_MEDIAN_VECTORDATA_QUOTED_SOURCE => {
             let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
             median(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_PEARSON_VECTORDATA_SOURCE | CSV_PEARSON_VECTORDATA_QUOTED_SOURCE => {
+            let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
+            pearson_correlation(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_SPEARMAN_VECTORDATA_SOURCE | CSV_SPEARMAN_VECTORDATA_QUOTED_SOURCE => {
+            let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
+            spearman_correlation(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_COVAR_VECTORDATA_SOURCE | CSV_COVAR_VECTORDATA_QUOTED_SOURCE => {
+            let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
+            covariance(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_POOLVAR_VECTORDATA_SOURCE | CSV_POOLVAR_VECTORDATA_QUOTED_SOURCE => {
+            let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
+            pooled_variance(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
         }
         _ => None,
     };
@@ -182,6 +219,10 @@ fn median(values: &[Number]) -> Option<Number> {
 }
 
 fn sample_stdev(values: &[Number]) -> Option<Number> {
+    Some(sample_variance(values)?.sqrt())
+}
+
+fn sample_variance(values: &[Number]) -> Option<Number> {
     if values.len() < 2 {
         return None;
     }
@@ -191,8 +232,102 @@ fn sample_stdev(values: &[Number]) -> Option<Number> {
         let deviation = value.sub(&mean);
         acc.add(&deviation.mul(&deviation))
     });
-    let variance = sum_squares.div(&Number::from_i64(values.len() as i64 - 1));
-    Some(variance.sqrt())
+    Some(sum_squares.div(&Number::from_i64(values.len() as i64 - 1)))
+}
+
+fn covariance(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
+    if lhs.len() != rhs.len() || lhs.is_empty() {
+        return None;
+    }
+
+    let lhs_mean = mean(lhs)?;
+    let rhs_mean = mean(rhs)?;
+    let sum = lhs
+        .iter()
+        .zip(rhs)
+        .fold(Number::from_i32(0), |acc, (lhs_value, rhs_value)| {
+            let lhs_deviation = lhs_value.sub(&lhs_mean);
+            let rhs_deviation = rhs_value.sub(&rhs_mean);
+            acc.add(&lhs_deviation.mul(&rhs_deviation))
+        });
+    Some(sum.div(&Number::from_i64(lhs.len() as i64)))
+}
+
+fn pearson_correlation(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
+    let covariance = covariance(lhs, rhs)?;
+    let lhs_variance = population_variance(lhs)?;
+    let rhs_variance = population_variance(rhs)?;
+    let denominator = lhs_variance.mul(&rhs_variance).sqrt();
+    if denominator.is_zero() {
+        return None;
+    }
+    Some(covariance.div(&denominator))
+}
+
+fn population_variance(values: &[Number]) -> Option<Number> {
+    if values.is_empty() {
+        return None;
+    }
+
+    let mean = mean(values)?;
+    let sum_squares = values.iter().fold(Number::from_i32(0), |acc, value| {
+        let deviation = value.sub(&mean);
+        acc.add(&deviation.mul(&deviation))
+    });
+    Some(sum_squares.div(&Number::from_i64(values.len() as i64)))
+}
+
+fn spearman_correlation(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
+    let lhs_ranks = ranks(lhs)?;
+    let rhs_ranks = ranks(rhs)?;
+    pearson_correlation(&lhs_ranks, &rhs_ranks)
+}
+
+fn pooled_variance(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
+    if lhs.len() < 2 || rhs.len() < 2 {
+        return None;
+    }
+
+    let lhs_degrees = Number::from_i64(lhs.len() as i64 - 1);
+    let rhs_degrees = Number::from_i64(rhs.len() as i64 - 1);
+    let numerator = sample_variance(lhs)?
+        .mul(&lhs_degrees)
+        .add(&sample_variance(rhs)?.mul(&rhs_degrees));
+    let denominator = Number::from_i64((lhs.len() + rhs.len()) as i64 - 2);
+    Some(numerator.div(&denominator))
+}
+
+fn ranks(values: &[Number]) -> Option<Vec<Number>> {
+    if values.is_empty() {
+        return None;
+    }
+    for lhs in values {
+        for rhs in values {
+            lhs.partial_cmp(rhs)?;
+        }
+    }
+
+    let mut order: Vec<usize> = (0..values.len()).collect();
+    order.sort_by(|lhs, rhs| values[*lhs].partial_cmp(&values[*rhs]).unwrap());
+    let mut ranks = vec![Number::from_i32(0); values.len()];
+    let mut start = 0usize;
+    while start < order.len() {
+        let mut end = start + 1;
+        while end < order.len()
+            && values[order[start]].partial_cmp(&values[order[end]])
+                == Some(std::cmp::Ordering::Equal)
+        {
+            end += 1;
+        }
+
+        let rank_sum = (start + 1 + end) as i128;
+        let rank = Number::from_rational(Rational::new(rank_sum, 2));
+        for index in &order[start..end] {
+            ranks[*index] = rank.clone();
+        }
+        start = end;
+    }
+    Some(ranks)
 }
 
 fn type8_quantile_i64(
@@ -572,6 +707,26 @@ mod tests {
         assert_eq!(total(&values).unwrap().to_qalc_string(), "27");
         assert_eq!(range(&values).unwrap().to_qalc_string(), "5");
         assert_eq!(median(&values).unwrap().to_qalc_string(), "4.5");
+    }
+
+    #[test]
+    fn computes_sample_paired_statistics() {
+        let lhs = [1, 2, 3].map(Number::from_i32);
+        let rhs = [2, 4, 6].map(Number::from_i32);
+
+        assert_eq!(
+            covariance(&lhs, &rhs).unwrap().to_qalc_string(),
+            "1.333333333"
+        );
+        assert_eq!(
+            pearson_correlation(&lhs, &rhs).unwrap().to_qalc_string(),
+            "1"
+        );
+        assert_eq!(
+            spearman_correlation(&lhs, &rhs).unwrap().to_qalc_string(),
+            "1"
+        );
+        assert_eq!(pooled_variance(&lhs, &rhs).unwrap().to_qalc_string(), "2.5");
     }
 
     #[test]

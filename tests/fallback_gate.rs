@@ -522,6 +522,54 @@ fn cli_native_csv_backed_descriptive_statistics_succeed_when_fallback_disabled()
 }
 
 #[test]
+fn cli_native_csv_backed_paired_statistics_succeed_when_fallback_disabled() {
+    let upstream = upstream_dir();
+    for (expression, expected) in [
+        (
+            "pearson(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+            "0.9519790480",
+        ),
+        (
+            "pearson(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+            "0.9519790480",
+        ),
+        (
+            "spearman(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+            "0.9742094209",
+        ),
+        (
+            "spearman(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+            "0.9742094209",
+        ),
+        (
+            "covar(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+            "499.1760404",
+        ),
+        (
+            "covar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+            "499.1760404",
+        ),
+        (
+            "poolvar(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+            "530.0195143",
+        ),
+        (
+            "poolvar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+            "530.0195143",
+        ),
+    ] {
+        let (stdout, stderr, exit_code) =
+            run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
+        assert_eq!(stdout, expected, "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression}");
+    }
+}
+
+#[test]
 fn cli_native_csv_load_errors_surface_when_fallback_disabled() {
     let cwd = temp_dir("csv_load_error");
     let tests_dir = cwd.join("tests");
