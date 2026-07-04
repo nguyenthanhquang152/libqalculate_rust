@@ -476,6 +476,26 @@ fn cli_native_csv_load_counts_succeed_when_fallback_disabled() {
 }
 
 #[test]
+fn cli_native_csv_backed_statistics_succeed_when_fallback_disabled() {
+    let upstream = upstream_dir();
+    for (expression, expected) in [
+        ("mean(load(tests/vectordata.csv))", "6.530919283"),
+        ("mean(load(\"tests/vectordata.csv\"))", "6.530919283"),
+        ("stdev(load(tests/vectordata.csv))", "23.44646004"),
+        ("stdev(load(\"tests/vectordata.csv\"))", "23.44646004"),
+    ] {
+        let (stdout, stderr, exit_code) =
+            run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
+        assert_eq!(stdout, expected, "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression}");
+    }
+}
+
+#[test]
 fn cli_native_csv_load_errors_surface_when_fallback_disabled() {
     let cwd = temp_dir("csv_load_error");
     let tests_dir = cwd.join("tests");
@@ -484,6 +504,35 @@ fn cli_native_csv_load_errors_surface_when_fallback_disabled() {
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args_in_dir(
         &["--", "number(load(tests/vectordata.csv))"],
+        Some("1"),
+        Some("1"),
+        Some(&cwd),
+    );
+
+    std::fs::remove_dir_all(&cwd).expect("remove temp tests directory");
+    assert!(stdout.is_empty());
+    assert!(
+        stderr.contains("[qalc-rs-metadata] fallback=native"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "error: calculation failed: empty numeric CSV value at row 1, column 2 in tests/vectordata.csv"
+        ),
+        "{stderr}"
+    );
+    assert_eq!(exit_code, 2);
+}
+
+#[test]
+fn cli_native_csv_backed_statistics_errors_surface_when_fallback_disabled() {
+    let cwd = temp_dir("csv_stats_load_error");
+    let tests_dir = cwd.join("tests");
+    std::fs::create_dir_all(&tests_dir).expect("create temp tests directory");
+    std::fs::write(tests_dir.join("vectordata.csv"), "1,,2\n").expect("write malformed csv");
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args_in_dir(
+        &["--", "mean(load(tests/vectordata.csv))"],
         Some("1"),
         Some("1"),
         Some(&cwd),
@@ -730,6 +779,8 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "number(load(tests/vectordata.csv, 1))",
         "load(tests/vectordata.csv)",
         "number(load(tests/missing.csv))",
+        "mean(load(tests/vectordata2.csv))",
+        "stdev(load(tests/vectordata2.csv))",
     ] {
         let (stdout, stderr, exit_code) =
             run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));

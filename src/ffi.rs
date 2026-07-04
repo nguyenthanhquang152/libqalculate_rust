@@ -288,6 +288,12 @@ impl Calculator {
                         fallback_state: FallbackState::Native,
                     });
                 }
+                if let Some(output) = native_statistics_output(profile, expr)? {
+                    return Ok(CalculationOutput {
+                        output,
+                        fallback_state: FallbackState::Native,
+                    });
+                }
             }
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 return Ok(CalculationOutput {
@@ -537,17 +543,24 @@ fn native_data_output(
     }))
 }
 
+fn native_statistics_output(
+    profile: PrintProfile,
+    expr: &str,
+) -> Result<Option<String>, CalculatorError> {
+    let Some(output) = crate::statistics::native_output(expr)
+        .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(match profile {
+        PrintProfile::Api => output,
+        PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+    }))
+}
+
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
-
-    if settings.is_empty() {
-        if let Some(output) = crate::statistics::native_output(expr) {
-            return Some(match profile {
-                PrintProfile::Api => output,
-                PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-            });
-        }
-    }
 
     if let Some(output) = crate::matrix::promoted_top_level_list_literal_output(expr) {
         if !settings.is_empty() {
