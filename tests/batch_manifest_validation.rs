@@ -148,6 +148,39 @@ fn batch_manifest_case_rows_use_explicit_parity_statuses() {
 }
 
 #[test]
+fn completed_matrixvector_manifest_is_reflected_in_compatibility_inventory() {
+    let manifest = fs::read_to_string("docs/batch_manifest.md")
+        .expect("docs/batch_manifest.md should be readable");
+    let matrixvector_rows = manifest
+        .lines()
+        .filter(|line| line.contains("`matrixvector.batch:"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        matrixvector_rows.len(),
+        130,
+        "unexpected matrixvector.batch manifest case count"
+    );
+    assert!(
+        matrixvector_rows
+            .iter()
+            .all(|line| line.trim_end().ends_with("| native-pass |")),
+        "all matrixvector.batch rows should be native-pass before the compatibility inventory marks the file complete"
+    );
+
+    let inventory = fs::read_to_string("docs/compatibility_inventory.md")
+        .expect("docs/compatibility_inventory.md should be readable");
+    assert!(
+        inventory.contains("| Batch Test Files | 17 | 3 | 0 | 4 | 0 | 10 | 0 |"),
+        "compatibility inventory summary should count matrixvector.batch as a native-pass batch file"
+    );
+    assert!(
+        inventory.contains("| 7 | `matrixvector.batch` | 130 | 0 | — | `native-pass` |"),
+        "compatibility inventory should mark matrixvector.batch native-pass when every manifest row is native-pass"
+    );
+}
+
+#[test]
 fn batch_manifest_retains_session_commands_and_assets() {
     let manifest = fs::read_to_string("docs/batch_manifest.md")
         .expect("docs/batch_manifest.md should be readable");
