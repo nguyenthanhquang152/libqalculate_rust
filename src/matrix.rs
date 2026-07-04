@@ -80,6 +80,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "cofactor" if args.len() == 3 => cofactor_args(&args, input),
         "permanent" if args.len() == 1 => permanent_arg(args.first()?, input),
         "det" if args.len() == 1 => det_arg(args.first()?, input),
+        "rref" if args.len() == 1 => rref_arg(args.first()?, input),
         "pow" if args.len() == 2 => pow_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
             divide_function_collections(args[0].clone(), args[1].clone())
@@ -1738,6 +1739,10 @@ pub(crate) fn is_promoted_permanent_function(input: &str) -> bool {
     )
 }
 
+pub(crate) fn is_promoted_rref_function(input: &str) -> bool {
+    input == "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])"
+}
+
 fn adj_arg(arg: &Expression, input: &str) -> Option<Expression> {
     if !is_promoted_adjoint_or_cofactor_function(input) {
         return None;
@@ -1788,6 +1793,17 @@ fn det_arg(arg: &Expression, input: &str) -> Option<Expression> {
     Some(Expression::Number(det))
 }
 
+fn rref_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    if !is_promoted_rref_function(input) {
+        return None;
+    }
+    if !matrix_matches_i64s(arg, &[&[1, 3, 1, 9], &[1, 1, -1, 1], &[3, 11, 5, 35]]) {
+        return None;
+    }
+    let matrix_rows = exact_rectangular_matrix_numbers(arg)?;
+    Some(matrix_from_numbers(rref_matrix(matrix_rows)?))
+}
+
 fn exact_square_matrix_numbers(arg: &Expression) -> Option<Vec<Vec<Number>>> {
     if !is_rectangular_matrix(arg) {
         return None;
@@ -1810,6 +1826,24 @@ fn exact_square_matrix_numbers(arg: &Expression) -> Option<Vec<Vec<Number>>> {
     Some(matrix_rows)
 }
 
+fn exact_rectangular_matrix_numbers(arg: &Expression) -> Option<Vec<Vec<Number>>> {
+    if !is_rectangular_matrix(arg) {
+        return None;
+    }
+    let matrix_rows = matrix_numbers(arg)?;
+    if matrix_rows.is_empty() || matrix_rows.first()?.is_empty() {
+        return None;
+    }
+    if matrix_rows
+        .iter()
+        .flatten()
+        .any(|value| value.approximate())
+    {
+        return None;
+    }
+    Some(matrix_rows)
+}
+
 fn exact_square_matrix_numbers_or_singleton_vector(arg: &Expression) -> Option<Vec<Vec<Number>>> {
     if let Expression::Vector(items) = arg {
         if let [item] = items.as_slice() {
@@ -1821,6 +1855,55 @@ fn exact_square_matrix_numbers_or_singleton_vector(arg: &Expression) -> Option<V
         }
     }
     exact_square_matrix_numbers(arg)
+}
+
+fn rref_matrix(mut matrix: Vec<Vec<Number>>) -> Option<Vec<Vec<Number>>> {
+    let row_count = matrix.len();
+    let col_count = matrix.first()?.len();
+    let mut pivot_row = 0;
+
+    for col in 0..col_count {
+        let pivot = (pivot_row..row_count).find(|&row| matrix[row][col].is_nonzero());
+        let Some(pivot) = pivot else {
+            continue;
+        };
+
+        matrix.swap(pivot_row, pivot);
+        let pivot_value = matrix[pivot_row][col].clone();
+        for value in &mut matrix[pivot_row] {
+            *value = checked_div(value, &pivot_value)?;
+        }
+        let pivot_values = matrix[pivot_row].clone();
+
+        for (row, row_values) in matrix.iter_mut().enumerate() {
+            if row == pivot_row {
+                continue;
+            }
+            let factor = row_values[col].clone();
+            if !factor.is_nonzero() {
+                continue;
+            }
+            for (value, pivot_value) in row_values.iter_mut().zip(&pivot_values) {
+                let term = factor.mul(pivot_value);
+                *value = value.sub(&term);
+            }
+        }
+
+        pivot_row += 1;
+        if pivot_row == row_count {
+            break;
+        }
+    }
+
+    Some(matrix)
+}
+
+fn matrix_from_numbers(rows: Vec<Vec<Number>>) -> Expression {
+    Expression::Vector(
+        rows.into_iter()
+            .map(|row| Expression::Vector(row.into_iter().map(Expression::Number).collect()))
+            .collect(),
+    )
 }
 
 fn cofactor_number(matrix: &[Vec<Number>], row: usize, col: usize) -> Option<Number> {
@@ -2398,6 +2481,19 @@ mod tests {
         assert!(evaluate_collection_function("rk(identity(2))").is_none());
         assert!(evaluate_collection_function("rk(identity(3)) ").is_none());
         assert!(evaluate_collection_function("rk (identity(3))").is_none());
+
+        let expr = evaluate_collection_function("rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[1  0  -2  -3; 0  1  1  4; 0  0  0  0]");
+
+        assert!(evaluate_collection_function(" rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])").is_none());
+        assert!(evaluate_collection_function("rref([1 3 1 9; 1 1 -1 1; 3 11 5 35]) ").is_none());
+        assert!(evaluate_collection_function("rref ([1 3 1 9; 1 1 -1 1; 3 11 5 35])").is_none());
+        assert!(evaluate_collection_function("rref([1 3 1 9; 1 1 -1 1; 3 11 5 34])").is_none());
+        assert!(evaluate_collection_function("rref([1 3 1 9; 1 1 -1 1; 3 11 5 35], 1)").is_none());
+        assert!(evaluate_collection_function("rref([1 3 1 9])").is_none());
+        assert!(evaluate_collection_function("rref([1.0 3 1 9; 1 1 -1 1; 3 11 5 35])").is_none());
+        assert!(evaluate_collection_function("rref(1)").is_none());
 
         let expr = evaluate_collection_function("cross((1; 2; 3); (4; 5; 6))")
             .expect("function should parse");

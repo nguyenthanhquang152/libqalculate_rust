@@ -315,6 +315,10 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("rk([1 2 3; 0 2 2; 1 4 5])", "2"),
         ("rk([1 2 3; 0 2 2; 1 -2 -1])", "2"),
         ("rk(identity(3))", "3"),
+        (
+            "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])",
+            "[1  0  −2  −3; 0  1  1  4; 0  0  0  0]",
+        ),
         ("entrywise(x, [4 10 12], x)", "[4  10  12]"),
         ("entrywise(x / y, [4 10 12], x, [2 2 4], y)", "[2  5  3]"),
         (
@@ -388,6 +392,21 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "rk([1 2 3; 3 6 9])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &[
+            "-set",
+            "precision 128",
+            "--",
+            "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])",
+        ],
         Some("1"),
         Some("1"),
     );
@@ -830,6 +849,14 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         " rk(identity(3))",
         "rk(identity(3)) ",
         "rk (identity(3))",
+        "rref([1 3 1 9; 1 1 -1 1; 3 11 5 34])",
+        "rref([1.0 3 1 9; 1 1 -1 1; 3 11 5 35])",
+        "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35], 1)",
+        "rref([1 3 1 9])",
+        "rref(1)",
+        " rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])",
+        "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35]) ",
+        "rref ([1 3 1 9; 1 1 -1 1; 3 11 5 35])",
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
         assert!(stdout.is_empty(), "{expression} unexpectedly wrote stdout");
