@@ -1983,6 +1983,46 @@ fn focused_issue44_csv_load_oracle_cases() {
             "csv-backed-stdev-vectordata-quoted",
             "stdev(load(\"tests/vectordata.csv\"))",
         ),
+        (
+            "csv-backed-min-vectordata",
+            "min(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-min-vectordata-quoted",
+            "min(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-max-vectordata",
+            "max(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-max-vectordata-quoted",
+            "max(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-total-vectordata",
+            "total(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-total-vectordata-quoted",
+            "total(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-range-vectordata",
+            "range(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-range-vectordata-quoted",
+            "range(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-median-vectordata",
+            "median(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-median-vectordata-quoted",
+            "median(load(\"tests/vectordata.csv\"))",
+        ),
     ] {
         let settings = &[][..];
         let cpp_out =
