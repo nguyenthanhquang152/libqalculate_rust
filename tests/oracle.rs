@@ -2011,6 +2011,10 @@ fn focused_issue43_literal_statistics_oracle_cases() {
         ("stats-literal-mode", "mode([1 3 7 5 1 1 1 3])"),
         ("stats-literal-median", "median([1 3 7 5 1 1 1 3])"),
         ("stats-literal-normdist", "normdist(7; 5)"),
+        (
+            "stats-literal-quadraticfit",
+            "quadraticfit([5 3 4 5 6 7 13 24])",
+        ),
     ] {
         let settings = &[][..];
         let cpp_out = run_oracle_expression(&qalc, &defs, expression, settings);

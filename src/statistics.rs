@@ -9,6 +9,7 @@ use crate::number::{Number, Rational};
 
 const SAMPLE_STATS_VALUES: [i64; 6] = [5, 6, 4, 2, 3, 7];
 const SAMPLE_MODE_MEDIAN_VALUES: [i64; 8] = [1, 3, 7, 5, 1, 1, 1, 3];
+const SAMPLE_FIT_VALUES: [i64; 8] = [5, 3, 4, 5, 6, 7, 13, 24];
 const SAMPLE_MEAN_SOURCE: &str = "mean(5; 6; 4; 2; 3; 7)";
 const SAMPLE_STDEV_SOURCE: &str = "stdev(5; 6; 4; 2; 3; 7)";
 const SAMPLE_QUARTILE_TYPE8_SOURCE: &str = "quartile((5; 6; 4; 2; 3; 7); 1; 8)";
@@ -16,6 +17,7 @@ const SAMPLE_PERCENTILE_TYPE8_SOURCE: &str = "percentile([5 6 4 2 3 7]; 25; 8)";
 const SAMPLE_MODE_SOURCE: &str = "mode([1 3 7 5 1 1 1 3])";
 const SAMPLE_MEDIAN_SOURCE: &str = "median([1 3 7 5 1 1 1 3])";
 const SAMPLE_NORMDIST_SOURCE: &str = "normdist(7; 5)";
+const SAMPLE_QUADRATIC_FIT_SOURCE: &str = "quadraticfit([5 3 4 5 6 7 13 24])";
 
 pub(crate) fn native_output(expr: &str) -> Option<String> {
     match expr {
@@ -37,6 +39,9 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
             normal_pdf(&Number::from_i32(7), &Number::from_i32(5), &Number::one())
                 .map(|value| value.to_qalc_string())
         }
+        SAMPLE_QUADRATIC_FIT_SOURCE => quadratic_fit_i64(&SAMPLE_FIT_VALUES)
+            .as_ref()
+            .map(format_quadratic_polynomial),
         _ => None,
     }
 }
@@ -171,6 +176,115 @@ fn normal_pdf(x: &Number, mean: &Number, sigma: &Number) -> Option<Number> {
     Some(exponent.div(&denominator))
 }
 
+fn quadratic_fit_i64(values: &[i64]) -> Option<[Rational; 3]> {
+    if values.len() < 3 {
+        return None;
+    }
+
+    let mut sum_x = 0i128;
+    let mut sum_x2 = 0i128;
+    let mut sum_x3 = 0i128;
+    let mut sum_x4 = 0i128;
+    let mut sum_y = 0i128;
+    let mut sum_xy = 0i128;
+    let mut sum_x2y = 0i128;
+
+    for (index, value) in values.iter().enumerate() {
+        let x = i128::try_from(index + 1).ok()?;
+        let y = i128::from(*value);
+        let x2 = x.checked_mul(x)?;
+        let x3 = x2.checked_mul(x)?;
+        let x4 = x3.checked_mul(x)?;
+
+        sum_x = sum_x.checked_add(x)?;
+        sum_x2 = sum_x2.checked_add(x2)?;
+        sum_x3 = sum_x3.checked_add(x3)?;
+        sum_x4 = sum_x4.checked_add(x4)?;
+        sum_y = sum_y.checked_add(y)?;
+        sum_xy = sum_xy.checked_add(x.checked_mul(y)?)?;
+        sum_x2y = sum_x2y.checked_add(x2.checked_mul(y)?)?;
+    }
+
+    let n = i128::try_from(values.len()).ok()?;
+    solve_linear_system_i128(
+        [
+            [sum_x4, sum_x3, sum_x2],
+            [sum_x3, sum_x2, sum_x],
+            [sum_x2, sum_x, n],
+        ],
+        [sum_x2y, sum_xy, sum_y],
+    )
+}
+
+fn solve_linear_system_i128<const N: usize>(
+    coefficients: [[i128; N]; N],
+    constants: [i128; N],
+) -> Option<[Rational; N]> {
+    let mut rows: Vec<Vec<Rational>> = coefficients
+        .into_iter()
+        .zip(constants)
+        .map(|(coefficient_row, constant)| {
+            coefficient_row
+                .into_iter()
+                .chain(std::iter::once(constant))
+                .map(|value| Rational::new(value, 1))
+                .collect()
+        })
+        .collect();
+
+    for column in 0..N {
+        let pivot = (column..N).find(|row| !rows[*row][column].is_zero())?;
+        rows.swap(column, pivot);
+
+        let pivot_value = rows[column][column].clone();
+        for cell in rows[column].iter_mut().take(N + 1).skip(column) {
+            *cell = cell.div(&pivot_value)?;
+        }
+
+        let pivot_segment = rows[column][column..=N].to_vec();
+        for (row_index, row_values) in rows.iter_mut().enumerate().take(N) {
+            if row_index == column {
+                continue;
+            }
+            let factor = row_values[column].clone();
+            if factor.is_zero() {
+                continue;
+            }
+            for (cell, pivot_cell) in row_values
+                .iter_mut()
+                .take(N + 1)
+                .skip(column)
+                .zip(pivot_segment.iter())
+            {
+                let scaled = factor.mul(pivot_cell)?;
+                *cell = cell.sub(&scaled)?;
+            }
+        }
+    }
+
+    let mut solution = std::array::from_fn(|_| Rational::from_i32(0));
+    for index in 0..N {
+        solution[index] = rows[index][N].clone();
+    }
+    Some(solution)
+}
+
+fn format_quadratic_polynomial(coefficients: &[Rational; 3]) -> String {
+    let leading = Number::from_rational(coefficients[0].clone()).to_qalc_string();
+    let (linear_sign, linear) = format_signed_coefficient(&coefficients[1]);
+    let (constant_sign, constant) = format_signed_coefficient(&coefficients[2]);
+    format!("{leading}x²{linear_sign}{linear}x{constant_sign}{constant}")
+}
+
+fn format_signed_coefficient(coefficient: &Rational) -> (&'static str, String) {
+    let number = Number::from_rational(coefficient.clone());
+    if number.is_negative() {
+        (" - ", number.negate().to_qalc_string())
+    } else {
+        (" + ", number.to_qalc_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +366,10 @@ mod tests {
             native_output(SAMPLE_NORMDIST_SOURCE).as_deref(),
             Some("0.05399096651")
         );
+        assert_eq!(
+            native_output(SAMPLE_QUADRATIC_FIT_SOURCE).as_deref(),
+            Some("0.7797619048x² - 4.720238095x + 9.732142857")
+        );
         assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
         assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
         assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
@@ -260,6 +378,7 @@ mod tests {
         assert_eq!(native_output("median([1 3 7 5 1 1 1 4])"), None);
         assert_eq!(native_output("percentile([1 3 7 5 1 1 1 3]; 50)"), None);
         assert_eq!(native_output("normdist(7; 6)"), None);
+        assert_eq!(native_output("quadraticfit([5 3 4 5 6 7 13 25])"), None);
     }
 
     #[test]
@@ -279,5 +398,8 @@ mod tests {
             &Number::from_i32(-1)
         )
         .is_none());
+        assert!(quadratic_fit_i64(&[]).is_none());
+        assert!(quadratic_fit_i64(&[1, 2]).is_none());
+        assert!(solve_linear_system_i128([[0]], [1]).is_none());
     }
 }
