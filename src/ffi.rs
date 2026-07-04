@@ -563,6 +563,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return None;
     }
 
+    if !settings.is_empty() && crate::matrix::is_promoted_genvector_function(expr) {
+        return None;
+    }
+
     if !settings.is_empty() && crate::matrix::is_promoted_entrywise_function(expr) {
         return None;
     }

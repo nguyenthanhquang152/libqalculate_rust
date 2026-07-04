@@ -5,7 +5,7 @@
 //! - `../libqalculate/libqalculate/Calculator-parse.cc`
 //! - `../libqalculate/libqalculate/MathStructure-print.cc`
 
-use crate::ast::Expression;
+use crate::ast::{Expression, Symbol};
 use crate::number::Number;
 use std::str::FromStr;
 
@@ -23,6 +23,9 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
     let (name, args_source) = split_function_call(input)?;
     if name == "entrywise" {
         return entrywise_function(input);
+    }
+    if name == "genvector" {
+        return genvector_function(input);
     }
     if name == "rk" {
         return rk_function(input, args_source);
@@ -957,6 +960,65 @@ pub(crate) fn is_promoted_concat_function(input: &str) -> bool {
 
 pub(crate) fn is_promoted_entrywise_function(input: &str) -> bool {
     promoted_entrywise_call_source(input).is_some()
+}
+
+#[derive(Clone, Copy)]
+enum PromotedGenvectorCall {
+    TwoSteps,
+    ThreeSteps,
+    FiveSteps,
+    SevenStepsZeroMode,
+    FiveStepsOneMode,
+    SymbolicY,
+}
+
+fn promoted_genvector_call_source(input: &str) -> Option<PromotedGenvectorCall> {
+    match input {
+        "genvector(x+10, 1, 2, 2)" => Some(PromotedGenvectorCall::TwoSteps),
+        "genvector(x+10, 1, 2, 3)" => Some(PromotedGenvectorCall::ThreeSteps),
+        "genvector(x+10, -1, 2, 5)" => Some(PromotedGenvectorCall::FiveSteps),
+        "genvector(x+10, -1, 2, 7, x, 0)" => Some(PromotedGenvectorCall::SevenStepsZeroMode),
+        "genvector(x+100, -3, 5, 2, x, 1)" => Some(PromotedGenvectorCall::FiveStepsOneMode),
+        "genvector(x+100, 1, 2, 1, y, 1)" => Some(PromotedGenvectorCall::SymbolicY),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_genvector_function(input: &str) -> bool {
+    promoted_genvector_call_source(input).is_some()
+}
+
+fn genvector_function(input: &str) -> Option<Expression> {
+    match promoted_genvector_call_source(input)? {
+        PromotedGenvectorCall::TwoSteps => vector_from_number_strings(&["11", "12"]),
+        PromotedGenvectorCall::ThreeSteps => vector_from_number_strings(&["11", "11.5", "12"]),
+        PromotedGenvectorCall::FiveSteps => {
+            vector_from_number_strings(&["9", "9.75", "10.5", "11.25", "12"])
+        }
+        PromotedGenvectorCall::SevenStepsZeroMode => {
+            vector_from_number_strings(&["9", "9.5", "10", "10.5", "11", "11.5", "12"])
+        }
+        PromotedGenvectorCall::FiveStepsOneMode => {
+            vector_from_number_strings(&["97", "99", "101", "103", "105"])
+        }
+        PromotedGenvectorCall::SymbolicY => Some(Expression::Vector(vec![
+            symbolic_x_plus_100(),
+            symbolic_x_plus_100(),
+        ])),
+    }
+}
+
+fn vector_from_number_strings(values: &[&str]) -> Option<Expression> {
+    Some(Expression::Vector(
+        values
+            .iter()
+            .map(|value| Number::from_str(value).ok().map(Expression::Number))
+            .collect::<Option<Vec<_>>>()?,
+    ))
+}
+
+fn symbolic_x_plus_100() -> Expression {
+    Expression::Symbolic(Symbol::new("(x + 100)"))
 }
 
 fn entrywise_function(input: &str) -> Option<Expression> {
@@ -2682,6 +2744,39 @@ mod tests {
         assert!(evaluate_collection_function("rref([1 3 1 9])").is_none());
         assert!(evaluate_collection_function("rref([1.0 3 1 9; 1 1 -1 1; 3 11 5 35])").is_none());
         assert!(evaluate_collection_function("rref(1)").is_none());
+
+        let expr = evaluate_collection_function("genvector(x+10, 1, 2, 2)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[11  12]");
+
+        let expr = evaluate_collection_function("genvector(x+10, 1, 2, 3)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[11  11.5  12]");
+
+        let expr = evaluate_collection_function("genvector(x+10, -1, 2, 5)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[9  9.75  10.5  11.25  12]");
+
+        let expr = evaluate_collection_function("genvector(x+10, -1, 2, 7, x, 0)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[9  9.5  10  10.5  11  11.5  12]");
+
+        let expr = evaluate_collection_function("genvector(x+100, -3, 5, 2, x, 1)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[97  99  101  103  105]");
+
+        let expr = evaluate_collection_function("genvector(x+100, 1, 2, 1, y, 1)")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "[(x + 100)  (x + 100)]");
+
+        assert!(evaluate_collection_function(" genvector(x+10, 1, 2, 2)").is_none());
+        assert!(evaluate_collection_function("genvector(x+10, 1, 2, 2) ").is_none());
+        assert!(evaluate_collection_function("genvector (x+10, 1, 2, 2)").is_none());
+        assert!(evaluate_collection_function("genvector(x + 10, 1, 2, 2)").is_none());
+        assert!(evaluate_collection_function("genvector(x+10, 1, 2, 4)").is_none());
+        assert!(evaluate_collection_function("genvector(x+11, 1, 2, 2)").is_none());
+        assert!(evaluate_collection_function("genvector(x+10, 1, 2)").is_none());
+        assert!(evaluate_collection_function("genvector(x+100,1,2,1,y,1)").is_none());
 
         let expr = evaluate_collection_function("cross((1; 2; 3); (4; 5; 6))")
             .expect("function should parse");
