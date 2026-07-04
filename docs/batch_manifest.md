@@ -18,8 +18,8 @@ backed by fallback-disabled oracle evidence recorded in either
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **306** |
-| Inventory-only test cases | **350** |
+| Native-pass test cases | **308** |
+| Inventory-only test cases | **348** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -894,8 +894,8 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 9 | `stats.batch:17` | `fdist(5, 2, 3, 1)` | `0.8891420474` | — | inventory-only |
 | 10 | `stats.batch:19` | `normdistinv(0.2, 5, 2)` | `3.316757533` | — | inventory-only |
 | 11 | `stats.batch:21` | `chisqdistinv(0.9, 3)` | `6.251388631` | — | inventory-only |
-| 12 | `stats.batch:23` | `mode([1 3 7 5 1 1 1 3])` | `1` | — | inventory-only |
-| 13 | `stats.batch:25` | `median([1 3 7 5 1 1 1 3])` | `2` | — | inventory-only |
+| 12 | `stats.batch:23` | `mode([1 3 7 5 1 1 1 3])` | `1` | — | native-pass |
+| 13 | `stats.batch:25` | `median([1 3 7 5 1 1 1 3])` | `2` | — | native-pass |
 | 14 | `stats.batch:28` | `mean(libqalculate_tests_vector)` | `6.530919283` | — | inventory-only |
 | 15 | `stats.batch:30` | `geomean(abs(libqalculate_tests_vector))` | `14.25624271` | — | inventory-only |
 | 16 | `stats.batch:32` | `harmmean(abs(libqalculate_tests_vector))` | `5.691924037` | — | inventory-only |

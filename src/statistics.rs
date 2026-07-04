@@ -8,10 +8,13 @@
 use crate::number::{Number, Rational};
 
 const SAMPLE_STATS_VALUES: [i64; 6] = [5, 6, 4, 2, 3, 7];
+const SAMPLE_MODE_MEDIAN_VALUES: [i64; 8] = [1, 3, 7, 5, 1, 1, 1, 3];
 const SAMPLE_MEAN_SOURCE: &str = "mean(5; 6; 4; 2; 3; 7)";
 const SAMPLE_STDEV_SOURCE: &str = "stdev(5; 6; 4; 2; 3; 7)";
 const SAMPLE_QUARTILE_TYPE8_SOURCE: &str = "quartile((5; 6; 4; 2; 3; 7); 1; 8)";
 const SAMPLE_PERCENTILE_TYPE8_SOURCE: &str = "percentile([5 6 4 2 3 7]; 25; 8)";
+const SAMPLE_MODE_SOURCE: &str = "mode([1 3 7 5 1 1 1 3])";
+const SAMPLE_MEDIAN_SOURCE: &str = "median([1 3 7 5 1 1 1 3])";
 
 pub(crate) fn native_output(expr: &str) -> Option<String> {
     match expr {
@@ -22,6 +25,12 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
         }
         SAMPLE_PERCENTILE_TYPE8_SOURCE => {
             type8_quantile_i64(&SAMPLE_STATS_VALUES, 25, 100).map(|value| value.to_qalc_string())
+        }
+        SAMPLE_MODE_SOURCE => {
+            mode_i64(&SAMPLE_MODE_MEDIAN_VALUES).map(|value| value.to_qalc_string())
+        }
+        SAMPLE_MEDIAN_SOURCE => {
+            median_i64(&SAMPLE_MODE_MEDIAN_VALUES).map(|value| value.to_qalc_string())
         }
         _ => None,
     }
@@ -99,6 +108,50 @@ fn type8_quantile_i64(
     )))
 }
 
+fn mode_i64(values: &[i64]) -> Option<Number> {
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let mut best_value = *sorted.first()?;
+    let mut best_count = 0usize;
+    let mut current_value = best_value;
+    let mut current_count = 0usize;
+
+    for value in sorted {
+        if value == current_value {
+            current_count += 1;
+        } else {
+            if current_count > best_count {
+                best_count = current_count;
+                best_value = current_value;
+            }
+            current_value = value;
+            current_count = 1;
+        }
+    }
+    if current_count > best_count {
+        best_value = current_value;
+    }
+    Some(Number::from_i64(best_value))
+}
+
+fn median_i64(values: &[i64]) -> Option<Number> {
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let len = sorted.len();
+    if len == 0 {
+        return None;
+    }
+
+    let midpoint = len / 2;
+    if len % 2 == 1 {
+        return Some(Number::from_i64(sorted[midpoint]));
+    }
+
+    let lower = i128::from(sorted[midpoint - 1]);
+    let upper = i128::from(sorted[midpoint]);
+    Some(Number::from_rational(Rational::new(lower + upper, 2)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +195,24 @@ mod tests {
     }
 
     #[test]
+    fn computes_sample_mode_and_median() {
+        assert_eq!(
+            mode_i64(&SAMPLE_MODE_MEDIAN_VALUES)
+                .unwrap()
+                .to_qalc_string(),
+            "1"
+        );
+        assert_eq!(
+            median_i64(&SAMPLE_MODE_MEDIAN_VALUES)
+                .unwrap()
+                .to_qalc_string(),
+            "2"
+        );
+        assert_eq!(mode_i64(&[1, 1, 2, 2]).unwrap().to_qalc_string(), "1");
+        assert_eq!(median_i64(&[3, 1, 2]).unwrap().to_qalc_string(), "2");
+    }
+
+    #[test]
     fn gates_native_output_to_promoted_sources() {
         assert_eq!(native_output(SAMPLE_MEAN_SOURCE).as_deref(), Some("4.5"));
         assert_eq!(
@@ -156,10 +227,15 @@ mod tests {
             native_output(SAMPLE_PERCENTILE_TYPE8_SOURCE).as_deref(),
             Some("2.916666667")
         );
+        assert_eq!(native_output(SAMPLE_MODE_SOURCE).as_deref(), Some("1"));
+        assert_eq!(native_output(SAMPLE_MEDIAN_SOURCE).as_deref(), Some("2"));
         assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
         assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
         assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
         assert_eq!(native_output("percentile([5 6 4 2 3 7]; 25; 7)"), None);
+        assert_eq!(native_output("mode([1 3 7 5 1 1 1 4])"), None);
+        assert_eq!(native_output("median([1 3 7 5 1 1 1 4])"), None);
+        assert_eq!(native_output("percentile([1 3 7 5 1 1 1 3]; 50)"), None);
     }
 
     #[test]
@@ -170,5 +246,7 @@ mod tests {
         assert!(type8_quantile_i64(&[], 1, 4).is_none());
         assert!(type8_quantile_i64(&SAMPLE_STATS_VALUES, 1, 0).is_none());
         assert!(type8_quantile_i64(&SAMPLE_STATS_VALUES, 5, 4).is_none());
+        assert!(mode_i64(&[]).is_none());
+        assert!(median_i64(&[]).is_none());
     }
 }
