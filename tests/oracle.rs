@@ -2016,6 +2016,8 @@ fn focused_issue43_literal_statistics_oracle_cases() {
             "quadraticfit([5 3 4 5 6 7 13 24])",
         ),
         ("stats-literal-cubicfit", "cubicfit([5 3 4 5 6 7 13 24])"),
+        ("stats-literal-fdist-pdf", "fdist(5, 2, 3, 0)"),
+        ("stats-literal-fdist-cdf", "fdist(5, 2, 3, 1)"),
     ] {
         let settings = &[][..];
         let cpp_out = run_oracle_expression(&qalc, &defs, expression, settings);

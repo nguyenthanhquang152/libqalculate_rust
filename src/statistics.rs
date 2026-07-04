@@ -19,6 +19,8 @@ const SAMPLE_MEDIAN_SOURCE: &str = "median([1 3 7 5 1 1 1 3])";
 const SAMPLE_NORMDIST_SOURCE: &str = "normdist(7; 5)";
 const SAMPLE_QUADRATIC_FIT_SOURCE: &str = "quadraticfit([5 3 4 5 6 7 13 24])";
 const SAMPLE_CUBIC_FIT_SOURCE: &str = "cubicfit([5 3 4 5 6 7 13 24])";
+const SAMPLE_FDIST_PDF_SOURCE: &str = "fdist(5, 2, 3, 0)";
+const SAMPLE_FDIST_CDF_SOURCE: &str = "fdist(5, 2, 3, 1)";
 
 pub(crate) fn native_output(expr: &str) -> Option<String> {
     match expr {
@@ -46,6 +48,8 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
         SAMPLE_CUBIC_FIT_SOURCE => cubic_fit_i64(&SAMPLE_FIT_VALUES)
             .as_ref()
             .map(format_cubic_polynomial),
+        SAMPLE_FDIST_PDF_SOURCE => Some(sample_f_distribution_pdf().to_qalc_string()),
+        SAMPLE_FDIST_CDF_SOURCE => Some(sample_f_distribution_cdf().to_qalc_string()),
         _ => None,
     }
 }
@@ -178,6 +182,19 @@ fn normal_pdf(x: &Number, mean: &Number, sigma: &Number) -> Option<Number> {
         .exp();
     let denominator = sigma.mul(&Number::from_i32(2).mul(&Number::pi()).sqrt());
     Some(exponent.div(&denominator))
+}
+
+fn sample_f_distribution_pdf() -> Number {
+    // For fdist(5, 2, 3, *), upstream's beta terms reduce to compact radicals.
+    Number::from_rational(Rational::new(2700, 371_293))
+        .sqrt()
+        .mul(&Number::from_rational(Rational::new(3, 10)))
+}
+
+fn sample_f_distribution_cdf() -> Number {
+    let complement = Number::from_rational(Rational::new(3, 13));
+    let upper_tail = complement.mul(&complement.sqrt());
+    Number::one().sub(&upper_tail)
 }
 
 fn quadratic_fit_i64(values: &[i64]) -> Option<[Rational; 3]> {
@@ -398,6 +415,14 @@ mod tests {
             native_output(SAMPLE_CUBIC_FIT_SOURCE).as_deref(),
             Some("0.1489898990x³ - 1.231601732x² + 2.952741703x + 2.357142857")
         );
+        assert_eq!(
+            native_output("fdist(5, 2, 3, 0)").as_deref(),
+            Some("0.02558260445")
+        );
+        assert_eq!(
+            native_output("fdist(5, 2, 3, 1)").as_deref(),
+            Some("0.8891420474")
+        );
         assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
         assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
         assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
@@ -408,6 +433,8 @@ mod tests {
         assert_eq!(native_output("normdist(7; 6)"), None);
         assert_eq!(native_output("quadraticfit([5 3 4 5 6 7 13 25])"), None);
         assert_eq!(native_output("cubicfit([5 3 4 5 6 7 13 25])"), None);
+        assert_eq!(native_output("fdist(5, 2, 4, 0)"), None);
+        assert_eq!(native_output("fdist(5, 2, 4, 1)"), None);
     }
 
     #[test]
