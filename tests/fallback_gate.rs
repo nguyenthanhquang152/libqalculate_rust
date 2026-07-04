@@ -73,6 +73,18 @@ fn upstream_dir() -> std::path::PathBuf {
         .unwrap_or_else(|_| std::path::PathBuf::from("../libqalculate"))
 }
 
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time is after UNIX epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "libqalculate_rust_{name}_{}_{}",
+        std::process::id(),
+        unique
+    ))
+}
+
 #[test]
 fn fallback_state_markers_are_stable() {
     assert_eq!(FallbackState::Native.marker(), "fallback=native");
@@ -428,6 +440,35 @@ fn cli_native_csv_load_counts_succeed_when_fallback_disabled() {
         );
         assert_eq!(exit_code, 0, "{expression}");
     }
+}
+
+#[test]
+fn cli_native_csv_load_errors_surface_when_fallback_disabled() {
+    let cwd = temp_dir("csv_load_error");
+    let tests_dir = cwd.join("tests");
+    std::fs::create_dir_all(&tests_dir).expect("create temp tests directory");
+    std::fs::write(tests_dir.join("vectordata.csv"), "1,,2\n").expect("write malformed csv");
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args_in_dir(
+        &["--", "number(load(tests/vectordata.csv))"],
+        Some("1"),
+        Some("1"),
+        Some(&cwd),
+    );
+
+    std::fs::remove_dir_all(&cwd).expect("remove temp tests directory");
+    assert!(stdout.is_empty());
+    assert!(
+        stderr.contains("[qalc-rs-metadata] fallback=native"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "error: calculation failed: empty numeric CSV value at row 1, column 2 in tests/vectordata.csv"
+        ),
+        "{stderr}"
+    );
+    assert_eq!(exit_code, 2);
 }
 
 #[test]

@@ -84,10 +84,12 @@ pub fn load_csv_numbers(path: impl AsRef<Path>) -> Result<Vec<Number>, CsvLoadEr
     Ok(values)
 }
 
-pub(crate) fn native_output(expr: &str) -> Option<String> {
-    let path = promoted_load_count_path(expr)?;
-    let values = load_csv_numbers(path).ok()?;
-    Some(values.len().to_string())
+pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
+    let Some(path) = promoted_load_count_path(expr) else {
+        return Ok(None);
+    };
+    let values = load_csv_numbers(path)?;
+    Ok(Some(values.len().to_string()))
 }
 
 fn promoted_load_count_path(expr: &str) -> Option<PathBuf> {

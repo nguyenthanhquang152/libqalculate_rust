@@ -281,6 +281,14 @@ impl Calculator {
         );
 
         if fallback_disabled_by_env() {
+            if settings.is_empty() {
+                if let Some(output) = native_data_output(profile, expr)? {
+                    return Ok(CalculationOutput {
+                        output,
+                        fallback_state: FallbackState::Native,
+                    });
+                }
+            }
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 return Ok(CalculationOutput {
                     output,
@@ -513,17 +521,24 @@ fn conversion_target_is_hex(expr: &crate::ast::Expression) -> bool {
     )
 }
 
+fn native_data_output(
+    profile: PrintProfile,
+    expr: &str,
+) -> Result<Option<String>, CalculatorError> {
+    let Some(output) = crate::data::native_output(expr)
+        .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(match profile {
+        PrintProfile::Api => output,
+        PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+    }))
+}
+
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
-
-    if settings.is_empty() {
-        if let Some(output) = crate::data::native_output(expr) {
-            return Some(match profile {
-                PrintProfile::Api => output,
-                PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-            });
-        }
-    }
 
     if let Some(output) = crate::matrix::promoted_top_level_list_literal_output(expr) {
         if !settings.is_empty() {
@@ -1184,6 +1199,8 @@ fn native_numeric_evidence(expr: &str) -> Option<NativeNumericEvidence> {
 pub enum CalculatorError {
     /// Wrapping a C++ exception returned via CXX FFI.
     Cxx(cxx::Exception),
+    /// Native Rust evaluation recognized the expression but failed while evaluating it.
+    NativeEvaluation(String),
     /// The C++ fallback is disabled and the requested feature is unimplemented natively.
     FallbackDisabled(String),
     /// Session settings were supplied on a path that cannot apply them safely.
@@ -1194,6 +1211,7 @@ impl std::fmt::Display for CalculatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CalculatorError::Cxx(e) => write!(f, "{}", e),
+            CalculatorError::NativeEvaluation(message) => f.write_str(message),
             CalculatorError::FallbackDisabled(expr) => {
                 write!(
                     f,
@@ -1216,6 +1234,7 @@ impl std::error::Error for CalculatorError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             CalculatorError::Cxx(e) => Some(e),
+            CalculatorError::NativeEvaluation(_) => None,
             CalculatorError::FallbackDisabled(_) => None,
             CalculatorError::UnsupportedSessionSettings(_) => None,
         }
@@ -1227,6 +1246,7 @@ impl CalculatorError {
     pub const fn fallback_state(&self) -> FallbackState {
         match self {
             Self::Cxx(_) => FallbackState::CppFallbackEnabled,
+            Self::NativeEvaluation(_) => FallbackState::Native,
             Self::FallbackDisabled(_) => FallbackState::Disabled,
             Self::UnsupportedSessionSettings(_) => FallbackState::CppFallbackEnabled,
         }
