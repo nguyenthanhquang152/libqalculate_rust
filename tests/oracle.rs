@@ -2000,6 +2000,14 @@ fn focused_issue43_literal_statistics_oracle_cases() {
     for (case_id, expression) in [
         ("stats-literal-mean", "mean(5; 6; 4; 2; 3; 7)"),
         ("stats-literal-stdev", "stdev(5; 6; 4; 2; 3; 7)"),
+        (
+            "stats-literal-quartile-type8",
+            "quartile((5; 6; 4; 2; 3; 7); 1; 8)",
+        ),
+        (
+            "stats-literal-percentile-type8",
+            "percentile([5 6 4 2 3 7]; 25; 8)",
+        ),
     ] {
         let settings = &[][..];
         let cpp_out = run_oracle_expression(&qalc, &defs, expression, settings);

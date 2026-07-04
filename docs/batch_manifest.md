@@ -18,8 +18,8 @@ backed by fallback-disabled oracle evidence recorded in either
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **304** |
-| Inventory-only test cases | **352** |
+| Native-pass test cases | **306** |
+| Inventory-only test cases | **350** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -885,8 +885,8 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 |---|---------|------------|----------|----------|--------|
 | 1 | `stats.batch:1` | `mean(5; 6; 4; 2; 3; 7)` | `4.5` | — | native-pass |
 | 2 | `stats.batch:3` | `stdev(5; 6; 4; 2; 3; 7)` | `1.870828693` | — | native-pass |
-| 3 | `stats.batch:5` | `quartile((5; 6; 4; 2; 3; 7); 1; 8)` | `2.916666667` | — | inventory-only |
-| 4 | `stats.batch:7` | `percentile([5 6 4 2 3 7]; 25; 8)` | `2.916666667` | — | inventory-only |
+| 3 | `stats.batch:5` | `quartile((5; 6; 4; 2; 3; 7); 1; 8)` | `2.916666667` | — | native-pass |
+| 4 | `stats.batch:7` | `percentile([5 6 4 2 3 7]; 25; 8)` | `2.916666667` | — | native-pass |
 | 5 | `stats.batch:9` | `normdist(7; 5)` | `0.05399096651` | — | inventory-only |
 | 6 | `stats.batch:11` | `quadraticfit([5 3 4 5 6 7 13 24])` | `0.7797619048x^2 - 4.720238095x + 9.732142857` | — | inventory-only |
 | 7 | `stats.batch:13` | `cubicfit([5 3 4 5 6 7 13 24])` | `0.1489898990x^3 - 1.231601732x^2 + 2.952741703x + 2.357142857` | — | inventory-only |
