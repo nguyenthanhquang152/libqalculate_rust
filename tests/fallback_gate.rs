@@ -423,6 +423,36 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
 }
 
 #[test]
+fn cli_vector_matrix_diagnostic_followups_fail_closed_when_fallback_disabled() {
+    for (case_id, expression) in [
+        ("arity", "det([1 2; 4 5], 1)"),
+        ("non-square-det", "det([1 2 3; 4 5 6])"),
+        ("singular-inverse", "inverse([1 2; 2 4])"),
+        ("non-square-inverse", "inverse([1 2 3; 4 5 6])"),
+        ("dot-dimension-mismatch", "dot((1; 2); (3; 4; 5))"),
+        ("cross-dimension-mismatch", "cross((1; 2); (3; 4))"),
+        ("concat-shape-mismatch", "horzcat([1 2], [3 4; 5 6])"),
+        (
+            "entrywise-shape-mismatch",
+            "entrywise(x + y, [1 2], x, [3], y)",
+        ),
+        ("cofactor-index", "cofactor([1 2; 4 5], 0, 1)"),
+    ] {
+        let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
+        assert!(stdout.is_empty(), "{case_id}: {expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=disabled"),
+            "{case_id}: {stderr}"
+        );
+        assert!(
+            stderr.contains("error: calculation failed: C++ FFI fallback is disabled"),
+            "{case_id}: {stderr}"
+        );
+        assert_eq!(exit_code, 2, "{case_id}: {expression}");
+    }
+}
+
+#[test]
 fn cli_native_literal_statistics_succeed_when_fallback_disabled() {
     for (expression, expected) in [
         ("mean(5; 6; 4; 2; 3; 7)", "4.5"),
