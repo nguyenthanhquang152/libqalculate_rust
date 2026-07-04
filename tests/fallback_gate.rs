@@ -557,6 +557,22 @@ fn cli_native_csv_backed_paired_statistics_succeed_when_fallback_disabled() {
             "poolvar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
             "530.0195143",
         ),
+        (
+            "ttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+            "0.3493127334",
+        ),
+        (
+            "ttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+            "0.3493127334",
+        ),
+        (
+            "pttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+            "1.583214005",
+        ),
+        (
+            "pttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+            "1.583214005",
+        ),
     ] {
         let (stdout, stderr, exit_code) =
             run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));

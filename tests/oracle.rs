@@ -2055,6 +2055,22 @@ fn focused_issue44_csv_load_oracle_cases() {
             "csv-backed-poolvar-vectordata-quoted",
             "poolvar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
         ),
+        (
+            "csv-backed-ttest-vectordata",
+            "ttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-backed-ttest-vectordata-quoted",
+            "ttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+        ),
+        (
+            "csv-backed-pttest-vectordata",
+            "pttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-backed-pttest-vectordata-quoted",
+            "pttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+        ),
     ] {
         let settings = &[][..];
         let cpp_out =

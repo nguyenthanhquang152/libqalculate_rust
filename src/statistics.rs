@@ -56,6 +56,14 @@ const CSV_POOLVAR_VECTORDATA_SOURCE: &str =
     "poolvar(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
 const CSV_POOLVAR_VECTORDATA_QUOTED_SOURCE: &str =
     "poolvar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
+const CSV_TTEST_VECTORDATA_SOURCE: &str =
+    "ttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
+const CSV_TTEST_VECTORDATA_QUOTED_SOURCE: &str =
+    "ttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
+const CSV_PTTEST_VECTORDATA_SOURCE: &str =
+    "pttest(load(tests/vectordata.csv), load(tests/vectordata2.csv))";
+const CSV_PTTEST_VECTORDATA_QUOTED_SOURCE: &str =
+    "pttest(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))";
 
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
     let output = match expr {
@@ -138,6 +146,16 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> 
             let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
             let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
             pooled_variance(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_TTEST_VECTORDATA_SOURCE | CSV_TTEST_VECTORDATA_QUOTED_SOURCE => {
+            let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
+            unpaired_t_test(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_PTTEST_VECTORDATA_SOURCE | CSV_PTTEST_VECTORDATA_QUOTED_SOURCE => {
+            let lhs = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            let rhs = crate::data::load_csv_numbers(CSV_VECTORDATA2_PATH)?;
+            paired_t_test(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
         }
         _ => None,
     };
@@ -295,6 +313,39 @@ fn pooled_variance(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
         .add(&sample_variance(rhs)?.mul(&rhs_degrees));
     let denominator = Number::from_i64((lhs.len() + rhs.len()) as i64 - 2);
     Some(numerator.div(&denominator))
+}
+
+fn unpaired_t_test(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
+    if lhs.is_empty() || rhs.is_empty() {
+        return None;
+    }
+
+    let pooled = pooled_variance(lhs, rhs)?;
+    let lhs_term = pooled.div(&Number::from_i64(lhs.len() as i64));
+    let rhs_term = pooled.div(&Number::from_i64(rhs.len() as i64));
+    let denominator = lhs_term.add(&rhs_term).sqrt().abs();
+    if denominator.is_zero() {
+        return None;
+    }
+    Some(mean(lhs)?.sub(&mean(rhs)?).div(&denominator))
+}
+
+fn paired_t_test(lhs: &[Number], rhs: &[Number]) -> Option<Number> {
+    if lhs.len() != rhs.len() || lhs.len() < 2 {
+        return None;
+    }
+
+    let differences: Vec<Number> = lhs
+        .iter()
+        .zip(rhs)
+        .map(|(lhs_value, rhs_value)| lhs_value.sub(rhs_value))
+        .collect();
+    let standard_error =
+        sample_stdev(&differences)?.div(&Number::from_i64(lhs.len() as i64).sqrt());
+    if standard_error.is_zero() {
+        return None;
+    }
+    Some(mean(&differences)?.div(&standard_error))
 }
 
 fn ranks(values: &[Number]) -> Option<Vec<Number>> {
@@ -727,6 +778,21 @@ mod tests {
             "1"
         );
         assert_eq!(pooled_variance(&lhs, &rhs).unwrap().to_qalc_string(), "2.5");
+    }
+
+    #[test]
+    fn computes_sample_paired_statistical_tests() {
+        let lhs = [2, 4, 6].map(Number::from_i32);
+        let rhs = [1, 2, 3].map(Number::from_i32);
+
+        assert_eq!(
+            unpaired_t_test(&lhs, &rhs).unwrap().to_qalc_string(),
+            "1.549193338"
+        );
+        assert_eq!(
+            paired_t_test(&lhs, &rhs).unwrap().to_qalc_string(),
+            "3.464101615"
+        );
     }
 
     #[test]
