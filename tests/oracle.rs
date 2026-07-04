@@ -2008,6 +2008,8 @@ fn focused_issue43_literal_statistics_oracle_cases() {
             "stats-literal-percentile-type8",
             "percentile([5 6 4 2 3 7]; 25; 8)",
         ),
+        ("stats-literal-mode", "mode([1 3 7 5 1 1 1 3])"),
+        ("stats-literal-median", "median([1 3 7 5 1 1 1 3])"),
     ] {
         let settings = &[][..];
         let cpp_out = run_oracle_expression(&qalc, &defs, expression, settings);
