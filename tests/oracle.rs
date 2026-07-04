@@ -1967,6 +1967,22 @@ fn focused_issue44_csv_load_oracle_cases() {
             "csv-load-vectordata2-count-quoted",
             "number(load(\"tests/vectordata2.csv\"))",
         ),
+        (
+            "csv-backed-mean-vectordata",
+            "mean(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-mean-vectordata-quoted",
+            "mean(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-stdev-vectordata",
+            "stdev(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-stdev-vectordata-quoted",
+            "stdev(load(\"tests/vectordata.csv\"))",
+        ),
     ] {
         let settings = &[][..];
         let cpp_out =

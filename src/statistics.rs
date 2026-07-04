@@ -5,6 +5,7 @@
 //! - `../libqalculate/data/functions.xml.in`
 //! - `../libqalculate/tests/stats.batch`
 
+use crate::data::CsvLoadError;
 use crate::number::{Number, Rational};
 
 const SAMPLE_STATS_VALUES: [i64; 6] = [5, 6, 4, 2, 3, 7];
@@ -23,9 +24,14 @@ const SAMPLE_FDIST_PDF_SOURCE: &str = "fdist(5, 2, 3, 0)";
 const SAMPLE_FDIST_CDF_SOURCE: &str = "fdist(5, 2, 3, 1)";
 const SAMPLE_NORMDISTINV_SOURCE: &str = "normdistinv(0.2, 5, 2)";
 const SAMPLE_CHISQDISTINV_SOURCE: &str = "chisqdistinv(0.9, 3)";
+const CSV_VECTORDATA_PATH: &str = "tests/vectordata.csv";
+const CSV_MEAN_VECTORDATA_SOURCE: &str = "mean(load(tests/vectordata.csv))";
+const CSV_MEAN_VECTORDATA_QUOTED_SOURCE: &str = "mean(load(\"tests/vectordata.csv\"))";
+const CSV_STDEV_VECTORDATA_SOURCE: &str = "stdev(load(tests/vectordata.csv))";
+const CSV_STDEV_VECTORDATA_QUOTED_SOURCE: &str = "stdev(load(\"tests/vectordata.csv\"))";
 
-pub(crate) fn native_output(expr: &str) -> Option<String> {
-    match expr {
+pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
+    let output = match expr {
         SAMPLE_MEAN_SOURCE => mean(&sample_values()).map(|value| value.to_qalc_string()),
         SAMPLE_STDEV_SOURCE => sample_stdev(&sample_values()).map(|value| value.to_qalc_string()),
         SAMPLE_QUARTILE_TYPE8_SOURCE => {
@@ -58,8 +64,21 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
         SAMPLE_CHISQDISTINV_SOURCE => {
             sample_chi_square_distribution_inverse().map(|value| value.to_qalc_string())
         }
+        CSV_MEAN_VECTORDATA_SOURCE | CSV_MEAN_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            mean(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_STDEV_VECTORDATA_SOURCE | CSV_STDEV_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            sample_stdev(&values).map(|value| approximate_qalc_string(&value))
+        }
         _ => None,
-    }
+    };
+    Ok(output)
+}
+
+fn approximate_qalc_string(value: &Number) -> String {
+    Number::from_f64(value.to_f64()).to_qalc_string()
 }
 
 fn sample_values() -> Vec<Number> {
@@ -449,6 +468,10 @@ fn format_signed_coefficient(coefficient: &Rational) -> (&'static str, String) {
 mod tests {
     use super::*;
 
+    fn native_output_ok(expr: &str) -> Option<String> {
+        native_output(expr).expect("native statistics output")
+    }
+
     #[test]
     fn computes_sample_mean_and_stdev() {
         let values = sample_values();
@@ -507,63 +530,63 @@ mod tests {
 
     #[test]
     fn gates_native_output_to_promoted_sources() {
-        assert_eq!(native_output(SAMPLE_MEAN_SOURCE).as_deref(), Some("4.5"));
+        assert_eq!(native_output_ok(SAMPLE_MEAN_SOURCE).as_deref(), Some("4.5"));
         assert_eq!(
-            native_output(SAMPLE_STDEV_SOURCE).as_deref(),
+            native_output_ok(SAMPLE_STDEV_SOURCE).as_deref(),
             Some("1.870828693")
         );
         assert_eq!(
-            native_output(SAMPLE_QUARTILE_TYPE8_SOURCE).as_deref(),
+            native_output_ok(SAMPLE_QUARTILE_TYPE8_SOURCE).as_deref(),
             Some("2.916666667")
         );
         assert_eq!(
-            native_output(SAMPLE_PERCENTILE_TYPE8_SOURCE).as_deref(),
+            native_output_ok(SAMPLE_PERCENTILE_TYPE8_SOURCE).as_deref(),
             Some("2.916666667")
         );
-        assert_eq!(native_output(SAMPLE_MODE_SOURCE).as_deref(), Some("1"));
-        assert_eq!(native_output(SAMPLE_MEDIAN_SOURCE).as_deref(), Some("2"));
+        assert_eq!(native_output_ok(SAMPLE_MODE_SOURCE).as_deref(), Some("1"));
+        assert_eq!(native_output_ok(SAMPLE_MEDIAN_SOURCE).as_deref(), Some("2"));
         assert_eq!(
-            native_output(SAMPLE_NORMDIST_SOURCE).as_deref(),
+            native_output_ok(SAMPLE_NORMDIST_SOURCE).as_deref(),
             Some("0.05399096651")
         );
         assert_eq!(
-            native_output(SAMPLE_QUADRATIC_FIT_SOURCE).as_deref(),
+            native_output_ok(SAMPLE_QUADRATIC_FIT_SOURCE).as_deref(),
             Some("0.7797619048x² - 4.720238095x + 9.732142857")
         );
         assert_eq!(
-            native_output(SAMPLE_CUBIC_FIT_SOURCE).as_deref(),
+            native_output_ok(SAMPLE_CUBIC_FIT_SOURCE).as_deref(),
             Some("0.1489898990x³ - 1.231601732x² + 2.952741703x + 2.357142857")
         );
         assert_eq!(
-            native_output("fdist(5, 2, 3, 0)").as_deref(),
+            native_output_ok("fdist(5, 2, 3, 0)").as_deref(),
             Some("0.02558260445")
         );
         assert_eq!(
-            native_output("fdist(5, 2, 3, 1)").as_deref(),
+            native_output_ok("fdist(5, 2, 3, 1)").as_deref(),
             Some("0.8891420474")
         );
         assert_eq!(
-            native_output("normdistinv(0.2, 5, 2)").as_deref(),
+            native_output_ok("normdistinv(0.2, 5, 2)").as_deref(),
             Some("3.316757533")
         );
         assert_eq!(
-            native_output("chisqdistinv(0.9, 3)").as_deref(),
+            native_output_ok("chisqdistinv(0.9, 3)").as_deref(),
             Some("6.251388631")
         );
-        assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
-        assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
-        assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
-        assert_eq!(native_output("percentile([5 6 4 2 3 7]; 25; 7)"), None);
-        assert_eq!(native_output("mode([1 3 7 5 1 1 1 4])"), None);
-        assert_eq!(native_output("median([1 3 7 5 1 1 1 4])"), None);
-        assert_eq!(native_output("percentile([1 3 7 5 1 1 1 3]; 50)"), None);
-        assert_eq!(native_output("normdist(7; 6)"), None);
-        assert_eq!(native_output("quadraticfit([5 3 4 5 6 7 13 25])"), None);
-        assert_eq!(native_output("cubicfit([5 3 4 5 6 7 13 25])"), None);
-        assert_eq!(native_output("fdist(5, 2, 4, 0)"), None);
-        assert_eq!(native_output("fdist(5, 2, 4, 1)"), None);
-        assert_eq!(native_output("normdistinv(0.2, 5, 3)"), None);
-        assert_eq!(native_output("chisqdistinv(0.9, 4)"), None);
+        assert_eq!(native_output_ok("mean(5; 6; 4; 2; 3)"), None);
+        assert_eq!(native_output_ok("mean(5, 6, 4, 2, 3, 7)"), None);
+        assert_eq!(native_output_ok("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
+        assert_eq!(native_output_ok("percentile([5 6 4 2 3 7]; 25; 7)"), None);
+        assert_eq!(native_output_ok("mode([1 3 7 5 1 1 1 4])"), None);
+        assert_eq!(native_output_ok("median([1 3 7 5 1 1 1 4])"), None);
+        assert_eq!(native_output_ok("percentile([1 3 7 5 1 1 1 3]; 50)"), None);
+        assert_eq!(native_output_ok("normdist(7; 6)"), None);
+        assert_eq!(native_output_ok("quadraticfit([5 3 4 5 6 7 13 25])"), None);
+        assert_eq!(native_output_ok("cubicfit([5 3 4 5 6 7 13 25])"), None);
+        assert_eq!(native_output_ok("fdist(5, 2, 4, 0)"), None);
+        assert_eq!(native_output_ok("fdist(5, 2, 4, 1)"), None);
+        assert_eq!(native_output_ok("normdistinv(0.2, 5, 3)"), None);
+        assert_eq!(native_output_ok("chisqdistinv(0.9, 4)"), None);
     }
 
     #[test]
