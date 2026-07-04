@@ -18,6 +18,7 @@ const SAMPLE_MODE_SOURCE: &str = "mode([1 3 7 5 1 1 1 3])";
 const SAMPLE_MEDIAN_SOURCE: &str = "median([1 3 7 5 1 1 1 3])";
 const SAMPLE_NORMDIST_SOURCE: &str = "normdist(7; 5)";
 const SAMPLE_QUADRATIC_FIT_SOURCE: &str = "quadraticfit([5 3 4 5 6 7 13 24])";
+const SAMPLE_CUBIC_FIT_SOURCE: &str = "cubicfit([5 3 4 5 6 7 13 24])";
 
 pub(crate) fn native_output(expr: &str) -> Option<String> {
     match expr {
@@ -42,6 +43,9 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
         SAMPLE_QUADRATIC_FIT_SOURCE => quadratic_fit_i64(&SAMPLE_FIT_VALUES)
             .as_ref()
             .map(format_quadratic_polynomial),
+        SAMPLE_CUBIC_FIT_SOURCE => cubic_fit_i64(&SAMPLE_FIT_VALUES)
+            .as_ref()
+            .map(format_cubic_polynomial),
         _ => None,
     }
 }
@@ -177,43 +181,53 @@ fn normal_pdf(x: &Number, mean: &Number, sigma: &Number) -> Option<Number> {
 }
 
 fn quadratic_fit_i64(values: &[i64]) -> Option<[Rational; 3]> {
-    if values.len() < 3 {
+    polynomial_fit_i64::<3>(values)
+}
+
+fn cubic_fit_i64(values: &[i64]) -> Option<[Rational; 4]> {
+    polynomial_fit_i64::<4>(values)
+}
+
+fn polynomial_fit_i64<const N: usize>(values: &[i64]) -> Option<[Rational; N]> {
+    let degree = N.checked_sub(1)?;
+    if values.len() < N {
         return None;
     }
 
-    let mut sum_x = 0i128;
-    let mut sum_x2 = 0i128;
-    let mut sum_x3 = 0i128;
-    let mut sum_x4 = 0i128;
-    let mut sum_y = 0i128;
-    let mut sum_xy = 0i128;
-    let mut sum_x2y = 0i128;
+    let max_power = degree.checked_mul(2)?;
+    let mut x_sums = vec![0i128; max_power + 1];
+    let mut xy_sums = vec![0i128; degree + 1];
 
     for (index, value) in values.iter().enumerate() {
         let x = i128::try_from(index + 1).ok()?;
         let y = i128::from(*value);
-        let x2 = x.checked_mul(x)?;
-        let x3 = x2.checked_mul(x)?;
-        let x4 = x3.checked_mul(x)?;
 
-        sum_x = sum_x.checked_add(x)?;
-        sum_x2 = sum_x2.checked_add(x2)?;
-        sum_x3 = sum_x3.checked_add(x3)?;
-        sum_x4 = sum_x4.checked_add(x4)?;
-        sum_y = sum_y.checked_add(y)?;
-        sum_xy = sum_xy.checked_add(x.checked_mul(y)?)?;
-        sum_x2y = sum_x2y.checked_add(x2.checked_mul(y)?)?;
+        let mut powers = Vec::with_capacity(max_power + 1);
+        let mut current = 1i128;
+        for power in 0..=max_power {
+            powers.push(current);
+            if power < max_power {
+                current = current.checked_mul(x)?;
+            }
+        }
+
+        for (sum, power) in x_sums.iter_mut().zip(powers.iter()) {
+            *sum = sum.checked_add(*power)?;
+        }
+        for (power, sum) in xy_sums.iter_mut().enumerate() {
+            *sum = sum.checked_add(powers[power].checked_mul(y)?)?;
+        }
     }
 
-    let n = i128::try_from(values.len()).ok()?;
-    solve_linear_system_i128(
-        [
-            [sum_x4, sum_x3, sum_x2],
-            [sum_x3, sum_x2, sum_x],
-            [sum_x2, sum_x, n],
-        ],
-        [sum_x2y, sum_xy, sum_y],
-    )
+    let coefficients = std::array::from_fn(|row| {
+        let row_power = degree - row;
+        std::array::from_fn(|column| {
+            let column_power = degree - column;
+            x_sums[row_power + column_power]
+        })
+    });
+    let constants = std::array::from_fn(|row| xy_sums[degree - row]);
+    solve_linear_system_i128(coefficients, constants)
 }
 
 fn solve_linear_system_i128<const N: usize>(
@@ -274,6 +288,16 @@ fn format_quadratic_polynomial(coefficients: &[Rational; 3]) -> String {
     let (linear_sign, linear) = format_signed_coefficient(&coefficients[1]);
     let (constant_sign, constant) = format_signed_coefficient(&coefficients[2]);
     format!("{leading}x²{linear_sign}{linear}x{constant_sign}{constant}")
+}
+
+fn format_cubic_polynomial(coefficients: &[Rational; 4]) -> String {
+    let leading = Number::from_rational(coefficients[0].clone()).to_qalc_string();
+    let (quadratic_sign, quadratic) = format_signed_coefficient(&coefficients[1]);
+    let (linear_sign, linear) = format_signed_coefficient(&coefficients[2]);
+    let (constant_sign, constant) = format_signed_coefficient(&coefficients[3]);
+    format!(
+        "{leading}x³{quadratic_sign}{quadratic}x²{linear_sign}{linear}x{constant_sign}{constant}"
+    )
 }
 
 fn format_signed_coefficient(coefficient: &Rational) -> (&'static str, String) {
@@ -370,6 +394,10 @@ mod tests {
             native_output(SAMPLE_QUADRATIC_FIT_SOURCE).as_deref(),
             Some("0.7797619048x² - 4.720238095x + 9.732142857")
         );
+        assert_eq!(
+            native_output(SAMPLE_CUBIC_FIT_SOURCE).as_deref(),
+            Some("0.1489898990x³ - 1.231601732x² + 2.952741703x + 2.357142857")
+        );
         assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
         assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
         assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
@@ -379,6 +407,7 @@ mod tests {
         assert_eq!(native_output("percentile([1 3 7 5 1 1 1 3]; 50)"), None);
         assert_eq!(native_output("normdist(7; 6)"), None);
         assert_eq!(native_output("quadraticfit([5 3 4 5 6 7 13 25])"), None);
+        assert_eq!(native_output("cubicfit([5 3 4 5 6 7 13 25])"), None);
     }
 
     #[test]
@@ -400,6 +429,7 @@ mod tests {
         .is_none());
         assert!(quadratic_fit_i64(&[]).is_none());
         assert!(quadratic_fit_i64(&[1, 2]).is_none());
+        assert!(cubic_fit_i64(&[1, 2, 3]).is_none());
         assert!(solve_linear_system_i128([[0]], [1]).is_none());
     }
 }
