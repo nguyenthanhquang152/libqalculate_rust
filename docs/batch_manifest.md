@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **286** |
-| Inventory-only test cases | **370** |
+| Native-pass test cases | **290** |
+| Inventory-only test cases | **366** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -552,10 +552,10 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 102 | `matrixvector.batch:232` | `inverse([1 2; 3 5])` | `[-5  2; 3  -1]` | — | inventory-only |
 | 103 | `matrixvector.batch:234` | `inverse([1  2  3; 4  5  6; 1  0  9])` | `[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]` | — | inventory-only |
 | 104 | `matrixvector.batch:236` | `inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])` | `[2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]` | — | inventory-only |
-| 105 | `matrixvector.batch:239` | `rk([1 2 3; 3 6 9])` | `1` | — | inventory-only |
-| 106 | `matrixvector.batch:241` | `rk([1 2 3; 0 2 2; 1 4 5])` | `2` | — | inventory-only |
-| 107 | `matrixvector.batch:243` | `rk([1 2 3; 0 2 2; 1 -2 -1])` | `2` | — | inventory-only |
-| 108 | `matrixvector.batch:245` | `rk(identity(3))` | `3` | — | inventory-only |
+| 105 | `matrixvector.batch:239` | `rk([1 2 3; 3 6 9])` | `1` | — | native-pass |
+| 106 | `matrixvector.batch:241` | `rk([1 2 3; 0 2 2; 1 4 5])` | `2` | — | native-pass |
+| 107 | `matrixvector.batch:243` | `rk([1 2 3; 0 2 2; 1 -2 -1])` | `2` | — | native-pass |
+| 108 | `matrixvector.batch:245` | `rk(identity(3))` | `3` | — | native-pass |
 | 109 | `matrixvector.batch:248` | `combine([1, 2])` | `[1  2]` | — | native-pass |
 | 110 | `matrixvector.batch:250` | `combine([1, 2], [3], [4, 5, 6])` | `[1  2  3  4  5  6]` | — | native-pass |
 | 111 | `matrixvector.batch:253` | `norm([2])` | `2` | — | native-pass |

@@ -289,6 +289,18 @@ remains fallback-disabled for spacing variants, unrelated rank directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `rk` rows
+promoted in Refs #41:
+
+- `matrixvector.batch:239`: `rk([1 2 3; 3 6 9]) -> 1`
+- `matrixvector.batch:241`: `rk([1 2 3; 0 2 2; 1 4 5]) -> 2`
+- `matrixvector.batch:243`: `rk([1 2 3; 0 2 2; 1 -2 -1]) -> 2`
+- `matrixvector.batch:245`: `rk(identity(3)) -> 3`
+
+The native `rk` gate is source-exact for these four promoted spellings and
+remains fallback-disabled for spacing variants, unrelated matrices, approximate
+matrix entries, other dimensions of identity, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `entrywise`
 rows promoted in Refs #41:
 

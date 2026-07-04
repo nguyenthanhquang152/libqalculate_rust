@@ -1807,6 +1807,26 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             "det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])",
             default_settings,
         ),
+        (
+            "matrixvector-rk-2x3",
+            "rk([1 2 3; 3 6 9])",
+            default_settings,
+        ),
+        (
+            "matrixvector-rk-3x3-a",
+            "rk([1 2 3; 0 2 2; 1 4 5])",
+            default_settings,
+        ),
+        (
+            "matrixvector-rk-3x3-b",
+            "rk([1 2 3; 0 2 2; 1 -2 -1])",
+            default_settings,
+        ),
+        (
+            "matrixvector-rk-identity",
+            "rk(identity(3))",
+            default_settings,
+        ),
     ];
 
     assert_native_oracle_cases(&qalc, &defs, cases);
