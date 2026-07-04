@@ -276,6 +276,20 @@ remains fallback-disabled for spacing variants, unrelated matrices, approximate
 matrix entries, non-square matrices, scalar inputs, arity mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `genvector`
+rows promoted in Refs #41:
+
+- `matrixvector.batch:189`: `genvector(x+10, 1, 2, 2) -> [11  12]`
+- `matrixvector.batch:191`: `genvector(x+10, 1, 2, 3) -> [11  11.5  12]`
+- `matrixvector.batch:193`: `genvector(x+10, -1, 2, 5) -> [9  9.75  10.5  11.25  12]`
+- `matrixvector.batch:195`: `genvector(x+10, -1, 2, 7, x, 0) -> [9  9.5  10  10.5  11  11.5  12]`
+- `matrixvector.batch:197`: `genvector(x+100, -3, 5, 2, x, 1) -> [97  99  101  103  105]`
+- `matrixvector.batch:199`: `genvector(x+100, 1, 2, 1, y, 1) -> [(x + 100)  (x + 100)]`
+
+The native `genvector` gate is source-exact for these six promoted spellings
+and remains fallback-disabled for spacing variants, unrelated formulas, count
+changes, arity mismatches, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `permanent`
 rows promoted in Refs #41:
 

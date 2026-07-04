@@ -1828,6 +1828,36 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-genvector-two-steps",
+            "genvector(x+10, 1, 2, 2)",
+            default_settings,
+        ),
+        (
+            "matrixvector-genvector-three-steps",
+            "genvector(x+10, 1, 2, 3)",
+            default_settings,
+        ),
+        (
+            "matrixvector-genvector-five-steps",
+            "genvector(x+10, -1, 2, 5)",
+            default_settings,
+        ),
+        (
+            "matrixvector-genvector-seven-zero-mode",
+            "genvector(x+10, -1, 2, 7, x, 0)",
+            default_settings,
+        ),
+        (
+            "matrixvector-genvector-five-one-mode",
+            "genvector(x+100, -3, 5, 2, x, 1)",
+            default_settings,
+        ),
+        (
+            "matrixvector-genvector-symbolic-y",
+            "genvector(x+100, 1, 2, 1, y, 1)",
+            default_settings,
+        ),
+        (
             "matrixvector-rk-2x3",
             "rk([1 2 3; 3 6 9])",
             default_settings,

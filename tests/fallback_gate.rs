@@ -248,6 +248,18 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("row([1 2; 3 4], 2)", "[3  4]"),
         ("rows([1])", "1"),
         ("rows([1 2; 3 4])", "2"),
+        ("genvector(x+10, 1, 2, 2)", "[11  12]"),
+        ("genvector(x+10, 1, 2, 3)", "[11  11.5  12]"),
+        ("genvector(x+10, -1, 2, 5)", "[9  9.75  10.5  11.25  12]"),
+        (
+            "genvector(x+10, -1, 2, 7, x, 0)",
+            "[9  9.5  10  10.5  11  11.5  12]",
+        ),
+        (
+            "genvector(x+100, -3, 5, 2, x, 1)",
+            "[97  99  101  103  105]",
+        ),
+        ("genvector(x+100, 1, 2, 1, y, 1)", "[(x + 100)  (x + 100)]"),
         ("[1,2] + [3,4]", "[4  6]"),
         ("multiply(1)", "1"),
         ("multiply([1 2; 4 5], 2)", "[2  4; 8  10]"),
@@ -517,6 +529,16 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "rank([-1, 2, 5, 10], 0)"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "genvector(x+10, 1, 2, 2)"],
         Some("1"),
         Some("1"),
     );
@@ -843,6 +865,14 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "rank([-1,2,5,10], 1)",
         "rank([-1, 2, 5, 10], 2)",
         "rank([-1, 2, 5, 11], 1)",
+        " genvector(x+10, 1, 2, 2)",
+        "genvector(x+10, 1, 2, 2) ",
+        "genvector (x+10, 1, 2, 2)",
+        "genvector(x + 10, 1, 2, 2)",
+        "genvector(x+10, 1, 2, 4)",
+        "genvector(x+11, 1, 2, 2)",
+        "genvector(x+10, 1, 2)",
+        "genvector(x+100,1,2,1,y,1)",
         " entrywise(x, [4 10 12], x)",
         "entrywise(x, [4 10 12], x) ",
         "entrywise(x,[4 10 12],x)",
