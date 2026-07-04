@@ -458,15 +458,21 @@ fn cli_native_literal_statistics_succeed_when_fallback_disabled() {
 #[test]
 fn cli_native_csv_load_counts_succeed_when_fallback_disabled() {
     let upstream = upstream_dir();
-    for expression in [
-        "number(load(tests/vectordata.csv))",
-        "number(load(\"tests/vectordata.csv\"))",
-        "number(load(tests/vectordata2.csv))",
-        "number(load(\"tests/vectordata2.csv\"))",
+    for (expression, expected) in [
+        ("number(load(tests/vectordata.csv))", "100"),
+        ("number(load(\"tests/vectordata.csv\"))", "100"),
+        ("number(load(tests/vectordata2.csv))", "100"),
+        ("number(load(\"tests/vectordata2.csv\"))", "100"),
+        ("number(load(tests/vectordata.csv, 1))", "100"),
+        ("number(load(\"tests/vectordata.csv\", 1))", "100"),
+        ("number(load(tests/vectordata.csv, 2))", "0"),
+        ("number(load(\"tests/vectordata.csv\", 2))", "0"),
+        ("number(load(tests/vectordata.csv, 1, \",\"))", "100"),
+        ("number(load(\"tests/vectordata.csv\", 1, \",\"))", "100"),
     ] {
         let (stdout, stderr, exit_code) =
             run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
-        assert_eq!(stdout, "100", "{expression}");
+        assert_eq!(stdout, expected, "{expression}");
         assert!(
             stderr.contains("[qalc-rs-metadata] fallback=native"),
             "{expression}: {stderr}"
@@ -936,7 +942,9 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
 
     for expression in [
         "number(load( tests/vectordata.csv))",
-        "number(load(tests/vectordata.csv, 1))",
+        "number(load(tests/vectordata.csv, 0))",
+        "number(load(tests/vectordata.csv, 2, \";\"))",
+        "number(load(tests/vectordata.csv, 1, \"tab\"))",
         "load(tests/vectordata.csv)",
         "number(load(tests/missing.csv))",
         "mean(load(tests/vectordata2.csv))",
@@ -1339,6 +1347,9 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "0 * infinity",
         "0 / 0",
         "170141183460469231731687303715884105728 + 1",
+        "number(load(tests/vectordata.csv, 2, \";\"))",
+        "number(load(tests/vectordata.csv, 2, \",\", 4))",
+        "number(load(tests/vectordata.csv, 2, 3))",
         "rk([1 2])",
         "rk([1 2 3; 3 6 8])",
         "rk([1.0 2 3; 3 6 9])",
