@@ -55,7 +55,12 @@ pub fn load_csv_numbers(path: impl AsRef<Path>) -> Result<Vec<Number>, CsvLoadEr
         for (column_index, raw) in line.split(',').enumerate() {
             let value = raw.trim();
             if value.is_empty() {
-                continue;
+                return Err(CsvLoadError::new(format!(
+                    "empty numeric CSV value at row {}, column {} in {}",
+                    line_index + 1,
+                    column_index + 1,
+                    path.display()
+                )));
             }
             let number = Number::from_str(value).map_err(|_| {
                 CsvLoadError::new(format!(
@@ -166,9 +171,22 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_csv_fields_with_location() {
+        let path = temp_csv_path("empty_numeric_field");
+        std::fs::write(&path, "1,,2\n").expect("write temp csv");
+
+        let error = load_csv_numbers(&path).expect_err("empty field is rejected");
+
+        std::fs::remove_file(&path).expect("remove temp csv");
+        let message = error.to_string();
+        assert!(message.contains("row 1, column 2"), "{message}");
+        assert!(message.contains("empty numeric CSV value"), "{message}");
+    }
+
+    #[test]
     fn rejects_csv_files_without_numeric_values() {
         let path = temp_csv_path("empty_numeric_file");
-        std::fs::write(&path, " ,,\n,\n").expect("write temp csv");
+        std::fs::write(&path, "").expect("write temp csv");
 
         let error = load_csv_numbers(&path).expect_err("empty numeric file is rejected");
 

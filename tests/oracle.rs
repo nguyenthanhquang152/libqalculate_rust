@@ -155,10 +155,16 @@ struct CapturedOutput {
 /// 2. `../libqalculate/src/qalc` (default build location)
 fn oracle_binary() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("QALCULATE_ORACLE").map(PathBuf::from) {
-        return path.exists().then_some(path);
+        return existing_oracle_path(path);
     }
-    let candidate = Path::new("../libqalculate/src/qalc");
-    candidate.exists().then(|| candidate.to_path_buf())
+    existing_oracle_path(PathBuf::from("../libqalculate/src/qalc"))
+}
+
+fn existing_oracle_path(path: PathBuf) -> Option<PathBuf> {
+    if !path.exists() {
+        return None;
+    }
+    Some(path.canonicalize().unwrap_or(path))
 }
 
 /// Resolve the upstream definitions directory.
