@@ -1,4 +1,5 @@
 use crate::parser::commands::{parse_command, ApproximationMode, SessionCommand, SetSetting};
+use std::path::PathBuf;
 
 const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
 // Native precision evidence is deliberately bounded so CLI settings cannot
@@ -142,6 +143,73 @@ impl NativeSessionSettings {
     }
 }
 
+pub(crate) fn native_output(
+    expr: &str,
+    context: &mut crate::context::CalculatorContext,
+) -> Result<Option<String>, crate::data::CsvLoadError> {
+    let trimmed = expr.trim();
+    if let Some((variable, path)) = parse_load_assignment(trimmed) {
+        let vector = crate::data::load_csv_vector(path)?;
+        context.variables.insert(variable.to_owned(), vector);
+        return Ok(Some(String::new()));
+    }
+
+    if let Some(variable) = parse_delete(trimmed) {
+        context.variables.remove(variable);
+        return Ok(Some(String::new()));
+    }
+
+    crate::statistics::native_context_output(trimmed, context)
+}
+
+fn parse_load_assignment(expr: &str) -> Option<(&str, PathBuf)> {
+    if expr.contains(":=") || expr.contains("=:") {
+        return None;
+    }
+    let (variable, value) = expr.split_once('=')?;
+    if value.contains('=') {
+        return None;
+    }
+    let variable = variable.trim();
+    if !is_session_variable_name(variable) {
+        return None;
+    }
+    Some((variable, parse_load_path(value.trim())?))
+}
+
+fn parse_delete(expr: &str) -> Option<&str> {
+    let rest = expr
+        .trim_start()
+        .strip_prefix("delete ")
+        .or_else(|| expr.trim_start().strip_prefix("DELETE "))?;
+    let variable = rest.trim();
+    is_session_variable_name(variable).then_some(variable)
+}
+
+fn parse_load_path(expr: &str) -> Option<PathBuf> {
+    let inner = expr.strip_prefix("load(")?.strip_suffix(')')?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+
+    let path = inner
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(inner);
+    Some(PathBuf::from(path))
+}
+
+fn is_session_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +268,32 @@ mod tests {
         assert_eq!(
             NativeSessionSettings::from_raw(&["angle unit radians"]),
             None
+        );
+    }
+
+    #[test]
+    fn parses_stats_batch_csv_setup_and_delete_lines() {
+        assert_eq!(
+            parse_load_assignment("libqalculate_tests_vector=load(tests/vectordata.csv)")
+                .map(|(name, path)| (name.to_owned(), path)),
+            Some((
+                "libqalculate_tests_vector".to_owned(),
+                PathBuf::from("tests/vectordata.csv")
+            ))
+        );
+        assert_eq!(
+            parse_load_assignment("libqalculate_tests_vector=load(\"tests/vectordata.csv\")")
+                .map(|(name, path)| (name.to_owned(), path)),
+            Some((
+                "libqalculate_tests_vector".to_owned(),
+                PathBuf::from("tests/vectordata.csv")
+            ))
+        );
+        assert_eq!(parse_load_assignment("1=load(tests/vectordata.csv)"), None);
+        assert_eq!(parse_load_assignment("x=1"), None);
+        assert_eq!(
+            parse_delete("delete libqalculate_tests_vector"),
+            Some("libqalculate_tests_vector")
         );
     }
 }

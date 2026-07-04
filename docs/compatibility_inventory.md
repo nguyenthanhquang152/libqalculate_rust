@@ -14,12 +14,12 @@
 | Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
 | Implementation Files | 41 | 0 | 0 | 5 | 3 | 33 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
-| Batch Test Files | 17 | 3 | 0 | 4 | 0 | 10 | 0 |
-| Batch Test Cases | 656 | 315 | 0 | 0 | 0 | 341 | 0 |
+| Batch Test Files | 17 | 4 | 0 | 3 | 0 | 10 | 0 |
+| Batch Test Cases | 656 | 341 | 0 | 0 | 0 | 315 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, all 130 `matrixvector.batch` rows covering vector/matrix literals, constructors/accessors, arithmetic, shape helpers, and matrix functions, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, direct CSV-backed `mean(load(...))`/`stdev(load(...))`/`min(load(...))`/`max(load(...))`/`total(load(...))`/`range(load(...))`/`median(load(...))`, `geomean(abs(load(...)))`/`harmmean(abs(load(...)))`/`rms(load(...))`/`trimmean(load(...), 10)`/`winsormean(load(...), 10)`/`weighmean(load(...), genvector(2;1;100))`/`stderr(load(...))`/`meandev(load(...))`/`quartile(load(...), 1, 7)`/`percentile(load(...), 25, 7)`/`decile(load(...), 9, 7)`/`iqr(load(...))` proof for `vectordata.csv`, direct paired CSV `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` proof for `vectordata.csv` and `vectordata2.csv`, quoted-path forms for those direct CSV consumers, and selected literal statistics `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` evidence. The batch manifest currently has 315 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader/statistics evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; and literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, all 130 `matrixvector.batch` rows covering vector/matrix literals, constructors/accessors, arithmetic, shape helpers, and matrix functions, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, direct CSV-backed `mean(load(...))`/`stdev(load(...))`/`min(load(...))`/`max(load(...))`/`total(load(...))`/`range(load(...))`/`median(load(...))`, `geomean(abs(load(...)))`/`harmmean(abs(load(...)))`/`rms(load(...))`/`trimmean(load(...), 10)`/`winsormean(load(...), 10)`/`weighmean(load(...), genvector(2;1;100))`/`stderr(load(...))`/`meandev(load(...))`/`quartile(load(...), 1, 7)`/`percentile(load(...), 25, 7)`/`decile(load(...), 9, 7)`/`iqr(load(...))` proof for `vectordata.csv`, direct paired CSV `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` proof for `vectordata.csv` and `vectordata2.csv`, quoted-path forms for those direct CSV consumers, fallback-disabled native session-variable execution for the original `stats.batch` `name=load(...)` setup/delete rows, and selected literal statistics `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` evidence. The batch manifest currently has 341 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader/statistics evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`; and session-variable statistics evidence is recorded by `src/ffi.rs::tests::fallback_disabled_preserves_csv_loaded_statistics_session_variables`.
 
 ---
 
@@ -124,11 +124,11 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | 2 | `BuiltinFunctions-calculus.cc` | Calculus functions (diff, integrate, limit) | `unstarted` |
 | 3 | `BuiltinFunctions-datetime.cc` | Date/time functions | `unstarted` |
 | 4 | `BuiltinFunctions-explog.cc` | Exponential and logarithmic functions | `unstarted` |
-| 5 | `BuiltinFunctions-matrixvector.cc` | Matrix/vector functions | `scaffold` via `src/matrix.rs` and `src/data.rs`; all `matrixvector.batch` vector/matrix function rows are native-pass, including `vector`, `matrix`, `matrix2vector`, `columns`, `dimension`, `rows`, `row`, `column`, `element`, `elements`, `multiply`, `adj`, `cofactor`, `combine`, `cross`, `det`, `dot` function/operator rows, `entrywise`, `hadamard`, `horzcat`, `identity`, `magnitude`, `norm`, `part`, `permanent`, collection `pow`, `rank`, `rk`, `rref`, `slice`, `sort`, `transpose`, `vertcat`, `divide`, and `rdivide`; `load(...)` has a narrow CSV count proof for `vectordata.csv`/`vectordata2.csv`, and `src/statistics.rs` has direct one-vector and paired-vector statistics consumption for those fixtures including quoted-path forms, but session-variable CSV consumption is still incomplete |
+| 5 | `BuiltinFunctions-matrixvector.cc` | Matrix/vector functions | `scaffold` via `src/matrix.rs` and `src/data.rs`; all `matrixvector.batch` vector/matrix function rows are native-pass, including `vector`, `matrix`, `matrix2vector`, `columns`, `dimension`, `rows`, `row`, `column`, `element`, `elements`, `multiply`, `adj`, `cofactor`, `combine`, `cross`, `det`, `dot` function/operator rows, `entrywise`, `hadamard`, `horzcat`, `identity`, `magnitude`, `norm`, `part`, `permanent`, collection `pow`, `rank`, `rk`, `rref`, `slice`, `sort`, `transpose`, `vertcat`, `divide`, and `rdivide`; `load(...)` has a narrow CSV count proof for `vectordata.csv`/`vectordata2.csv`, direct and session-variable CSV statistics consumption for those fixtures, and quoted-path forms for the direct consumers |
 | 6 | `BuiltinFunctions-number.cc` | Number theory functions | `unstarted` |
 | 7 | `BuiltinFunctions-combinatorics.cc` | Combinatorics functions | `unstarted` |
 | 8 | `BuiltinFunctions-logical.cc` | Logical/comparison functions | `unstarted` |
-| 9 | `BuiltinFunctions-statistics.cc` | Statistical functions | `scaffold` via `src/statistics.rs`; selected literal `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` rows are native-pass, with additional direct CSV-backed one-vector statistics over `load(tests/vectordata.csv)` including `mean`, `stdev`, `min`, `max`, `total`, `range`, `median`, `geomean(abs(...))`, `harmmean(abs(...))`, `rms`, `trimmean`, `winsormean`, `weighmean`, `stderr`, `meandev`, `quartile`, `percentile`, `decile`, and `iqr`, and direct paired `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` over both upstream vector fixtures, including quoted-path forms |
+| 9 | `BuiltinFunctions-statistics.cc` | Statistical functions | `scaffold` via `src/statistics.rs`; all `stats.batch` rows are native-pass, including selected literal `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median`, direct CSV-backed one-vector statistics over `load(tests/vectordata.csv)`, session-variable one-vector statistics over `libqalculate_tests_vector`, and paired `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` over both upstream vector fixtures |
 | 10 | `BuiltinFunctions-trigonometry.cc` | Trigonometric functions | `unstarted` |
 | 11 | `BuiltinFunctions-special.cc` | Special functions (gamma, beta, zeta, erf, etc.) | `unstarted` |
 | 12 | `BuiltinFunctions-util.cc` | Utility functions (string, base, etc.) | `unstarted` |
@@ -245,7 +245,7 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 | 11 | `percentages.batch` | 26 | 0 | — | `unstarted` |
 | 12 | `polynomial.batch` | 49 | 4 | — | `unstarted` |
 | 13 | `solver.batch` | 25 | 4 | — | `unstarted` |
-| 14 | `stats.batch` | 39 | 0 | `vectordata.csv`, `vectordata2.csv` | `scaffold`; selected literal `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` rows are native-pass; direct CSV-backed one-vector statistics over `load(tests/vectordata.csv)` and direct paired `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` over both upstream vector fixtures are oracle-proven, including quoted-path forms, but the session-variable `stats.batch` rows remain inventory-only |
+| 14 | `stats.batch` | 39 | 0 | `vectordata.csv`, `vectordata2.csv` | `native-pass` |
 | 15 | `strings.batch` | 24 | 1 | — | `unstarted` |
 | 16 | `units.batch` | 13 | 0 | — | `unstarted` |
 | 17 | `variables.batch` | 11 | 0 | — | `unstarted` |
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 315 |
-| Inventory-only batch cases | 341 |
+| Native-pass batch cases | 341 |
+| Inventory-only batch cases | 315 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -285,20 +285,21 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 
 `src/data.rs` now loads these upstream CSV assets as numeric vectors and has
 fallback-disabled oracle coverage for `number(load(tests/vectordata.csv))` and
-`number(load(tests/vectordata2.csv))`, including quoted-path forms, when both
-Rust and upstream `qalc` run from the upstream checkout. `src/statistics.rs`
-also has fallback-disabled oracle coverage for direct one-vector consumers over
-`load(tests/vectordata.csv)`: `mean`, `stdev`, `min`, `max`, `total`,
-`range`, `median`, `geomean(abs(...))`, `harmmean(abs(...))`, `rms`,
-`trimmean(..., 10)`, `winsormean(..., 10)`, `weighmean(...,
-genvector(2;1;100))`, `stderr`, `meandev`, `quartile(..., 1, 7)`,
-`percentile(..., 25, 7)`, `decile(..., 9, 7)`, and `iqr`, including
+`number(load(tests/vectordata2.csv))`, including quoted-path forms. It also
+resolves the upstream `tests/*.csv` fixture paths from the Rust crate root.
+`src/statistics.rs` has fallback-disabled oracle coverage for direct
+one-vector consumers over `load(tests/vectordata.csv)`: `mean`, `stdev`,
+`min`, `max`, `total`, `range`, `median`, `geomean(abs(...))`,
+`harmmean(abs(...))`, `rms`, `trimmean(..., 10)`, `winsormean(..., 10)`,
+`weighmean(..., genvector(2;1;100))`, `stderr`, `meandev`, `quartile(..., 1,
+7)`, `percentile(..., 25, 7)`, `decile(..., 9, 7)`, and `iqr`, including
 quoted-path forms, plus direct `pearson`, `spearman`, `covar`, `poolvar`,
 `ttest`, and `pttest` consumers over `load(tests/vectordata.csv)` and
-`load(tests/vectordata2.csv)`, including quoted-path forms, under the same
-working-directory rules. The `stats.batch` rows that depend on loaded session
-variables remain inventory-only until native session variable consumption is
-proven.
+`load(tests/vectordata2.csv)`, including quoted-path forms. The FFI wrapper
+now preserves fallback-disabled native session variables for the original
+`stats.batch` setup spelling, so `libqalculate_tests_vector=load(...)`,
+`libqalculate_tests_vector2=load(...)`, the variable-backed one-vector and
+paired statistics rows, and cleanup via `delete ...` are native-pass.
 
 ---
 
@@ -535,18 +536,18 @@ status_summary:
     unstarted: 9
     out_of_scope: 0
   batch_tests:
-    native_pass: 2
+    native_pass: 4
     tooling_pass: 0
-    scaffold: 5
+    scaffold: 3
     fallback_only: 0
     unstarted: 10
     out_of_scope: 0
   batch_test_cases:
-    native_pass: 315
+    native_pass: 341
     tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 341
+    unstarted: 315
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2

@@ -50,6 +50,7 @@ pub(crate) mod sys {
 /// Safe wrapper around the C++ `Calculator` class.
 pub struct Calculator {
     inner: UniquePtr<sys::Calculator>,
+    native_context: crate::context::CalculatorContext,
     _phantom: PhantomData<*mut ()>,
 }
 
@@ -131,6 +132,7 @@ impl Calculator {
         let inner = sys::new_calculator();
         Self {
             inner,
+            native_context: crate::context::CalculatorContext::default(),
             _phantom: PhantomData,
         }
     }
@@ -289,6 +291,14 @@ impl Calculator {
                     });
                 }
                 if let Some(output) = native_statistics_output(profile, expr)? {
+                    return Ok(CalculationOutput {
+                        output,
+                        fallback_state: FallbackState::Native,
+                    });
+                }
+                if let Some(output) =
+                    native_session_output(profile, expr, &mut self.native_context)?
+                {
                     return Ok(CalculationOutput {
                         output,
                         fallback_state: FallbackState::Native,
@@ -548,6 +558,23 @@ fn native_statistics_output(
     expr: &str,
 ) -> Result<Option<String>, CalculatorError> {
     let Some(output) = crate::statistics::native_output(expr)
+        .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(match profile {
+        PrintProfile::Api => output,
+        PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+    }))
+}
+
+fn native_session_output(
+    profile: PrintProfile,
+    expr: &str,
+    context: &mut crate::context::CalculatorContext,
+) -> Result<Option<String>, CalculatorError> {
+    let Some(output) = crate::session::native_output(expr, context)
         .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
     else {
         return Ok(None);
@@ -1403,5 +1430,137 @@ mod tests {
             .unwrap();
         assert_eq!(uncertainty_power.output, "9.18958684±44.11001683");
         assert_eq!(uncertainty_power.fallback_state, FallbackState::Native);
+    }
+
+    #[test]
+    fn fallback_disabled_preserves_csv_loaded_statistics_session_variables() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::set_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        calc.load_global_definitions();
+
+        let assignment = calc
+            .calculate_and_print_qalc_with_fallback_state(
+                "libqalculate_tests_vector=load(tests/vectordata.csv)",
+                1000,
+            )
+            .unwrap();
+        assert_eq!(assignment.fallback_state, FallbackState::Native);
+
+        for (expression, expected) in [
+            ("mean(libqalculate_tests_vector)", "6.530919283"),
+            ("geomean(abs(libqalculate_tests_vector))", "14.25624271"),
+            ("harmmean(abs(libqalculate_tests_vector))", "5.691924037"),
+            ("rms(libqalculate_tests_vector)", "24.22585458"),
+            ("trimmean(libqalculate_tests_vector, 10)", "6.788959652"),
+            ("winsormean(libqalculate_tests_vector, 10)", "6.774860902"),
+            (
+                "weighmean(libqalculate_tests_vector, genvector(2;1;100))",
+                "6.530919283",
+            ),
+            ("stdev(libqalculate_tests_vector)", "23.44646004"),
+            ("stderr(libqalculate_tests_vector)", "2.344646004"),
+            ("meandev(libqalculate_tests_vector)", "19.20169382"),
+            ("number(libqalculate_tests_vector)", "100"),
+            ("quartile(libqalculate_tests_vector, 1, 7)", "−10.48274166"),
+            (
+                "percentile(libqalculate_tests_vector, 25, 7)",
+                "−10.48274166",
+            ),
+            ("decile(libqalculate_tests_vector, 9, 7)", "38.27474287"),
+            ("min(libqalculate_tests_vector)", "−43.38345286"),
+            ("max(libqalculate_tests_vector)", "54.40816396"),
+            ("range(libqalculate_tests_vector)", "97.79161682"),
+            ("median(libqalculate_tests_vector)", "8.084203925"),
+            ("total(libqalculate_tests_vector)", "653.0919283"),
+            ("iqr(libqalculate_tests_vector)", "33.42899060"),
+        ] {
+            let result = calc
+                .calculate_and_print_qalc_with_fallback_state(expression, 1000)
+                .unwrap();
+            assert_eq!(result.output, expected, "{expression}");
+            assert_eq!(result.fallback_state, FallbackState::Native);
+        }
+
+        let assignment = calc
+            .calculate_and_print_qalc_with_fallback_state(
+                "libqalculate_tests_vector2=load(tests/vectordata2.csv)",
+                1000,
+            )
+            .unwrap();
+        assert_eq!(assignment.fallback_state, FallbackState::Native);
+
+        for (expression, expected) in [
+            (
+                "ttest(libqalculate_tests_vector, libqalculate_tests_vector2)",
+                "0.3493127334",
+            ),
+            (
+                "pttest(libqalculate_tests_vector, libqalculate_tests_vector2)",
+                "1.583214005",
+            ),
+            (
+                "pearson(libqalculate_tests_vector, libqalculate_tests_vector2)",
+                "0.9519790480",
+            ),
+            (
+                "spearman(libqalculate_tests_vector, libqalculate_tests_vector2)",
+                "0.9742094209",
+            ),
+            (
+                "covar(libqalculate_tests_vector, libqalculate_tests_vector2)",
+                "499.1760404",
+            ),
+            (
+                "poolvar(libqalculate_tests_vector, libqalculate_tests_vector2)",
+                "530.0195143",
+            ),
+        ] {
+            let result = calc
+                .calculate_and_print_qalc_with_fallback_state(expression, 1000)
+                .unwrap();
+            assert_eq!(result.output, expected, "{expression}");
+            assert_eq!(result.fallback_state, FallbackState::Native);
+        }
+
+        let deleted = calc
+            .calculate_and_print_qalc_with_fallback_state("delete libqalculate_tests_vector", 1000)
+            .unwrap();
+        assert_eq!(deleted.output, "");
+        assert_eq!(deleted.fallback_state, FallbackState::Native);
+        let deleted = calc
+            .calculate_and_print_qalc_with_fallback_state("delete libqalculate_tests_vector2", 1000)
+            .unwrap();
+        assert_eq!(deleted.output, "");
+        assert_eq!(deleted.fallback_state, FallbackState::Native);
+
+        let err = calc
+            .calculate_and_print_qalc_with_fallback_state("mean(libqalculate_tests_vector)", 1000)
+            .unwrap_err();
+        assert_eq!(err.fallback_state(), FallbackState::Disabled);
+    }
+
+    #[test]
+    fn fallback_disabled_session_statistics_do_not_evaluate_unproven_literal_vectors_or_direct_loads(
+    ) {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::set_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        calc.load_global_definitions();
+
+        let err = calc
+            .calculate_and_print_qalc_with_fallback_state("mean([1, 2])", 1000)
+            .unwrap_err();
+        assert_eq!(err.fallback_state(), FallbackState::Disabled);
+
+        let scaffold = calc
+            .calculate_and_print_qalc_with_fallback_state("mean(load(\"tests/missing.csv\"))", 1000)
+            .unwrap();
+        assert_eq!(scaffold.output, "mean(load(\"tests/missing.csv\"))");
+        assert_eq!(scaffold.fallback_state, FallbackState::Native);
     }
 }
