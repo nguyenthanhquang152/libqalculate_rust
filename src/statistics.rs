@@ -15,6 +15,7 @@ const SAMPLE_QUARTILE_TYPE8_SOURCE: &str = "quartile((5; 6; 4; 2; 3; 7); 1; 8)";
 const SAMPLE_PERCENTILE_TYPE8_SOURCE: &str = "percentile([5 6 4 2 3 7]; 25; 8)";
 const SAMPLE_MODE_SOURCE: &str = "mode([1 3 7 5 1 1 1 3])";
 const SAMPLE_MEDIAN_SOURCE: &str = "median([1 3 7 5 1 1 1 3])";
+const SAMPLE_NORMDIST_SOURCE: &str = "normdist(7; 5)";
 
 pub(crate) fn native_output(expr: &str) -> Option<String> {
     match expr {
@@ -31,6 +32,10 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
         }
         SAMPLE_MEDIAN_SOURCE => {
             median_i64(&SAMPLE_MODE_MEDIAN_VALUES).map(|value| value.to_qalc_string())
+        }
+        SAMPLE_NORMDIST_SOURCE => {
+            normal_pdf(&Number::from_i32(7), &Number::from_i32(5), &Number::one())
+                .map(|value| value.to_qalc_string())
         }
         _ => None,
     }
@@ -152,6 +157,20 @@ fn median_i64(values: &[i64]) -> Option<Number> {
     Some(Number::from_rational(Rational::new(lower + upper, 2)))
 }
 
+fn normal_pdf(x: &Number, mean: &Number, sigma: &Number) -> Option<Number> {
+    if sigma.is_zero() || sigma.is_negative() {
+        return None;
+    }
+
+    let z = x.sub(mean).div(sigma);
+    let exponent = z
+        .mul(&z)
+        .mul(&Number::from_rational(Rational::new(-1, 2)))
+        .exp();
+    let denominator = sigma.mul(&Number::from_i32(2).mul(&Number::pi()).sqrt());
+    Some(exponent.div(&denominator))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,6 +248,10 @@ mod tests {
         );
         assert_eq!(native_output(SAMPLE_MODE_SOURCE).as_deref(), Some("1"));
         assert_eq!(native_output(SAMPLE_MEDIAN_SOURCE).as_deref(), Some("2"));
+        assert_eq!(
+            native_output(SAMPLE_NORMDIST_SOURCE).as_deref(),
+            Some("0.05399096651")
+        );
         assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
         assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
         assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
@@ -236,6 +259,7 @@ mod tests {
         assert_eq!(native_output("mode([1 3 7 5 1 1 1 4])"), None);
         assert_eq!(native_output("median([1 3 7 5 1 1 1 4])"), None);
         assert_eq!(native_output("percentile([1 3 7 5 1 1 1 3]; 50)"), None);
+        assert_eq!(native_output("normdist(7; 6)"), None);
     }
 
     #[test]
@@ -248,5 +272,12 @@ mod tests {
         assert!(type8_quantile_i64(&SAMPLE_STATS_VALUES, 5, 4).is_none());
         assert!(mode_i64(&[]).is_none());
         assert!(median_i64(&[]).is_none());
+        assert!(normal_pdf(&Number::from_i32(7), &Number::from_i32(5), &Number::new()).is_none());
+        assert!(normal_pdf(
+            &Number::from_i32(7),
+            &Number::from_i32(5),
+            &Number::from_i32(-1)
+        )
+        .is_none());
     }
 }
