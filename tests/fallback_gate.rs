@@ -423,6 +423,22 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
 }
 
 #[test]
+fn cli_native_literal_statistics_succeed_when_fallback_disabled() {
+    for (expression, expected) in [
+        ("mean(5; 6; 4; 2; 3; 7)", "4.5"),
+        ("stdev(5; 6; 4; 2; 3; 7)", "1.870828693"),
+    ] {
+        let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
+        assert_eq!(stdout, expected, "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression}");
+    }
+}
+
+#[test]
 fn cli_native_csv_load_counts_succeed_when_fallback_disabled() {
     let upstream = upstream_dir();
     for expression in [
@@ -634,6 +650,34 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "mean(5; 6; 4; 2; 3; 7)"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    for expression in [
+        "mean(5; 6; 4; 2; 3)",
+        "mean(5, 6, 4, 2, 3, 7)",
+        "stdev(5; 6; 4; 2; 3; 8)",
+    ] {
+        let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
+        assert!(stdout.is_empty(), "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=disabled"),
+            "{expression}: {stderr}"
+        );
+        assert!(
+            stderr.contains("error: calculation failed: C++ FFI fallback is disabled"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 2, "{expression}");
+    }
 
     let upstream = upstream_dir();
     let (stdout, stderr, exit_code) = run_qalc_rs_args_in_dir(

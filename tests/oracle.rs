@@ -1987,6 +1987,37 @@ fn focused_issue44_csv_load_oracle_cases() {
 }
 
 #[test]
+fn focused_issue43_literal_statistics_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue43_literal_statistics_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    for (case_id, expression) in [
+        ("stats-literal-mean", "mean(5; 6; 4; 2; 3; 7)"),
+        ("stats-literal-stdev", "stdev(5; 6; 4; 2; 3; 7)"),
+    ] {
+        let settings = &[][..];
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, settings);
+        assert_eq!(cpp_out.exit_code, 0, "{case_id}: {}", cpp_out.stderr);
+
+        let rust_out = run_rust_expression(expression, settings, &defs, true, true);
+        assert_eq!(rust_out.exit_code, 0, "{case_id}: {}", rust_out.stderr);
+        assert_eq!(
+            rust_out.fallback_state,
+            Some(FallbackState::Native),
+            "{case_id}"
+        );
+        assert_eq!(rust_out.stdout, cpp_out.stdout, "{case_id}");
+        assert_eq!(rust_out.stderr, cpp_out.stderr, "{case_id}");
+    }
+}
+
+#[test]
 fn focused_issue15_uncertainty_input_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
         eprintln!(
