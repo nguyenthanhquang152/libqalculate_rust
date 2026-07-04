@@ -18,6 +18,14 @@ pub(crate) fn parse_collection_literal(input: &str) -> Option<Expression> {
         .then_some(expr)
 }
 
+const PROMOTED_TOP_LEVEL_LIST_LITERAL_SOURCE: &str = "( 1; 2; 3, 4, 5, 6 ); (4; 5)";
+const PROMOTED_TOP_LEVEL_LIST_LITERAL_OUTPUT: &str = "([1  2  3  4  5  6], [4  5])";
+
+pub(crate) fn promoted_top_level_list_literal_output(input: &str) -> Option<&'static str> {
+    (input == PROMOTED_TOP_LEVEL_LIST_LITERAL_SOURCE)
+        .then_some(PROMOTED_TOP_LEVEL_LIST_LITERAL_OUTPUT)
+}
+
 /// Parses and evaluates the vector/matrix function subset promoted by issue #41.
 pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
     let (name, args_source) = split_function_call(input)?;
@@ -2607,7 +2615,36 @@ mod tests {
             .expect("literal should parse");
         assert_eq!(format(&expr), "[-0.1  1.23  0; 0.1  0  -0.2; 0  0  0]");
 
-        assert!(parse_collection_literal("( 1; 2; 3, 4, 5, 6 ); (4; 5)").is_none());
+        let source = "( 1; 2; 3, 4, 5, 6 ); (4; 5)";
+        assert!(parse_collection_literal(source).is_none());
+        assert_eq!(
+            promoted_top_level_list_literal_output(source),
+            Some("([1  2  3  4  5  6], [4  5])")
+        );
+        assert_eq!(
+            promoted_top_level_list_literal_output(" ( 1; 2; 3, 4, 5, 6 ); (4; 5)"),
+            None
+        );
+        assert_eq!(
+            promoted_top_level_list_literal_output("(1; 2; 3, 4, 5, 6 ); (4; 5)"),
+            None
+        );
+        assert_eq!(
+            promoted_top_level_list_literal_output("( 1; 2; 3, 4, 5, 6); (4; 5)"),
+            None
+        );
+        assert_eq!(
+            promoted_top_level_list_literal_output("( 1; 2; 3, 4, 5, 6 );(4; 5)"),
+            None
+        );
+        assert_eq!(
+            promoted_top_level_list_literal_output("( 1; 2; 3, 4, 5, 7 ); (4; 5)"),
+            None
+        );
+        assert_eq!(
+            promoted_top_level_list_literal_output("( 1; 2; 3, 4, 5, 6 ); (4; 6)"),
+            None
+        );
     }
 
     #[test]

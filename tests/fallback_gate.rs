@@ -195,6 +195,10 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("((1; 2; 3); (4; 5; 6))", "[1  2  3; 4  5  6]"),
         ("[[1, 2], [4, 5]]", "[1  2; 4  5]"),
         (
+            "( 1; 2; 3, 4, 5, 6 ); (4; 5)",
+            "([1  2  3  4  5  6], [4  5])",
+        ),
+        (
             "[-0.1, 1.23, ], [.1, , -.2], [,,]",
             "[−0.1  1.23  0; 0.1  0  −0.2; 0  0  0]",
         ),
@@ -538,6 +542,21 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert_eq!(exit_code, 2);
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &[
+            "-set",
+            "precision 128",
+            "--",
+            "( 1; 2; 3, 4, 5, 6 ); (4; 5)",
+        ],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "genvector(x+10, 1, 2, 2)"],
         Some("1"),
         Some("1"),
@@ -692,6 +711,12 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "[2; 4]./[1 2]",
         "[1 2]times 3",
         "[1 2] times3",
+        " ( 1; 2; 3, 4, 5, 6 ); (4; 5)",
+        "(1; 2; 3, 4, 5, 6 ); (4; 5)",
+        "( 1; 2; 3, 4, 5, 6); (4; 5)",
+        "( 1; 2; 3, 4, 5, 6 );(4; 5)",
+        "( 1; 2; 3, 4, 5, 7 ); (4; 5)",
+        "( 1; 2; 3, 4, 5, 6 ); (4; 6)",
         "columns([[1], [2,3]])",
         "multiply([1 2])",
         "multiply(1, 2)",
