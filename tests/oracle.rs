@@ -1960,6 +1960,30 @@ fn focused_issue44_csv_load_oracle_cases() {
             "number(load(\"tests/vectordata.csv\"))",
         ),
         (
+            "csv-load-vectordata-count-first-row",
+            "number(load(tests/vectordata.csv, 1))",
+        ),
+        (
+            "csv-load-vectordata-count-first-row-quoted",
+            "number(load(\"tests/vectordata.csv\", 1))",
+        ),
+        (
+            "csv-load-vectordata-count-start-past-fixture-row",
+            "number(load(tests/vectordata.csv, 2))",
+        ),
+        (
+            "csv-load-vectordata-count-start-past-fixture-row-quoted",
+            "number(load(\"tests/vectordata.csv\", 2))",
+        ),
+        (
+            "csv-load-vectordata-count-explicit-comma",
+            "number(load(tests/vectordata.csv, 1, \",\"))",
+        ),
+        (
+            "csv-load-vectordata-count-explicit-comma-quoted",
+            "number(load(\"tests/vectordata.csv\", 1, \",\"))",
+        ),
+        (
             "csv-load-vectordata2-count",
             "number(load(tests/vectordata2.csv))",
         ),
