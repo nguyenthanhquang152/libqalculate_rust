@@ -432,6 +432,10 @@ fn cli_native_literal_statistics_succeed_when_fallback_disabled() {
         ("mode([1 3 7 5 1 1 1 3])", "1"),
         ("median([1 3 7 5 1 1 1 3])", "2"),
         ("normdist(7; 5)", "0.05399096651"),
+        (
+            "quadraticfit([5 3 4 5 6 7 13 24])",
+            "0.7797619048x² − 4.720238095x + 9.732142857",
+        ),
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
         assert_eq!(stdout, expected, "{expression}");
@@ -676,6 +680,7 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "median([1 3 7 5 1 1 1 4])",
         "percentile([1 3 7 5 1 1 1 3]; 50)",
         "normdist(7; 6)",
+        "quadraticfit([5 3 4 5 6 7 13 25])",
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
         assert!(stdout.is_empty(), "{expression}");
