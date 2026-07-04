@@ -293,6 +293,16 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
         ("det([1 2; 4 5])", "−3"),
         ("det([1 2 3; 4 5 6; 1 0 9])", "−30"),
         ("det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])", "−412"),
+        ("((1; 2); (3; 4))^-1", "[−2  1; 1.5  −0.5]"),
+        ("inverse([1 2; 3 5])", "[−5  2; 3  −1]"),
+        (
+            "inverse([1  2  3; 4  5  6; 1  0  9])",
+            "[−1.5  0.6  0.1; 1  −0.2  −0.2; 0.1666666667  −0.06666666667  0.1]",
+        ),
+        (
+            "inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])",
+            "[2  0.125  −0.625  0; −6  −0.75  1.75  1; 0  −0.25  0.25  0; 5  0.875  −1.375  −1]",
+        ),
         ("part([1], 1, 1, 1, 1)", "1"),
         ("part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)", "5"),
         (
@@ -576,6 +586,26 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert_eq!(exit_code, 2);
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "inverse([1 2; 3 5])"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
+        &["-set", "precision 128", "--", "((1; 2); (3; 4))^-1"],
+        Some("1"),
+        Some("1"),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "adj([1 2; 4 5])"],
         Some("1"),
         Some("1"),
@@ -762,6 +792,20 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "det ([[1]])",
         "det( [[1]])",
         "det([[1]] )",
+        " ((1; 2); (3; 4))^-1",
+        "((1; 2); (3; 4))^-1 ",
+        "((1; 2); (3; 4)) ^ -1",
+        "((1; 2); (3; 5))^-1",
+        "((1.0; 2); (3; 4))^-1",
+        " inverse([1 2; 3 5])",
+        "inverse([1 2; 3 5]) ",
+        "inverse ([1 2; 3 5])",
+        "inverse([1 2; 3 4])",
+        "inverse([1.0 2; 3 5])",
+        "inverse([1 2])",
+        "inverse(1)",
+        "inverse([1 2; 3 5], 1)",
+        "inverse([1 2 3; 4 5 6; 1 0 9])",
         "part([1], 1.0, 1, 1, 1)",
         "part([1], 1, 1, 1)",
         "part([1, 2], 1, 1, 1, 1)",

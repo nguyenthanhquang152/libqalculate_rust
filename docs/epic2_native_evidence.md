@@ -263,6 +263,19 @@ remains fallback-disabled for non-square matrices, scalar inputs, approximate
 matrix entries, arity mismatches, spacing variants, and explicit session
 settings.
 
+The same focused oracle test also records the `matrixvector.batch` inverse rows
+promoted in Refs #41:
+
+- `matrixvector.batch:230`: `((1; 2); (3; 4))^-1 -> [-2  1; 1.5  -0.5]`
+- `matrixvector.batch:232`: `inverse([1 2; 3 5]) -> [-5  2; 3  -1]`
+- `matrixvector.batch:234`: `inverse([1  2  3; 4  5  6; 1  0  9]) -> [-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]`
+- `matrixvector.batch:236`: `inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2]) -> [2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]`
+
+The native inverse gate is source-exact for these four promoted spellings and
+remains fallback-disabled for spacing variants, unrelated matrices, approximate
+matrix entries, non-square matrices, scalar inputs, arity mismatches, and
+explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `permanent`
 rows promoted in Refs #41:
 

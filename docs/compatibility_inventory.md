@@ -15,11 +15,11 @@
 | Implementation Files | 41 | 0 | 0 | 4 | 3 | 34 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
 | Batch Test Files | 17 | 1 | 0 | 4 | 0 | 12 | 0 |
-| Batch Test Cases | 656 | 291 | 0 | 0 | 0 | 365 | 0 |
+| Batch Test Cases | 656 | 295 | 0 | 0 | 0 | 361 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, and a focused vector/matrix literal, constructor/accessor, shape/accessor, and arithmetic subset including selected `adj`, `cofactor`, `combine`, `cross`, `det`, `dot`, dot-operator, `entrywise`, `hadamard`, `horzcat`, `identity`, `magnitude`, `norm`, `part`, `permanent`, `pow`/entrywise power, `rank`, `rk`, `rref`, `slice`, `sort`, `transpose`, and `vertcat` rows. The batch manifest currently has 291 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, and a focused vector/matrix literal, constructor/accessor, shape/accessor, and arithmetic subset including selected `adj`, `cofactor`, `combine`, `cross`, `det`, `dot`, dot-operator, `entrywise`, `hadamard`, `horzcat`, `identity`, `inverse`, `magnitude`, `norm`, `part`, `permanent`, `pow`/entrywise power, `rank`, `rk`, `rref`, `slice`, `sort`, `transpose`, and `vertcat` rows. The batch manifest currently has 295 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`.
 
 ---
 
@@ -106,7 +106,7 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | 9 | `MathStructure-integrate.cc` | Symbolic integration | `unstarted` |
 | 10 | `MathStructure-isolatex.cc` | Variable isolation / solving | `unstarted` |
 | 11 | `MathStructure-limit.cc` | Limit computation | `unstarted` |
-| 12 | `MathStructure-matrixvector.cc` | Matrix and vector operations | `scaffold` via `src/matrix.rs`; native-pass coverage is limited to vector/matrix literal construction, selected identity construction, selected shape/accessors, selected `adj`, `cofactor`, `combine`, `cross`, `det`, `dot` function/operator rows, selected `entrywise`, `horzcat`, `vertcat`, magnitude, `norm`, `part`, `permanent`, `pow`/entrywise power, `rank`, `rk`, `rref`, `slice`, `sort`, and `transpose` rows, scalar scaling/subtraction, selected multiply/divide arithmetic, selected `hadamard` entrywise multiplication rows, row/column elementwise broadcasting, one rectangular matrix multiplication row, same-shape elementwise multiplication rows, and selected entrywise power broadcasting rows |
+| 12 | `MathStructure-matrixvector.cc` | Matrix and vector operations | `scaffold` via `src/matrix.rs`; native-pass coverage is limited to vector/matrix literal construction, selected identity construction, selected shape/accessors, selected `adj`, `cofactor`, `combine`, `cross`, `det`, `dot` function/operator rows, selected `entrywise`, `horzcat`, `vertcat`, `inverse`, magnitude, `norm`, `part`, `permanent`, `pow`/entrywise power, `rank`, `rk`, `rref`, `slice`, `sort`, and `transpose` rows, scalar scaling/subtraction, selected multiply/divide arithmetic, selected `hadamard` entrywise multiplication rows, row/column elementwise broadcasting, one rectangular matrix multiplication row, same-shape elementwise multiplication rows, and selected entrywise power broadcasting rows |
 | 13 | `MathStructure-polynomial.cc` | Polynomial arithmetic | `unstarted` |
 | 14 | `MathStructure-print.cc` | Expression formatting/printing | `scaffold` via `src/text.rs`; rectangular vector/matrix output is covered for selected native-pass rows |
 
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 291 |
-| Inventory-only batch cases | 365 |
+| Native-pass batch cases | 295 |
+| Inventory-only batch cases | 361 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -525,11 +525,11 @@ status_summary:
     unstarted: 12
     out_of_scope: 0
   batch_test_cases:
-    native_pass: 291
+    native_pass: 295
     tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 365
+    unstarted: 361
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2

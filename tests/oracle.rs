@@ -1808,6 +1808,26 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-inverse-power-2x2",
+            "((1; 2); (3; 4))^-1",
+            default_settings,
+        ),
+        (
+            "matrixvector-inverse-2x2",
+            "inverse([1 2; 3 5])",
+            default_settings,
+        ),
+        (
+            "matrixvector-inverse-3x3",
+            "inverse([1  2  3; 4  5  6; 1  0  9])",
+            default_settings,
+        ),
+        (
+            "matrixvector-inverse-4x4",
+            "inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])",
+            default_settings,
+        ),
+        (
             "matrixvector-rk-2x3",
             "rk([1 2 3; 3 6 9])",
             default_settings,
