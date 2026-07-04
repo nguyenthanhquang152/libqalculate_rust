@@ -1245,6 +1245,11 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             default_settings,
         ),
         (
+            "matrixvector-literal-top-level-list",
+            "( 1; 2; 3, 4, 5, 6 ); (4; 5)",
+            default_settings,
+        ),
+        (
             "matrixvector-literal-decimal-matrix",
             "[-0.1, 1.23, ], [.1, , -.2], [,,]",
             default_settings,

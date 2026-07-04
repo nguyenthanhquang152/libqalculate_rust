@@ -117,7 +117,16 @@ focused expressions with fallback disabled:
 
 `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases` adds
 focused matrix/vector evidence outside the Epic 2 numeric row count. The
-`matrixvector.batch` magnitude rows promoted in Refs #41 are:
+`matrixvector.batch` top-level list literal row promoted in Refs #41 is:
+
+- `matrixvector.batch:19`: `( 1; 2; 3, 4, 5, 6 ); (4; 5) -> ([1  2  3  4  5  6], [4  5])`
+
+The native top-level list output gate is source-exact for this promoted
+spelling and remains fallback-disabled for leading/trailing spacing changes,
+compact separator variants, value changes, and explicit session settings.
+
+The same focused oracle test also records the `matrixvector.batch` magnitude
+rows promoted in Refs #41:
 
 - `matrixvector.batch:214`: `magnitude(-2) -> 2`
 - `matrixvector.batch:216`: `magnitude([-2]) -> 2`
