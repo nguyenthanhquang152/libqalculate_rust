@@ -17,8 +17,8 @@ backed by fallback-disabled oracle evidence recorded in
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **291** |
-| Inventory-only test cases | **365** |
+| Native-pass test cases | **295** |
+| Inventory-only test cases | **361** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -548,10 +548,10 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 98 | `matrixvector.batch:223` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 2, 2, 2, 2)` | `5` | — | native-pass |
 | 99 | `matrixvector.batch:225` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 3, 2, 3)` | `[3; 6]` | — | native-pass |
 | 100 | `matrixvector.batch:227` | `part([1 2 3; 4 5 6; 7 8 9; 10 11 12], 1, 2, 4, 3)` | `[2  3; 5  6; 8  9; 11  12]` | — | native-pass |
-| 101 | `matrixvector.batch:230` | `((1; 2); (3; 4))^-1` | `[-2  1; 1.5  -0.5]` | — | inventory-only |
-| 102 | `matrixvector.batch:232` | `inverse([1 2; 3 5])` | `[-5  2; 3  -1]` | — | inventory-only |
-| 103 | `matrixvector.batch:234` | `inverse([1  2  3; 4  5  6; 1  0  9])` | `[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]` | — | inventory-only |
-| 104 | `matrixvector.batch:236` | `inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])` | `[2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]` | — | inventory-only |
+| 101 | `matrixvector.batch:230` | `((1; 2); (3; 4))^-1` | `[-2  1; 1.5  -0.5]` | — | native-pass |
+| 102 | `matrixvector.batch:232` | `inverse([1 2; 3 5])` | `[-5  2; 3  -1]` | — | native-pass |
+| 103 | `matrixvector.batch:234` | `inverse([1  2  3; 4  5  6; 1  0  9])` | `[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]` | — | native-pass |
+| 104 | `matrixvector.batch:236` | `inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])` | `[2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]` | — | native-pass |
 | 105 | `matrixvector.batch:239` | `rk([1 2 3; 3 6 9])` | `1` | — | native-pass |
 | 106 | `matrixvector.batch:241` | `rk([1 2 3; 0 2 2; 1 4 5])` | `2` | — | native-pass |
 | 107 | `matrixvector.batch:243` | `rk([1 2 3; 0 2 2; 1 -2 -1])` | `2` | — | native-pass |

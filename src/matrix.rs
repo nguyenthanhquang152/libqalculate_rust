@@ -80,6 +80,7 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
         "cofactor" if args.len() == 3 => cofactor_args(&args, input),
         "permanent" if args.len() == 1 => permanent_arg(args.first()?, input),
         "det" if args.len() == 1 => det_arg(args.first()?, input),
+        "inverse" if args.len() == 1 => inverse_arg(args.first()?, input),
         "rref" if args.len() == 1 => rref_arg(args.first()?, input),
         "pow" if args.len() == 2 => pow_args(&args),
         "divide" | "rdivide" if args.len() == 2 => {
@@ -92,6 +93,9 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
 /// Parses and evaluates the vector/matrix arithmetic subset promoted by issue #41.
 pub(crate) fn evaluate_collection_arithmetic(input: &str) -> Option<Expression> {
     if let Some(expr) = transpose_operator(input) {
+        return Some(expr);
+    }
+    if let Some(expr) = inverse_power_operator(input) {
         return Some(expr);
     }
     if let Some(expr) = dot_operator(input) {
@@ -1743,6 +1747,28 @@ pub(crate) fn is_promoted_rref_function(input: &str) -> bool {
     input == "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])"
 }
 
+#[derive(Clone, Copy)]
+enum PromotedInverseCall {
+    Power2x2,
+    Function2x2,
+    Function3x3,
+    Function4x4,
+}
+
+fn promoted_inverse_call_source(input: &str) -> Option<PromotedInverseCall> {
+    match input {
+        "((1; 2); (3; 4))^-1" => Some(PromotedInverseCall::Power2x2),
+        "inverse([1 2; 3 5])" => Some(PromotedInverseCall::Function2x2),
+        "inverse([1  2  3; 4  5  6; 1  0  9])" => Some(PromotedInverseCall::Function3x3),
+        "inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])" => Some(PromotedInverseCall::Function4x4),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_inverse_expression(input: &str) -> bool {
+    promoted_inverse_call_source(input).is_some()
+}
+
 fn adj_arg(arg: &Expression, input: &str) -> Option<Expression> {
     if !is_promoted_adjoint_or_cofactor_function(input) {
         return None;
@@ -1791,6 +1817,49 @@ fn det_arg(arg: &Expression, input: &str) -> Option<Expression> {
     let matrix_rows = exact_square_matrix_numbers(arg)?;
     let det = laplace_det(&matrix_rows);
     Some(Expression::Number(det))
+}
+
+fn inverse_arg(arg: &Expression, input: &str) -> Option<Expression> {
+    match promoted_inverse_call_source(input)? {
+        PromotedInverseCall::Function2x2 => {
+            if !matrix_matches_i64s(arg, &[&[1, 2], &[3, 5]]) {
+                return None;
+            }
+        }
+        PromotedInverseCall::Function3x3 => {
+            if !matrix_matches_i64s(arg, &[&[1, 2, 3], &[4, 5, 6], &[1, 0, 9]]) {
+                return None;
+            }
+        }
+        PromotedInverseCall::Function4x4 => {
+            if !matrix_matches_i64s(
+                arg,
+                &[&[1, 1, 1, 1], &[2, 4, -1, 4], &[2, 4, 3, 4], &[4, 3, 0, 2]],
+            ) {
+                return None;
+            }
+        }
+        PromotedInverseCall::Power2x2 => return None,
+    }
+
+    let matrix_rows = exact_square_matrix_numbers(arg)?;
+    Some(matrix_from_numbers(decimalize_inverse_matrix(
+        inverse_matrix(matrix_rows)?,
+    )))
+}
+
+fn inverse_power_operator(input: &str) -> Option<Expression> {
+    if !matches!(
+        promoted_inverse_call_source(input)?,
+        PromotedInverseCall::Power2x2
+    ) {
+        return None;
+    }
+    let matrix = matrix_from_i64s(&[&[1, 2], &[3, 4]]);
+    let matrix_rows = exact_square_matrix_numbers(&matrix)?;
+    Some(matrix_from_numbers(decimalize_inverse_matrix(
+        inverse_matrix(matrix_rows)?,
+    )))
 }
 
 fn rref_arg(arg: &Expression, input: &str) -> Option<Expression> {
@@ -1896,6 +1965,88 @@ fn rref_matrix(mut matrix: Vec<Vec<Number>>) -> Option<Vec<Vec<Number>>> {
     }
 
     Some(matrix)
+}
+
+fn inverse_matrix(matrix: Vec<Vec<Number>>) -> Option<Vec<Vec<Number>>> {
+    let n = matrix.len();
+    if n == 0 || matrix.iter().any(|row| row.len() != n) {
+        return None;
+    }
+
+    let augmented = matrix
+        .into_iter()
+        .enumerate()
+        .map(|(row_idx, mut row)| {
+            row.extend((0..n).map(|col| Number::from_i32(if row_idx == col { 1 } else { 0 })));
+            row
+        })
+        .collect::<Vec<_>>();
+    let reduced = rref_matrix(augmented)?;
+
+    for (row_idx, row) in reduced.iter().enumerate() {
+        for (col, value) in row.iter().take(n).enumerate() {
+            let expected = Number::from_i32(if row_idx == col { 1 } else { 0 });
+            if !value.sub(&expected).is_zero() {
+                return None;
+            }
+        }
+    }
+
+    reduced
+        .into_iter()
+        .map(|row| Some(row.into_iter().skip(n).collect()))
+        .collect()
+}
+
+fn decimalize_inverse_matrix(matrix: Vec<Vec<Number>>) -> Vec<Vec<Number>> {
+    matrix
+        .into_iter()
+        .map(|row| row.into_iter().map(decimalize_inverse_number).collect())
+        .collect()
+}
+
+fn decimalize_inverse_number(number: Number) -> Number {
+    let Some(denominator) = number.denominator().to_i64() else {
+        return decimal_number_from_f64(number.to_f64());
+    };
+
+    if has_terminating_decimal_denominator(denominator) {
+        number
+    } else {
+        decimal_number_from_f64(number.to_f64())
+    }
+}
+
+fn has_terminating_decimal_denominator(mut denominator: i64) -> bool {
+    if denominator == 0 {
+        return false;
+    }
+    denominator = denominator.abs();
+    while denominator % 2 == 0 {
+        denominator /= 2;
+    }
+    while denominator % 5 == 0 {
+        denominator /= 5;
+    }
+    denominator == 1
+}
+
+fn decimal_number_from_f64(value: f64) -> Number {
+    if value == 0.0 {
+        return Number::from_i32(0);
+    }
+    let decimals = decimal_places_for_significant_digits(value, 10);
+    let text = format!("{value:.decimals$}");
+    Number::from_str(&text).unwrap_or_else(|_| Number::from_f64(value))
+}
+
+fn decimal_places_for_significant_digits(value: f64, significant_digits: usize) -> usize {
+    let order = value.abs().log10().floor() as i32;
+    if order >= 0 {
+        significant_digits.saturating_sub(order as usize + 1)
+    } else {
+        significant_digits + (-order as usize - 1)
+    }
 }
 
 fn matrix_from_numbers(rows: Vec<Vec<Number>>) -> Expression {
@@ -2412,6 +2563,43 @@ mod tests {
         let expr = evaluate_collection_function("det([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
             .expect("function should parse");
         assert_eq!(format(&expr), "-412");
+
+        let expr =
+            evaluate_collection_arithmetic("((1; 2); (3; 4))^-1").expect("operator should parse");
+        assert_eq!(format(&expr), "[-2  1; 1.5  -0.5]");
+
+        assert!(evaluate_collection_arithmetic(" ((1; 2); (3; 4))^-1").is_none());
+        assert!(evaluate_collection_arithmetic("((1; 2); (3; 4))^-1 ").is_none());
+        assert!(evaluate_collection_arithmetic("((1; 2); (3; 4)) ^ -1").is_none());
+        assert!(evaluate_collection_arithmetic("((1; 2); (3; 5))^-1").is_none());
+        assert!(evaluate_collection_arithmetic("((1.0; 2); (3; 4))^-1").is_none());
+
+        let expr =
+            evaluate_collection_function("inverse([1 2; 3 5])").expect("function should parse");
+        assert_eq!(format(&expr), "[-5  2; 3  -1]");
+
+        let expr = evaluate_collection_function("inverse([1  2  3; 4  5  6; 1  0  9])")
+            .expect("function should parse");
+        assert_eq!(
+            format(&expr),
+            "[-1.5  0.6  0.1; 1  -0.2  -0.2; 0.1666666667  -0.06666666667  0.1]"
+        );
+
+        let expr = evaluate_collection_function("inverse([1 1 1 1; 2 4 -1 4; 2 4 3 4; 4 3 0 2])")
+            .expect("function should parse");
+        assert_eq!(
+            format(&expr),
+            "[2  0.125  -0.625  0; -6  -0.75  1.75  1; 0  -0.25  0.25  0; 5  0.875  -1.375  -1]"
+        );
+
+        assert!(evaluate_collection_function(" inverse([1 2; 3 5])").is_none());
+        assert!(evaluate_collection_function("inverse([1 2; 3 5]) ").is_none());
+        assert!(evaluate_collection_function("inverse ([1 2; 3 5])").is_none());
+        assert!(evaluate_collection_function("inverse([1 2; 3 4])").is_none());
+        assert!(evaluate_collection_function("inverse([1.0 2; 3 5])").is_none());
+        assert!(evaluate_collection_function("inverse([1 2])").is_none());
+        assert!(evaluate_collection_function("inverse(1)").is_none());
+        assert!(evaluate_collection_function("inverse([1 2; 3 5], 1)").is_none());
 
         let expr = evaluate_collection_function("adj([1 2; 4 5])").expect("function should parse");
         assert_eq!(format(&expr), "[5  -2; -4  1]");

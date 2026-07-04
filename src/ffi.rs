@@ -539,6 +539,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         return None;
     }
 
+    if !settings.is_empty() && crate::matrix::is_promoted_inverse_expression(expr) {
+        return None;
+    }
+
     if !settings.is_empty() && crate::matrix::is_promoted_adjoint_or_cofactor_function(expr) {
         return None;
     }
