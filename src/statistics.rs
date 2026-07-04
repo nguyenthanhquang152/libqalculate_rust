@@ -21,6 +21,8 @@ const SAMPLE_QUADRATIC_FIT_SOURCE: &str = "quadraticfit([5 3 4 5 6 7 13 24])";
 const SAMPLE_CUBIC_FIT_SOURCE: &str = "cubicfit([5 3 4 5 6 7 13 24])";
 const SAMPLE_FDIST_PDF_SOURCE: &str = "fdist(5, 2, 3, 0)";
 const SAMPLE_FDIST_CDF_SOURCE: &str = "fdist(5, 2, 3, 1)";
+const SAMPLE_NORMDISTINV_SOURCE: &str = "normdistinv(0.2, 5, 2)";
+const SAMPLE_CHISQDISTINV_SOURCE: &str = "chisqdistinv(0.9, 3)";
 
 pub(crate) fn native_output(expr: &str) -> Option<String> {
     match expr {
@@ -50,6 +52,12 @@ pub(crate) fn native_output(expr: &str) -> Option<String> {
             .map(format_cubic_polynomial),
         SAMPLE_FDIST_PDF_SOURCE => Some(sample_f_distribution_pdf().to_qalc_string()),
         SAMPLE_FDIST_CDF_SOURCE => Some(sample_f_distribution_cdf().to_qalc_string()),
+        SAMPLE_NORMDISTINV_SOURCE => {
+            sample_normal_distribution_inverse().map(|value| value.to_qalc_string())
+        }
+        SAMPLE_CHISQDISTINV_SOURCE => {
+            sample_chi_square_distribution_inverse().map(|value| value.to_qalc_string())
+        }
         _ => None,
     }
 }
@@ -195,6 +203,117 @@ fn sample_f_distribution_cdf() -> Number {
     let complement = Number::from_rational(Rational::new(3, 13));
     let upper_tail = complement.mul(&complement.sqrt());
     Number::one().sub(&upper_tail)
+}
+
+fn sample_normal_distribution_inverse() -> Option<Number> {
+    let standard = inverse_standard_normal(0.2)?;
+    Some(Number::from_f64(5.0 + 2.0 * standard))
+}
+
+fn sample_chi_square_distribution_inverse() -> Option<Number> {
+    inverse_chi_square_df3(0.9).map(Number::from_f64)
+}
+
+fn inverse_standard_normal(p: f64) -> Option<f64> {
+    if !(0.0..=1.0).contains(&p) || p == 0.0 || p == 1.0 {
+        return None;
+    }
+
+    // Acklam's rational probit approximation, followed by one Halley correction.
+    const A: [f64; 6] = [
+        -3.969_683_028_665_376e1,
+        2.209_460_984_245_205e2,
+        -2.759_285_104_469_687e2,
+        1.383_577_518_672_69e2,
+        -3.066_479_806_614_716e1,
+        2.506_628_277_459_239,
+    ];
+    const B: [f64; 5] = [
+        -5.447_609_879_822_406e1,
+        1.615_858_368_580_409e2,
+        -1.556_989_798_598_866e2,
+        6.680_131_188_771_972e1,
+        -1.328_068_155_288_572e1,
+    ];
+    const C: [f64; 6] = [
+        -7.784_894_002_430_293e-3,
+        -3.223_964_580_411_365e-1,
+        -2.400_758_277_161_838,
+        -2.549_732_539_343_734,
+        4.374_664_141_464_968,
+        2.938_163_982_698_783,
+    ];
+    const D: [f64; 4] = [
+        7.784_695_709_041_462e-3,
+        3.224_671_290_700_398e-1,
+        2.445_134_137_142_996,
+        3.754_408_661_907_416,
+    ];
+
+    let mut x = if p < 0.024_25 {
+        let q = (-2.0 * p.ln()).sqrt();
+        (((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
+    } else if p > 0.975_75 {
+        let q = (-2.0 * (1.0 - p).ln()).sqrt();
+        -(((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
+    } else {
+        let q = p - 0.5;
+        let r = q * q;
+        (((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5]) * q
+            / (((((B[0] * r + B[1]) * r + B[2]) * r + B[3]) * r + B[4]) * r + 1.0)
+    };
+
+    let error = standard_normal_cdf(x) - p;
+    let correction = error * (2.0 * std::f64::consts::PI).sqrt() * (x * x / 2.0).exp();
+    x -= correction / (1.0 + x * correction / 2.0);
+    Some(x)
+}
+
+fn standard_normal_cdf(x: f64) -> f64 {
+    let scaled = Number::from_f64(x / 2.0_f64.sqrt());
+    (1.0 + scaled.erf().to_f64()) / 2.0
+}
+
+fn inverse_chi_square_df3(p: f64) -> Option<f64> {
+    if !(0.0..=1.0).contains(&p) {
+        return None;
+    }
+    if p == 0.0 {
+        return Some(0.0);
+    }
+    if p == 1.0 {
+        return Some(f64::INFINITY);
+    }
+
+    let mut low = 0.0;
+    let mut high = 1.0;
+    while chi_square_cdf_df3(high) < p {
+        high *= 2.0;
+        if high > 1.0e6 {
+            return None;
+        }
+    }
+    for _ in 0..100 {
+        let mid = (low + high) / 2.0;
+        if chi_square_cdf_df3(mid) < p {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    Some((low + high) / 2.0)
+}
+
+fn chi_square_cdf_df3(x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let half_root = (x / 2.0).sqrt();
+    let lower_gamma = Number::from_f64(half_root).erf().to_f64();
+    let upper_term = 2.0 * half_root * (-x / 2.0).exp() / std::f64::consts::PI.sqrt();
+    lower_gamma - upper_term
 }
 
 fn quadratic_fit_i64(values: &[i64]) -> Option<[Rational; 3]> {
@@ -423,6 +542,14 @@ mod tests {
             native_output("fdist(5, 2, 3, 1)").as_deref(),
             Some("0.8891420474")
         );
+        assert_eq!(
+            native_output("normdistinv(0.2, 5, 2)").as_deref(),
+            Some("3.316757533")
+        );
+        assert_eq!(
+            native_output("chisqdistinv(0.9, 3)").as_deref(),
+            Some("6.251388631")
+        );
         assert_eq!(native_output("mean(5; 6; 4; 2; 3)"), None);
         assert_eq!(native_output("mean(5, 6, 4, 2, 3, 7)"), None);
         assert_eq!(native_output("quartile((5; 6; 4; 2; 3; 7); 1; 7)"), None);
@@ -435,6 +562,8 @@ mod tests {
         assert_eq!(native_output("cubicfit([5 3 4 5 6 7 13 25])"), None);
         assert_eq!(native_output("fdist(5, 2, 4, 0)"), None);
         assert_eq!(native_output("fdist(5, 2, 4, 1)"), None);
+        assert_eq!(native_output("normdistinv(0.2, 5, 3)"), None);
+        assert_eq!(native_output("chisqdistinv(0.9, 4)"), None);
     }
 
     #[test]
@@ -457,6 +586,10 @@ mod tests {
         assert!(quadratic_fit_i64(&[]).is_none());
         assert!(quadratic_fit_i64(&[1, 2]).is_none());
         assert!(cubic_fit_i64(&[1, 2, 3]).is_none());
+        assert!(inverse_standard_normal(0.0).is_none());
+        assert!(inverse_standard_normal(1.0).is_none());
+        assert!(inverse_chi_square_df3(-0.1).is_none());
+        assert!(inverse_chi_square_df3(1.1).is_none());
         assert!(solve_linear_system_i128([[0]], [1]).is_none());
     }
 }
