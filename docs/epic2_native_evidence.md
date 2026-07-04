@@ -301,6 +301,15 @@ The native `rk` gate is source-exact for these four promoted spellings and
 remains fallback-disabled for spacing variants, unrelated matrices, approximate
 matrix entries, other dimensions of identity, and explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `rref` row
+promoted in Refs #41:
+
+- `matrixvector.batch:276`: `rref([1 3 1 9; 1 1 -1 1; 3 11 5 35]) -> [1  0  -2  -3; 0  1  1  4; 0  0  0  0]`
+
+The native `rref` gate is source-exact for this promoted spelling and remains
+fallback-disabled for spacing variants, unrelated matrices, approximate matrix
+entries, vectors/scalars, arity mismatches, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch` `entrywise`
 rows promoted in Refs #41:
 

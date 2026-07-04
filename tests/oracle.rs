@@ -1827,6 +1827,11 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
             "rk(identity(3))",
             default_settings,
         ),
+        (
+            "matrixvector-rref-3x4",
+            "rref([1 3 1 9; 1 1 -1 1; 3 11 5 35])",
+            default_settings,
+        ),
     ];
 
     assert_native_oracle_cases(&qalc, &defs, cases);
