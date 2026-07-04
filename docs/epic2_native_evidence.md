@@ -680,6 +680,22 @@ Refs #12 precision-context rows:
   cover the public constructor invariant, including reversed mixed-precision
   bounds and lower/upper NaN inputs.
 
+## Vector/Matrix Diagnostic and API Closure (Refs #176)
+
+- The `matrixvector.batch` fixture surface remains the native vector/matrix
+  compatibility boundary for Epic 8. All 130 fixture rows are native-pass, but
+  that does not imply complete direct parity with upstream
+  `MathStructure-matrixvector.cc` or `BuiltinFunctions-matrixvector.cc`.
+- The #176 audit keeps unsupported vector/matrix diagnostic families
+  fail-closed under fallback-disabled mode instead of claiming broader native
+  upstream diagnostic parity. Representative arity, non-square, singular,
+  dimension-mismatch, shape-mismatch, and index-error expressions are covered by
+  `tests/fallback_gate.rs::cli_vector_matrix_diagnostic_followups_fail_closed_when_fallback_disabled`.
+- No compatibility deviation is approved for these cases. They are incomplete
+  direct API/diagnostic parity, not a normalized difference from upstream.
+  Broader symbol-level public API parity remains tracked by
+  `docs/public_api_parity_matrix.md` and the public API follow-up.
+
 ## Verified Commands
 
 ```sh

@@ -58,4 +58,5 @@ FFI-only rows name the actual Rust wrapper and cannot be counted as `native-pass
 - `Calculator.h` is the only FFI-only public API row and is explicitly tied to `src/ffi.rs`.
 - `Number.h`, `includes.h`, and `qalculate.h` are scaffold rows; they do not imply native parity.
 - Full Rust public API design and symbol-by-symbol implementation are tracked by #64 and later implementation issues.
+- #176 closes the Epic 8 matrix/vector diagnostics follow-up by documenting fail-closed behavior for unsupported diagnostic families; it does not change the `MathStructure.h` public API status.
 - There are no approved public API deviations in `docs/deviations.md` for this matrix.
