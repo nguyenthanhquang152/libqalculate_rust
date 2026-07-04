@@ -44,6 +44,9 @@ pub mod messages;
 /// Session context module.
 pub mod context;
 
+/// CSV-backed data loading helpers.
+pub mod data;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.

@@ -21,6 +21,15 @@ fn run_qalc_rs_args(
     disable_fallback: Option<&str>,
     report_fallback: Option<&str>,
 ) -> (String, String, i32) {
+    run_qalc_rs_args_in_dir(args, disable_fallback, report_fallback, None)
+}
+
+fn run_qalc_rs_args_in_dir(
+    args: &[&str],
+    disable_fallback: Option<&str>,
+    report_fallback: Option<&str>,
+    current_dir: Option<&Path>,
+) -> (String, String, i32) {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
@@ -39,6 +48,9 @@ fn run_qalc_rs_args(
         .env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");
 
+    if let Some(dir) = current_dir {
+        cmd.current_dir(dir);
+    }
     if let Some(df) = disable_fallback {
         cmd.env("QALCULATE_DISABLE_FALLBACK", df);
     }
@@ -53,6 +65,12 @@ fn run_qalc_rs_args(
     let exit_code = output.status.code().unwrap_or(-1);
 
     (stdout, stderr, exit_code)
+}
+
+fn upstream_dir() -> std::path::PathBuf {
+    Path::new("../libqalculate")
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from("../libqalculate"))
 }
 
 #[test]
@@ -393,6 +411,26 @@ fn cli_native_vector_matrix_literals_succeed_when_fallback_disabled() {
 }
 
 #[test]
+fn cli_native_csv_load_counts_succeed_when_fallback_disabled() {
+    let upstream = upstream_dir();
+    for expression in [
+        "number(load(tests/vectordata.csv))",
+        "number(load(\"tests/vectordata.csv\"))",
+        "number(load(tests/vectordata2.csv))",
+        "number(load(\"tests/vectordata2.csv\"))",
+    ] {
+        let (stdout, stderr, exit_code) =
+            run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
+        assert_eq!(stdout, "100", "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression}");
+    }
+}
+
+#[test]
 fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     let (stdout, stderr, exit_code) = run_qalc_rs("1 / 0", Some("1"), Some("1"));
     assert!(stdout.is_empty());
@@ -555,6 +593,43 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
     assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
     assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
     assert_eq!(exit_code, 2);
+
+    let upstream = upstream_dir();
+    let (stdout, stderr, exit_code) = run_qalc_rs_args_in_dir(
+        &[
+            "-set",
+            "precision 128",
+            "--",
+            "number(load(tests/vectordata.csv))",
+        ],
+        Some("1"),
+        Some("1"),
+        Some(&upstream),
+    );
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(stderr.contains("error: calculation failed: C++ FFI fallback is disabled"));
+    assert_eq!(exit_code, 2);
+
+    for expression in [
+        "number(load( tests/vectordata.csv))",
+        "number(load(tests/vectordata.csv, 1))",
+        "load(tests/vectordata.csv)",
+        "number(load(tests/missing.csv))",
+    ] {
+        let (stdout, stderr, exit_code) =
+            run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
+        assert!(stdout.is_empty(), "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=disabled"),
+            "{expression}: {stderr}"
+        );
+        assert!(
+            stderr.contains("error: calculation failed: C++ FFI fallback is disabled"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 2, "{expression}");
+    }
 
     let (stdout, stderr, exit_code) = run_qalc_rs_args(
         &["-set", "precision 128", "--", "genvector(x+10, 1, 2, 2)"],

@@ -516,6 +516,15 @@ fn conversion_target_is_hex(expr: &crate::ast::Expression) -> bool {
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
 
+    if settings.is_empty() {
+        if let Some(output) = crate::data::native_output(expr) {
+            return Some(match profile {
+                PrintProfile::Api => output,
+                PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+            });
+        }
+    }
+
     if let Some(output) = crate::matrix::promoted_top_level_list_literal_output(expr) {
         if !settings.is_empty() {
             return None;
