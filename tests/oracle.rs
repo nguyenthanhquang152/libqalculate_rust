@@ -155,10 +155,16 @@ struct CapturedOutput {
 /// 2. `../libqalculate/src/qalc` (default build location)
 fn oracle_binary() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("QALCULATE_ORACLE").map(PathBuf::from) {
-        return path.exists().then_some(path);
+        return existing_oracle_path(path);
     }
-    let candidate = Path::new("../libqalculate/src/qalc");
-    candidate.exists().then(|| candidate.to_path_buf())
+    existing_oracle_path(PathBuf::from("../libqalculate/src/qalc"))
+}
+
+fn existing_oracle_path(path: PathBuf) -> Option<PathBuf> {
+    if !path.exists() {
+        return None;
+    }
+    Some(path.canonicalize().unwrap_or(path))
 }
 
 /// Resolve the upstream definitions directory.
@@ -322,10 +328,24 @@ fn run_oracle_expression(
     expression: &str,
     settings: &[SessionCommand],
 ) -> CapturedOutput {
+    run_oracle_expression_in_dir(qalc_path, defs, expression, settings, None)
+}
+
+fn run_oracle_expression_in_dir(
+    qalc_path: &Path,
+    defs: &Path,
+    expression: &str,
+    settings: &[SessionCommand],
+    current_dir: Option<&Path>,
+) -> CapturedOutput {
     let mut cmd = Command::new(qalc_path);
     cmd.env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC")
         .env("QALCULATE_DEFINITIONS_DIR", defs);
+
+    if let Some(dir) = current_dir {
+        cmd.current_dir(dir);
+    }
 
     // Base arguments: reset defaults and set consistent formatting
     cmd.arg("-defaults")
@@ -371,6 +391,24 @@ fn run_rust_expression(
     disable_fallback: bool,
     report_fallback: bool,
 ) -> CapturedOutput {
+    run_rust_expression_in_dir(
+        expression,
+        settings,
+        defs,
+        disable_fallback,
+        report_fallback,
+        None,
+    )
+}
+
+fn run_rust_expression_in_dir(
+    expression: &str,
+    settings: &[SessionCommand],
+    defs: &Path,
+    disable_fallback: bool,
+    report_fallback: bool,
+    current_dir: Option<&Path>,
+) -> CapturedOutput {
     if !settings.is_empty() && !disable_fallback {
         return CapturedOutput {
             stdout: String::new(),
@@ -405,6 +443,10 @@ fn run_rust_expression(
         .env("QALCULATE_DEFINITIONS_DIR", defs)
         .env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");
+
+    if let Some(dir) = current_dir {
+        cmd.current_dir(dir);
+    }
 
     for setting in settings {
         for arg in setting.to_qalc_args() {
@@ -1890,6 +1932,58 @@ fn focused_issue41_vector_matrix_literal_oracle_cases() {
     ];
 
     assert_native_oracle_cases(&qalc, &defs, cases);
+}
+
+#[test]
+fn focused_issue44_csv_load_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue44_csv_load_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let upstream = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../libqalculate")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("../libqalculate"));
+
+    for (case_id, expression) in [
+        (
+            "csv-load-vectordata-count",
+            "number(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-load-vectordata-count-quoted",
+            "number(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-load-vectordata2-count",
+            "number(load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-load-vectordata2-count-quoted",
+            "number(load(\"tests/vectordata2.csv\"))",
+        ),
+    ] {
+        let settings = &[][..];
+        let cpp_out =
+            run_oracle_expression_in_dir(&qalc, &defs, expression, settings, Some(&upstream));
+        assert_eq!(cpp_out.exit_code, 0, "{case_id}: {}", cpp_out.stderr);
+
+        let rust_out =
+            run_rust_expression_in_dir(expression, settings, &defs, true, true, Some(&upstream));
+        assert_eq!(rust_out.exit_code, 0, "{case_id}: {}", rust_out.stderr);
+        assert_eq!(
+            rust_out.fallback_state,
+            Some(FallbackState::Native),
+            "{case_id}"
+        );
+        assert_eq!(rust_out.stdout, cpp_out.stdout, "{case_id}");
+        assert_eq!(rust_out.stderr, cpp_out.stderr, "{case_id}");
+    }
 }
 
 #[test]
