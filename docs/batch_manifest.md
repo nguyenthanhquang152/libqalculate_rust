@@ -18,12 +18,12 @@ backed by fallback-disabled oracle evidence recorded in either
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **315** |
-| Inventory-only test cases | **341** |
+| Native-pass test cases | **341** |
+| Inventory-only test cases | **315** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
-| Files with session state | `explog.batch`, `limits.batch`, `numberbase.batch`, `polynomial.batch`, `solver.batch`, `strings.batch` |
+| Files with session state | `explog.batch`, `limits.batch`, `numberbase.batch`, `polynomial.batch`, `solver.batch`, `stats.batch`, `strings.batch` |
 
 ### Case Schema and Status Policy
 
@@ -896,32 +896,32 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 11 | `stats.batch:21` | `chisqdistinv(0.9, 3)` | `6.251388631` | — | native-pass |
 | 12 | `stats.batch:23` | `mode([1 3 7 5 1 1 1 3])` | `1` | — | native-pass |
 | 13 | `stats.batch:25` | `median([1 3 7 5 1 1 1 3])` | `2` | — | native-pass |
-| 14 | `stats.batch:28` | `mean(libqalculate_tests_vector)` | `6.530919283` | — | inventory-only |
-| 15 | `stats.batch:30` | `geomean(abs(libqalculate_tests_vector))` | `14.25624271` | — | inventory-only |
-| 16 | `stats.batch:32` | `harmmean(abs(libqalculate_tests_vector))` | `5.691924037` | — | inventory-only |
-| 17 | `stats.batch:34` | `rms(libqalculate_tests_vector)` | `24.22585458` | — | inventory-only |
-| 18 | `stats.batch:36` | `trimmean(libqalculate_tests_vector, 10)` | `6.788959652` | — | inventory-only |
-| 19 | `stats.batch:38` | `winsormean(libqalculate_tests_vector, 10)` | `6.774860902` | — | inventory-only |
-| 20 | `stats.batch:40` | `weighmean(libqalculate_tests_vector, genvector(2;1;100))` | `6.530919283` | — | inventory-only |
-| 21 | `stats.batch:42` | `stdev(libqalculate_tests_vector)` | `23.44646004` | — | inventory-only |
-| 22 | `stats.batch:44` | `stderr(libqalculate_tests_vector)` | `2.344646004` | — | inventory-only |
-| 23 | `stats.batch:46` | `meandev(libqalculate_tests_vector)` | `19.20169382` | — | inventory-only |
-| 24 | `stats.batch:48` | `quartile(libqalculate_tests_vector, 1, 7)` | `-10.48274166` | — | inventory-only |
-| 25 | `stats.batch:50` | `percentile(libqalculate_tests_vector, 25, 7)` | `-10.48274166` | — | inventory-only |
-| 26 | `stats.batch:52` | `decile(libqalculate_tests_vector, 9, 7)` | `38.27474287` | — | inventory-only |
-| 27 | `stats.batch:54` | `min(libqalculate_tests_vector)` | `-43.38345286` | — | inventory-only |
-| 28 | `stats.batch:56` | `max(libqalculate_tests_vector)` | `54.40816396` | — | inventory-only |
-| 29 | `stats.batch:58` | `number(libqalculate_tests_vector)` | `100` | — | inventory-only |
-| 30 | `stats.batch:60` | `range(libqalculate_tests_vector)` | `97.79161682` | — | inventory-only |
-| 31 | `stats.batch:62` | `median(libqalculate_tests_vector)` | `8.084203925` | — | inventory-only |
-| 32 | `stats.batch:64` | `total(libqalculate_tests_vector)` | `653.0919283` | — | inventory-only |
-| 33 | `stats.batch:66` | `iqr(libqalculate_tests_vector)` | `33.42899060` | — | inventory-only |
-| 34 | `stats.batch:69` | `ttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.3493127334` | — | inventory-only |
-| 35 | `stats.batch:71` | `pttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `1.583214005` | — | inventory-only |
-| 36 | `stats.batch:73` | `pearson(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9519790480` | — | inventory-only |
-| 37 | `stats.batch:75` | `spearman(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9742094209` | — | inventory-only |
-| 38 | `stats.batch:77` | `covar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `499.1760404` | — | inventory-only |
-| 39 | `stats.batch:79` | `poolvar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `530.0195143` | — | inventory-only |
+| 14 | `stats.batch:28` | `mean(libqalculate_tests_vector)` | `6.530919283` | — | native-pass |
+| 15 | `stats.batch:30` | `geomean(abs(libqalculate_tests_vector))` | `14.25624271` | — | native-pass |
+| 16 | `stats.batch:32` | `harmmean(abs(libqalculate_tests_vector))` | `5.691924037` | — | native-pass |
+| 17 | `stats.batch:34` | `rms(libqalculate_tests_vector)` | `24.22585458` | — | native-pass |
+| 18 | `stats.batch:36` | `trimmean(libqalculate_tests_vector, 10)` | `6.788959652` | — | native-pass |
+| 19 | `stats.batch:38` | `winsormean(libqalculate_tests_vector, 10)` | `6.774860902` | — | native-pass |
+| 20 | `stats.batch:40` | `weighmean(libqalculate_tests_vector, genvector(2;1;100))` | `6.530919283` | — | native-pass |
+| 21 | `stats.batch:42` | `stdev(libqalculate_tests_vector)` | `23.44646004` | — | native-pass |
+| 22 | `stats.batch:44` | `stderr(libqalculate_tests_vector)` | `2.344646004` | — | native-pass |
+| 23 | `stats.batch:46` | `meandev(libqalculate_tests_vector)` | `19.20169382` | — | native-pass |
+| 24 | `stats.batch:48` | `quartile(libqalculate_tests_vector, 1, 7)` | `-10.48274166` | — | native-pass |
+| 25 | `stats.batch:50` | `percentile(libqalculate_tests_vector, 25, 7)` | `-10.48274166` | — | native-pass |
+| 26 | `stats.batch:52` | `decile(libqalculate_tests_vector, 9, 7)` | `38.27474287` | — | native-pass |
+| 27 | `stats.batch:54` | `min(libqalculate_tests_vector)` | `-43.38345286` | — | native-pass |
+| 28 | `stats.batch:56` | `max(libqalculate_tests_vector)` | `54.40816396` | — | native-pass |
+| 29 | `stats.batch:58` | `number(libqalculate_tests_vector)` | `100` | — | native-pass |
+| 30 | `stats.batch:60` | `range(libqalculate_tests_vector)` | `97.79161682` | — | native-pass |
+| 31 | `stats.batch:62` | `median(libqalculate_tests_vector)` | `8.084203925` | — | native-pass |
+| 32 | `stats.batch:64` | `total(libqalculate_tests_vector)` | `653.0919283` | — | native-pass |
+| 33 | `stats.batch:66` | `iqr(libqalculate_tests_vector)` | `33.42899060` | — | native-pass |
+| 34 | `stats.batch:69` | `ttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.3493127334` | — | native-pass |
+| 35 | `stats.batch:71` | `pttest(libqalculate_tests_vector, libqalculate_tests_vector2)` | `1.583214005` | — | native-pass |
+| 36 | `stats.batch:73` | `pearson(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9519790480` | — | native-pass |
+| 37 | `stats.batch:75` | `spearman(libqalculate_tests_vector, libqalculate_tests_vector2)` | `0.9742094209` | — | native-pass |
+| 38 | `stats.batch:77` | `covar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `499.1760404` | — | native-pass |
+| 39 | `stats.batch:79` | `poolvar(libqalculate_tests_vector, libqalculate_tests_vector2)` | `530.0195143` | — | native-pass |
 
 ---
 

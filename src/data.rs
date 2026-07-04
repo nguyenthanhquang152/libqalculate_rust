@@ -42,11 +42,12 @@ pub fn load_csv_vector(path: impl AsRef<Path>) -> Result<Expression, CsvLoadErro
 
 /// Loads a comma-separated numeric file as native [`Number`] values.
 pub fn load_csv_numbers(path: impl AsRef<Path>) -> Result<Vec<Number>, CsvLoadError> {
-    let path = path.as_ref();
-    let contents = std::fs::read_to_string(path).map_err(|error| {
+    let original_path = path.as_ref();
+    let path = resolve_csv_path(original_path);
+    let contents = std::fs::read_to_string(&path).map_err(|error| {
         CsvLoadError::new(format!(
             "failed to read CSV data from {}: {error}",
-            path.display()
+            original_path.display()
         ))
     })?;
 
@@ -59,7 +60,7 @@ pub fn load_csv_numbers(path: impl AsRef<Path>) -> Result<Vec<Number>, CsvLoadEr
                     "empty numeric CSV value at row {}, column {} in {}",
                     line_index + 1,
                     column_index + 1,
-                    path.display()
+                    original_path.display()
                 )));
             }
             let number = Number::from_str(value).map_err(|_| {
@@ -67,7 +68,7 @@ pub fn load_csv_numbers(path: impl AsRef<Path>) -> Result<Vec<Number>, CsvLoadEr
                     "invalid numeric CSV value at row {}, column {} in {}: {value}",
                     line_index + 1,
                     column_index + 1,
-                    path.display()
+                    original_path.display()
                 ))
             })?;
             values.push(number);
@@ -77,11 +78,33 @@ pub fn load_csv_numbers(path: impl AsRef<Path>) -> Result<Vec<Number>, CsvLoadEr
     if values.is_empty() {
         return Err(CsvLoadError::new(format!(
             "CSV data file {} did not contain numeric values",
-            path.display()
+            original_path.display()
         )));
     }
 
     Ok(values)
+}
+
+fn resolve_csv_path(path: &Path) -> PathBuf {
+    if path.is_absolute() || path.exists() {
+        return path.to_path_buf();
+    }
+
+    if let Some(upstream) = std::env::var_os("LIBQALCULATE_UPSTREAM_DIR") {
+        let candidate = PathBuf::from(upstream).join(path);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
+    let candidate = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../libqalculate")
+        .join(path);
+    if candidate.exists() {
+        return candidate;
+    }
+
+    path.to_path_buf()
 }
 
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
@@ -157,6 +180,13 @@ mod tests {
             None
         );
         assert_eq!(promoted_load_count_path("load(tests/vectordata.csv)"), None);
+    }
+
+    #[test]
+    fn resolves_upstream_relative_test_fixtures_from_crate_root() {
+        let values = load_csv_numbers("tests/vectordata.csv").expect("fixture loads");
+        assert_eq!(values.len(), 100);
+        assert_eq!(values.first().unwrap().to_string(), "19.61486208");
     }
 
     #[test]

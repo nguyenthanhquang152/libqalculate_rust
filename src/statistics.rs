@@ -7,6 +7,22 @@
 
 use crate::data::CsvLoadError;
 use crate::number::{Number, Rational};
+use crate::{ast::Expression, context::CalculatorContext};
+
+type NumberVector = Vec<Number>;
+type NumberVectorPair = (NumberVector, NumberVector);
+
+struct ResolvedVector {
+    values: NumberVector,
+    origin: VectorOrigin,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VectorOrigin {
+    Direct,
+    Session,
+    Generated,
+}
 
 const SAMPLE_STATS_VALUES: [i64; 6] = [5, 6, 4, 2, 3, 7];
 const SAMPLE_MODE_MEDIAN_VALUES: [i64; 8] = [1, 3, 7, 5, 1, 1, 1, 3];
@@ -97,6 +113,7 @@ const CSV_DECILE_TYPE7_VECTORDATA_QUOTED_SOURCE: &str =
     "decile(load(\"tests/vectordata.csv\"), 9, 7)";
 const CSV_IQR_VECTORDATA_SOURCE: &str = "iqr(load(tests/vectordata.csv))";
 const CSV_IQR_VECTORDATA_QUOTED_SOURCE: &str = "iqr(load(\"tests/vectordata.csv\"))";
+const MAX_NATIVE_SESSION_VECTOR_LEN: i64 = 10_000;
 
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
     let output = match expr {
@@ -242,6 +259,261 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> 
         _ => None,
     };
     Ok(output)
+}
+
+pub(crate) fn native_context_output(
+    expr: &str,
+    context: &mut CalculatorContext,
+) -> Result<Option<String>, CsvLoadError> {
+    let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
+        return Ok(None);
+    };
+    evaluate_context_statistic(&parsed, context)
+}
+
+fn evaluate_context_statistic(
+    expr: &Expression,
+    context: &CalculatorContext,
+) -> Result<Option<String>, CsvLoadError> {
+    let Expression::FunctionCall { function, args } = expr else {
+        return Ok(None);
+    };
+
+    let output = match function.id() {
+        "number" if args.len() == 1 => {
+            session_vector_values(&args[0], context)?.map(|values| values.len().to_string())
+        }
+        "mean" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| mean(&values).map(|value| approximate_qalc_string(&value))),
+        "stdev" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| sample_stdev(&values).map(|value| approximate_qalc_string(&value))),
+        "min" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| minimum(&values).map(|value| approximate_qalc_string(&value))),
+        "max" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| maximum(&values).map(|value| approximate_qalc_string(&value))),
+        "total" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| total(&values).map(|value| approximate_qalc_string(&value))),
+        "range" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| range(&values).map(|value| approximate_qalc_string(&value))),
+        "median" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| median(&values).map(|value| approximate_qalc_string(&value))),
+        "geomean" if args.len() == 1 => {
+            session_vector_values(&args[0], context)?.and_then(|values| {
+                geometric_mean(&values).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "harmmean" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| harmonic_mean(&values).map(|value| approximate_qalc_string(&value))),
+        "rms" if args.len() == 1 => session_vector_values(&args[0], context)?.and_then(|values| {
+            root_mean_square(&values).map(|value| approximate_qalc_string(&value))
+        }),
+        "stderr" if args.len() == 1 => {
+            session_vector_values(&args[0], context)?.and_then(|values| {
+                standard_error(&values).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "meandev" if args.len() == 1 => {
+            session_vector_values(&args[0], context)?.and_then(|values| {
+                mean_deviation(&values).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "trimmean" if args.len() == 2 => {
+            let values = session_vector_values(&args[0], context)?;
+            let percent = integer_arg(&args[1]);
+            values
+                .zip(percent)
+                .and_then(|(values, percent)| trimmed_mean(&values, percent))
+                .map(|value| approximate_qalc_string(&value))
+        }
+        "winsormean" if args.len() == 2 => {
+            let values = session_vector_values(&args[0], context)?;
+            let percent = integer_arg(&args[1]);
+            values
+                .zip(percent)
+                .and_then(|(values, percent)| winsorized_mean(&values, percent))
+                .map(|value| approximate_qalc_string(&value))
+        }
+        "weighmean" if args.len() == 2 => {
+            let values = session_vector_values(&args[0], context)?;
+            let weights = session_or_generated_vector_values(&args[1], context)?;
+            values
+                .zip(weights)
+                .and_then(|(values, weights)| weighted_mean(&values, &weights))
+                .map(|value| approximate_qalc_string(&value))
+        }
+        "quartile" if args.len() == 3 && integer_arg(&args[2]) == Some(7) => {
+            let values = session_vector_values(&args[0], context)?;
+            let quartile = integer_arg(&args[1]);
+            values
+                .zip(quartile)
+                .and_then(|(values, quartile)| type7_quantile(&values, quartile as i128, 4))
+                .and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
+        "percentile" if args.len() == 3 && integer_arg(&args[2]) == Some(7) => {
+            let values = session_vector_values(&args[0], context)?;
+            let percentile = integer_arg(&args[1]);
+            values
+                .zip(percentile)
+                .and_then(|(values, percentile)| type7_quantile(&values, percentile as i128, 100))
+                .and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
+        "decile" if args.len() == 3 && integer_arg(&args[2]) == Some(7) => {
+            let values = session_vector_values(&args[0], context)?;
+            let decile = integer_arg(&args[1]);
+            values
+                .zip(decile)
+                .and_then(|(values, decile)| type7_quantile(&values, decile as i128, 10))
+                .and_then(|value| fixed_decimal_qalc_string(&value, 8))
+        }
+        "iqr" if args.len() == 1 => session_vector_values(&args[0], context)?
+            .and_then(|values| interquartile_range(&values))
+            .and_then(|value| fixed_decimal_qalc_string(&value, 8)),
+        "pearson" if args.len() == 2 => {
+            paired_session_vector_values(args, context)?.and_then(|(lhs, rhs)| {
+                pearson_correlation(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "spearman" if args.len() == 2 => {
+            paired_session_vector_values(args, context)?.and_then(|(lhs, rhs)| {
+                spearman_correlation(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "covar" if args.len() == 2 => {
+            paired_session_vector_values(args, context)?.and_then(|(lhs, rhs)| {
+                covariance(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "poolvar" if args.len() == 2 => {
+            paired_session_vector_values(args, context)?.and_then(|(lhs, rhs)| {
+                pooled_variance(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "ttest" if args.len() == 2 => {
+            paired_session_vector_values(args, context)?.and_then(|(lhs, rhs)| {
+                unpaired_t_test(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        "pttest" if args.len() == 2 => {
+            paired_session_vector_values(args, context)?.and_then(|(lhs, rhs)| {
+                paired_t_test(&lhs, &rhs).map(|value| approximate_qalc_string(&value))
+            })
+        }
+        _ => None,
+    };
+    Ok(output)
+}
+
+fn paired_session_vector_values(
+    args: &[Expression],
+    context: &CalculatorContext,
+) -> Result<Option<NumberVectorPair>, CsvLoadError> {
+    Ok(session_vector_values(&args[0], context)?.zip(session_vector_values(&args[1], context)?))
+}
+
+fn session_vector_values(
+    expr: &Expression,
+    context: &CalculatorContext,
+) -> Result<Option<NumberVector>, CsvLoadError> {
+    Ok(vector_values(expr, context)?
+        .and_then(|resolved| (resolved.origin == VectorOrigin::Session).then_some(resolved.values)))
+}
+
+fn session_or_generated_vector_values(
+    expr: &Expression,
+    context: &CalculatorContext,
+) -> Result<Option<NumberVector>, CsvLoadError> {
+    Ok(vector_values(expr, context)?.and_then(|resolved| {
+        matches!(
+            resolved.origin,
+            VectorOrigin::Session | VectorOrigin::Generated
+        )
+        .then_some(resolved.values)
+    }))
+}
+
+fn vector_values(
+    expr: &Expression,
+    context: &CalculatorContext,
+) -> Result<Option<ResolvedVector>, CsvLoadError> {
+    match expr {
+        Expression::Vector(items) => Ok(numbers_from_vector(items).map(|values| ResolvedVector {
+            values,
+            origin: VectorOrigin::Direct,
+        })),
+        Expression::Symbolic(symbol) => match context.variables.get(symbol.name()) {
+            Some(value) => Ok(
+                vector_values(value, context)?.map(|resolved| ResolvedVector {
+                    values: resolved.values,
+                    origin: VectorOrigin::Session,
+                }),
+            ),
+            None => Ok(None),
+        },
+        Expression::Variable(var_ref) => match context.variables.get(var_ref.id()) {
+            Some(value) => Ok(
+                vector_values(value, context)?.map(|resolved| ResolvedVector {
+                    values: resolved.values,
+                    origin: VectorOrigin::Session,
+                }),
+            ),
+            None => Ok(None),
+        },
+        Expression::FunctionCall { function, args }
+            if function.id() == "abs" && args.len() == 1 =>
+        {
+            Ok(
+                vector_values(&args[0], context)?.map(|resolved| ResolvedVector {
+                    values: resolved
+                        .values
+                        .into_iter()
+                        .map(|value| value.abs())
+                        .collect(),
+                    origin: resolved.origin,
+                }),
+            )
+        }
+        Expression::FunctionCall { function, args }
+            if function.id() == "genvector" && args.len() == 3 =>
+        {
+            Ok(genvector_values(args).map(|values| ResolvedVector {
+                values,
+                origin: VectorOrigin::Generated,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn numbers_from_vector(items: &[Expression]) -> Option<Vec<Number>> {
+    items
+        .iter()
+        .map(|item| match item {
+            Expression::Number(number) => Some(number.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn genvector_values(args: &[Expression]) -> Option<Vec<Number>> {
+    let value = number_arg(&args[0])?;
+    let start = integer_arg(&args[1])?;
+    let end = integer_arg(&args[2])?;
+    let count = end.checked_sub(start)?.checked_add(1)?;
+    if !(0..=MAX_NATIVE_SESSION_VECTOR_LEN).contains(&count) {
+        return None;
+    }
+    Some(vec![value; usize::try_from(count).ok()?])
+}
+
+fn number_arg(expr: &Expression) -> Option<Number> {
+    match expr {
+        Expression::Number(number) => Some(number.clone()),
+        _ => None,
+    }
+}
+
+fn integer_arg(expr: &Expression) -> Option<i64> {
+    number_arg(expr)?.to_i64()
 }
 
 fn approximate_qalc_string(value: &Number) -> String {
