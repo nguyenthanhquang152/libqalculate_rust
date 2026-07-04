@@ -436,6 +436,10 @@ fn cli_native_literal_statistics_succeed_when_fallback_disabled() {
             "quadraticfit([5 3 4 5 6 7 13 24])",
             "0.7797619048x² − 4.720238095x + 9.732142857",
         ),
+        (
+            "cubicfit([5 3 4 5 6 7 13 24])",
+            "0.1489898990x³ − 1.231601732x² + 2.952741703x + 2.357142857",
+        ),
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
         assert_eq!(stdout, expected, "{expression}");
@@ -681,6 +685,7 @@ fn cli_invalid_native_expression_fails_when_fallback_disabled() {
         "percentile([1 3 7 5 1 1 1 3]; 50)",
         "normdist(7; 6)",
         "quadraticfit([5 3 4 5 6 7 13 25])",
+        "cubicfit([5 3 4 5 6 7 13 25])",
     ] {
         let (stdout, stderr, exit_code) = run_qalc_rs(expression, Some("1"), Some("1"));
         assert!(stdout.is_empty(), "{expression}");
