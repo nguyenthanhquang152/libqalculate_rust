@@ -12,14 +12,14 @@
 | Category | Total | native-pass | tooling-pass | scaffold | fallback-only | unstarted | out-of-scope |
 |---|---|---|---|---|---|---|---|
 | Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
-| Implementation Files | 41 | 0 | 0 | 4 | 3 | 34 | 0 |
+| Implementation Files | 41 | 0 | 0 | 5 | 3 | 33 | 0 |
 | Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
-| Batch Test Files | 17 | 1 | 0 | 4 | 0 | 12 | 0 |
-| Batch Test Cases | 656 | 302 | 0 | 0 | 0 | 354 | 0 |
+| Batch Test Files | 17 | 2 | 0 | 5 | 0 | 10 | 0 |
+| Batch Test Cases | 656 | 304 | 0 | 0 | 0 | 352 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, a focused vector/matrix literal, constructor/accessor, shape/accessor, and arithmetic subset including selected top-level list output, `adj`, `cofactor`, `combine`, `cross`, `det`, `dot`, dot-operator, `entrywise`, `genvector`, `hadamard`, `horzcat`, `identity`, `inverse`, `magnitude`, `norm`, `part`, `permanent`, `pow`/entrywise power, `rank`, `rk`, `rref`, `slice`, `sort`, `transpose`, and `vertcat` rows, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`. The batch manifest currently has 302 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`, and CSV loader count evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, a focused vector/matrix literal, constructor/accessor, shape/accessor, and arithmetic subset including selected top-level list output, `adj`, `cofactor`, `combine`, `cross`, `det`, `dot`, dot-operator, `entrywise`, `genvector`, `hadamard`, `horzcat`, `identity`, `inverse`, `magnitude`, `norm`, `part`, `permanent`, `pow`/entrywise power, `rank`, `rk`, `rref`, `slice`, `sort`, `transpose`, and `vertcat` rows, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, and selected literal statistics `mean`/`stdev` evidence. The batch manifest currently has 304 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader count evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; and literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`.
 
 ---
 
@@ -128,7 +128,7 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | 6 | `BuiltinFunctions-number.cc` | Number theory functions | `unstarted` |
 | 7 | `BuiltinFunctions-combinatorics.cc` | Combinatorics functions | `unstarted` |
 | 8 | `BuiltinFunctions-logical.cc` | Logical/comparison functions | `unstarted` |
-| 9 | `BuiltinFunctions-statistics.cc` | Statistical functions | `unstarted` |
+| 9 | `BuiltinFunctions-statistics.cc` | Statistical functions | `scaffold` via `src/statistics.rs`; selected literal `mean`/`stdev` rows are native-pass |
 | 10 | `BuiltinFunctions-trigonometry.cc` | Trigonometric functions | `unstarted` |
 | 11 | `BuiltinFunctions-special.cc` | Special functions (gamma, beta, zeta, erf, etc.) | `unstarted` |
 | 12 | `BuiltinFunctions-util.cc` | Utility functions (string, base, etc.) | `unstarted` |
@@ -150,9 +150,9 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | Status | Families | File Count |
 |---|---|---|
-| `scaffold` | Number | 1 |
+| `scaffold` | MathStructure matrix/vector, MathStructure print, Number, BuiltinFunctions matrix/vector, selected statistical functions | 5 |
 | `fallback-only` | Calculator construction, calculation, definitions | 3 |
-| `unstarted` | Calculator conversion/parsing/plot APIs, MathStructure, BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 37 |
+| `unstarted` | Calculator conversion/parsing/plot APIs, remaining MathStructure, remaining BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 33 |
 
 ---
 
@@ -245,7 +245,7 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 | 11 | `percentages.batch` | 26 | 0 | — | `unstarted` |
 | 12 | `polynomial.batch` | 49 | 4 | — | `unstarted` |
 | 13 | `solver.batch` | 25 | 4 | — | `unstarted` |
-| 14 | `stats.batch` | 39 | 0 | `vectordata.csv`, `vectordata2.csv` | `unstarted` |
+| 14 | `stats.batch` | 39 | 0 | `vectordata.csv`, `vectordata2.csv` | `scaffold`; selected literal `mean`/`stdev` rows are native-pass |
 | 15 | `strings.batch` | 24 | 1 | — | `unstarted` |
 | 16 | `units.batch` | 13 | 0 | — | `unstarted` |
 | 17 | `variables.batch` | 11 | 0 | — | `unstarted` |
@@ -256,8 +256,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 |---|---|
 | Total batch files | 17 |
 | Total test cases | 656 |
-| Native-pass batch cases | 302 |
-| Inventory-only batch cases | 354 |
+| Native-pass batch cases | 304 |
+| Inventory-only batch cases | 352 |
 | Files with session settings | 6 |
 | Files requiring CSV assets | 1 |
 | Unique CSV assets | 2 (`vectordata.csv`, `vectordata2.csv`) |
@@ -287,8 +287,8 @@ Lists all 17 upstream `.batch` files from `../libqalculate/tests/` with case cou
 fallback-disabled oracle coverage for `number(load(tests/vectordata.csv))` and
 `number(load(tests/vectordata2.csv))`, including quoted-path forms, when both
 Rust and upstream `qalc` run from the upstream checkout. The `stats.batch` rows
-remain inventory-only until native session variable consumption and statistics
-functions are proven.
+that depend on loaded session variables remain inventory-only until native
+session variable consumption and broader statistics functions are proven.
 
 ---
 
@@ -460,7 +460,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 ### Upstream Files with No Rust Counterpart
 
-37 of 41 `.cc` implementation responsibilities remain unstarted (Calculator conversion/parsing/plot APIs, all MathStructure files, all BuiltinFunctions files, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, and util families).
+33 of 41 `.cc` implementation responsibilities remain unstarted (Calculator conversion/parsing/plot APIs, remaining MathStructure files, remaining BuiltinFunctions files, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, and util families).
 
 ---
 
@@ -513,9 +513,9 @@ status_summary:
   implementation_files:
     native_pass: 0
     tooling_pass: 0
-    scaffold: 4
+    scaffold: 5
     fallback_only: 3
-    unstarted: 34
+    unstarted: 33
     out_of_scope: 0
   definition_data:
     native_pass: 0
@@ -525,18 +525,18 @@ status_summary:
     unstarted: 9
     out_of_scope: 0
   batch_tests:
-    native_pass: 1
+    native_pass: 2
     tooling_pass: 0
-    scaffold: 4
+    scaffold: 5
     fallback_only: 0
-    unstarted: 12
+    unstarted: 10
     out_of_scope: 0
   batch_test_cases:
-    native_pass: 302
+    native_pass: 304
     tooling_pass: 0
     scaffold: 0
     fallback_only: 0
-    unstarted: 354
+    unstarted: 352
     out_of_scope: 0
   cli_behaviors:
     native_pass: 2

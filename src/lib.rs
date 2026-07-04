@@ -33,6 +33,7 @@ pub mod ffi;
 mod matrix;
 mod numberbase;
 mod session;
+mod statistics;
 mod text;
 
 /// Calculator options module.
