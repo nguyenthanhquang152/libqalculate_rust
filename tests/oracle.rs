@@ -2024,6 +2024,102 @@ fn focused_issue44_csv_load_oracle_cases() {
             "median(load(\"tests/vectordata.csv\"))",
         ),
         (
+            "csv-backed-geomean-abs-vectordata",
+            "geomean(abs(load(tests/vectordata.csv)))",
+        ),
+        (
+            "csv-backed-geomean-abs-vectordata-quoted",
+            "geomean(abs(load(\"tests/vectordata.csv\")))",
+        ),
+        (
+            "csv-backed-harmmean-abs-vectordata",
+            "harmmean(abs(load(tests/vectordata.csv)))",
+        ),
+        (
+            "csv-backed-harmmean-abs-vectordata-quoted",
+            "harmmean(abs(load(\"tests/vectordata.csv\")))",
+        ),
+        (
+            "csv-backed-rms-vectordata",
+            "rms(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-rms-vectordata-quoted",
+            "rms(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-trimmean-vectordata",
+            "trimmean(load(tests/vectordata.csv), 10)",
+        ),
+        (
+            "csv-backed-trimmean-vectordata-quoted",
+            "trimmean(load(\"tests/vectordata.csv\"), 10)",
+        ),
+        (
+            "csv-backed-winsormean-vectordata",
+            "winsormean(load(tests/vectordata.csv), 10)",
+        ),
+        (
+            "csv-backed-winsormean-vectordata-quoted",
+            "winsormean(load(\"tests/vectordata.csv\"), 10)",
+        ),
+        (
+            "csv-backed-weighmean-vectordata",
+            "weighmean(load(tests/vectordata.csv), genvector(2;1;100))",
+        ),
+        (
+            "csv-backed-weighmean-vectordata-quoted",
+            "weighmean(load(\"tests/vectordata.csv\"), genvector(2;1;100))",
+        ),
+        (
+            "csv-backed-stderr-vectordata",
+            "stderr(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-stderr-vectordata-quoted",
+            "stderr(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-meandev-vectordata",
+            "meandev(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-meandev-vectordata-quoted",
+            "meandev(load(\"tests/vectordata.csv\"))",
+        ),
+        (
+            "csv-backed-quartile-type7-vectordata",
+            "quartile(load(tests/vectordata.csv), 1, 7)",
+        ),
+        (
+            "csv-backed-quartile-type7-vectordata-quoted",
+            "quartile(load(\"tests/vectordata.csv\"), 1, 7)",
+        ),
+        (
+            "csv-backed-percentile-type7-vectordata",
+            "percentile(load(tests/vectordata.csv), 25, 7)",
+        ),
+        (
+            "csv-backed-percentile-type7-vectordata-quoted",
+            "percentile(load(\"tests/vectordata.csv\"), 25, 7)",
+        ),
+        (
+            "csv-backed-decile-type7-vectordata",
+            "decile(load(tests/vectordata.csv), 9, 7)",
+        ),
+        (
+            "csv-backed-decile-type7-vectordata-quoted",
+            "decile(load(\"tests/vectordata.csv\"), 9, 7)",
+        ),
+        (
+            "csv-backed-iqr-vectordata",
+            "iqr(load(tests/vectordata.csv))",
+        ),
+        (
+            "csv-backed-iqr-vectordata-quoted",
+            "iqr(load(\"tests/vectordata.csv\"))",
+        ),
+        (
             "csv-backed-pearson-vectordata",
             "pearson(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
         ),

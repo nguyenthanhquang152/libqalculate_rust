@@ -522,6 +522,76 @@ fn cli_native_csv_backed_descriptive_statistics_succeed_when_fallback_disabled()
 }
 
 #[test]
+fn cli_native_csv_backed_one_vector_statistics_succeed_when_fallback_disabled() {
+    let upstream = upstream_dir();
+    for (expression, expected) in [
+        ("geomean(abs(load(tests/vectordata.csv)))", "14.25624271"),
+        (
+            "geomean(abs(load(\"tests/vectordata.csv\")))",
+            "14.25624271",
+        ),
+        ("harmmean(abs(load(tests/vectordata.csv)))", "5.691924037"),
+        (
+            "harmmean(abs(load(\"tests/vectordata.csv\")))",
+            "5.691924037",
+        ),
+        ("rms(load(tests/vectordata.csv))", "24.22585458"),
+        ("rms(load(\"tests/vectordata.csv\"))", "24.22585458"),
+        ("trimmean(load(tests/vectordata.csv), 10)", "6.788959652"),
+        (
+            "trimmean(load(\"tests/vectordata.csv\"), 10)",
+            "6.788959652",
+        ),
+        ("winsormean(load(tests/vectordata.csv), 10)", "6.774860902"),
+        (
+            "winsormean(load(\"tests/vectordata.csv\"), 10)",
+            "6.774860902",
+        ),
+        (
+            "weighmean(load(tests/vectordata.csv), genvector(2;1;100))",
+            "6.530919283",
+        ),
+        (
+            "weighmean(load(\"tests/vectordata.csv\"), genvector(2;1;100))",
+            "6.530919283",
+        ),
+        ("stderr(load(tests/vectordata.csv))", "2.344646004"),
+        ("stderr(load(\"tests/vectordata.csv\"))", "2.344646004"),
+        ("meandev(load(tests/vectordata.csv))", "19.20169382"),
+        ("meandev(load(\"tests/vectordata.csv\"))", "19.20169382"),
+        ("quartile(load(tests/vectordata.csv), 1, 7)", "−10.48274166"),
+        (
+            "quartile(load(\"tests/vectordata.csv\"), 1, 7)",
+            "−10.48274166",
+        ),
+        (
+            "percentile(load(tests/vectordata.csv), 25, 7)",
+            "−10.48274166",
+        ),
+        (
+            "percentile(load(\"tests/vectordata.csv\"), 25, 7)",
+            "−10.48274166",
+        ),
+        ("decile(load(tests/vectordata.csv), 9, 7)", "38.27474287"),
+        (
+            "decile(load(\"tests/vectordata.csv\"), 9, 7)",
+            "38.27474287",
+        ),
+        ("iqr(load(tests/vectordata.csv))", "33.42899060"),
+        ("iqr(load(\"tests/vectordata.csv\"))", "33.42899060"),
+    ] {
+        let (stdout, stderr, exit_code) =
+            run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
+        assert_eq!(stdout, expected, "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression}");
+    }
+}
+
+#[test]
 fn cli_native_csv_backed_paired_statistics_succeed_when_fallback_disabled() {
     let upstream = upstream_dir();
     for (expression, expected) in [
