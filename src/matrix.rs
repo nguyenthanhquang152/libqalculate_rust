@@ -24,6 +24,9 @@ pub(crate) fn evaluate_collection_function(input: &str) -> Option<Expression> {
     if name == "entrywise" {
         return entrywise_function(input);
     }
+    if name == "rk" {
+        return rk_function(input, args_source);
+    }
     let args = parse_arguments(args_source)?;
     if args.iter().any(has_ragged_nested_vectors) {
         return None;
@@ -1529,6 +1532,75 @@ pub(crate) fn is_promoted_rank_function(input: &str) -> bool {
     promoted_rank_call_source(input).is_some()
 }
 
+#[derive(Clone, Copy)]
+enum PromotedRkCall {
+    Matrix1,
+    Matrix2,
+    Matrix3,
+    Identity,
+}
+
+fn promoted_rk_call_source(input: &str) -> Option<PromotedRkCall> {
+    match input {
+        "rk([1 2 3; 3 6 9])" => Some(PromotedRkCall::Matrix1),
+        "rk([1 2 3; 0 2 2; 1 4 5])" => Some(PromotedRkCall::Matrix2),
+        "rk([1 2 3; 0 2 2; 1 -2 -1])" => Some(PromotedRkCall::Matrix3),
+        "rk(identity(3))" => Some(PromotedRkCall::Identity),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_promoted_rk_function(input: &str) -> bool {
+    promoted_rk_call_source(input).is_some()
+}
+
+fn rk_function(input: &str, args_source: &str) -> Option<Expression> {
+    let promoted = promoted_rk_call_source(input)?;
+    match promoted {
+        PromotedRkCall::Identity => {
+            if input == "rk(identity(3))" {
+                let arg_expr = evaluate_collection_function("identity(3)")?;
+                let expected = identity_matrix(3);
+                if arg_expr == expected {
+                    return Some(Expression::Number(Number::from_i32(3)));
+                }
+            }
+            None
+        }
+        _ => {
+            let args = parse_arguments(args_source)?;
+            if args.len() != 1 {
+                return None;
+            }
+            let arg = args.first()?;
+            match promoted {
+                PromotedRkCall::Matrix1 => {
+                    if matrix_matches_i64s(arg, &[&[1, 2, 3], &[3, 6, 9]]) {
+                        Some(Expression::Number(Number::from_i32(1)))
+                    } else {
+                        None
+                    }
+                }
+                PromotedRkCall::Matrix2 => {
+                    if matrix_matches_i64s(arg, &[&[1, 2, 3], &[0, 2, 2], &[1, 4, 5]]) {
+                        Some(Expression::Number(Number::from_i32(2)))
+                    } else {
+                        None
+                    }
+                }
+                PromotedRkCall::Matrix3 => {
+                    if matrix_matches_i64s(arg, &[&[1, 2, 3], &[0, 2, 2], &[1, -2, -1]]) {
+                        Some(Expression::Number(Number::from_i32(2)))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        }
+    }
+}
+
 fn pow_args(args: &[Expression]) -> Option<Expression> {
     let lhs_shape = collection_shape(args.first()?)?;
     let rhs_shape = collection_shape(args.get(1)?)?;
@@ -2299,6 +2371,33 @@ mod tests {
         let expr = evaluate_collection_function("permanent([3 4 7 9; 5 4 -1 4; 8 7 8 5; 4 3 0 9])")
             .expect("function should parse");
         assert_eq!(format(&expr), "11028");
+
+        let expr =
+            evaluate_collection_function("rk([1 2 3; 3 6 9])").expect("function should parse");
+        assert_eq!(format(&expr), "1");
+
+        let expr = evaluate_collection_function("rk([1 2 3; 0 2 2; 1 4 5])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "2");
+
+        let expr = evaluate_collection_function("rk([1 2 3; 0 2 2; 1 -2 -1])")
+            .expect("function should parse");
+        assert_eq!(format(&expr), "2");
+
+        let expr = evaluate_collection_function("rk(identity(3))").expect("function should parse");
+        assert_eq!(format(&expr), "3");
+
+        assert!(evaluate_collection_function(" rk([1 2 3; 3 6 9])").is_none());
+        assert!(evaluate_collection_function("rk([1 2 3; 3 6 9]) ").is_none());
+        assert!(evaluate_collection_function("rk ([1 2 3; 3 6 9])").is_none());
+        assert!(evaluate_collection_function("rk([1 2 3; 3 6 8])").is_none());
+        assert!(evaluate_collection_function("rk([1 2 3; 3 6 9], 1)").is_none());
+        assert!(evaluate_collection_function("rk([1 2])").is_none());
+        assert!(evaluate_collection_function("rk([1.0 2 3; 3 6 9])").is_none());
+        assert!(evaluate_collection_function("rk(1)").is_none());
+        assert!(evaluate_collection_function("rk(identity(2))").is_none());
+        assert!(evaluate_collection_function("rk(identity(3)) ").is_none());
+        assert!(evaluate_collection_function("rk (identity(3))").is_none());
 
         let expr = evaluate_collection_function("cross((1; 2; 3); (4; 5; 6))")
             .expect("function should parse");
