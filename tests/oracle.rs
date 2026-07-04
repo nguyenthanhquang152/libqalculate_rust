@@ -2023,6 +2023,38 @@ fn focused_issue44_csv_load_oracle_cases() {
             "csv-backed-median-vectordata-quoted",
             "median(load(\"tests/vectordata.csv\"))",
         ),
+        (
+            "csv-backed-pearson-vectordata",
+            "pearson(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-backed-pearson-vectordata-quoted",
+            "pearson(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+        ),
+        (
+            "csv-backed-spearman-vectordata",
+            "spearman(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-backed-spearman-vectordata-quoted",
+            "spearman(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+        ),
+        (
+            "csv-backed-covar-vectordata",
+            "covar(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-backed-covar-vectordata-quoted",
+            "covar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+        ),
+        (
+            "csv-backed-poolvar-vectordata",
+            "poolvar(load(tests/vectordata.csv), load(tests/vectordata2.csv))",
+        ),
+        (
+            "csv-backed-poolvar-vectordata-quoted",
+            "poolvar(load(\"tests/vectordata.csv\"), load(\"tests/vectordata2.csv\"))",
+        ),
     ] {
         let settings = &[][..];
         let cpp_out =
