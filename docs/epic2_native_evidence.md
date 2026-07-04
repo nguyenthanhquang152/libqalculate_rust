@@ -289,6 +289,18 @@ remains fallback-disabled for spacing variants, unrelated rank directions,
 non-integer direction arguments, matrix inputs, shape/value mismatches, and
 explicit session settings.
 
+The same focused oracle test also records the `matrixvector.batch` `entrywise`
+rows promoted in Refs #41:
+
+- `matrixvector.batch:168`: `entrywise(x, [4 10 12], x) -> [4  10  12]`
+- `matrixvector.batch:170`: `entrywise(x / y, [4 10 12], x, [2 2 4], y) -> [2  5  3]`
+- `matrixvector.batch:172`:
+  `entrywise(x / y + z, [4 10 12], x, [2 2 4], y, [1 2 3], z) -> [3  7  6]`
+
+The native `entrywise` gate is source-exact for these three promoted spellings
+and remains fallback-disabled for spacing variants, unrelated expressions,
+value/shape mismatches, zero divisors, and explicit session settings.
+
 The same focused oracle test also records the `matrixvector.batch`
 `pow`/entrywise power rows promoted in Refs #41:
 
