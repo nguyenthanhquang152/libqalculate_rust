@@ -496,6 +496,32 @@ fn cli_native_csv_backed_statistics_succeed_when_fallback_disabled() {
 }
 
 #[test]
+fn cli_native_csv_backed_descriptive_statistics_succeed_when_fallback_disabled() {
+    let upstream = upstream_dir();
+    for (expression, expected) in [
+        ("min(load(tests/vectordata.csv))", "−43.38345286"),
+        ("min(load(\"tests/vectordata.csv\"))", "−43.38345286"),
+        ("max(load(tests/vectordata.csv))", "54.40816396"),
+        ("max(load(\"tests/vectordata.csv\"))", "54.40816396"),
+        ("total(load(tests/vectordata.csv))", "653.0919283"),
+        ("total(load(\"tests/vectordata.csv\"))", "653.0919283"),
+        ("range(load(tests/vectordata.csv))", "97.79161682"),
+        ("range(load(\"tests/vectordata.csv\"))", "97.79161682"),
+        ("median(load(tests/vectordata.csv))", "8.084203925"),
+        ("median(load(\"tests/vectordata.csv\"))", "8.084203925"),
+    ] {
+        let (stdout, stderr, exit_code) =
+            run_qalc_rs_args_in_dir(&["--", expression], Some("1"), Some("1"), Some(&upstream));
+        assert_eq!(stdout, expected, "{expression}");
+        assert!(
+            stderr.contains("[qalc-rs-metadata] fallback=native"),
+            "{expression}: {stderr}"
+        );
+        assert_eq!(exit_code, 0, "{expression}");
+    }
+}
+
+#[test]
 fn cli_native_csv_load_errors_surface_when_fallback_disabled() {
     let cwd = temp_dir("csv_load_error");
     let tests_dir = cwd.join("tests");

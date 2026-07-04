@@ -29,6 +29,16 @@ const CSV_MEAN_VECTORDATA_SOURCE: &str = "mean(load(tests/vectordata.csv))";
 const CSV_MEAN_VECTORDATA_QUOTED_SOURCE: &str = "mean(load(\"tests/vectordata.csv\"))";
 const CSV_STDEV_VECTORDATA_SOURCE: &str = "stdev(load(tests/vectordata.csv))";
 const CSV_STDEV_VECTORDATA_QUOTED_SOURCE: &str = "stdev(load(\"tests/vectordata.csv\"))";
+const CSV_MIN_VECTORDATA_SOURCE: &str = "min(load(tests/vectordata.csv))";
+const CSV_MIN_VECTORDATA_QUOTED_SOURCE: &str = "min(load(\"tests/vectordata.csv\"))";
+const CSV_MAX_VECTORDATA_SOURCE: &str = "max(load(tests/vectordata.csv))";
+const CSV_MAX_VECTORDATA_QUOTED_SOURCE: &str = "max(load(\"tests/vectordata.csv\"))";
+const CSV_TOTAL_VECTORDATA_SOURCE: &str = "total(load(tests/vectordata.csv))";
+const CSV_TOTAL_VECTORDATA_QUOTED_SOURCE: &str = "total(load(\"tests/vectordata.csv\"))";
+const CSV_RANGE_VECTORDATA_SOURCE: &str = "range(load(tests/vectordata.csv))";
+const CSV_RANGE_VECTORDATA_QUOTED_SOURCE: &str = "range(load(\"tests/vectordata.csv\"))";
+const CSV_MEDIAN_VECTORDATA_SOURCE: &str = "median(load(tests/vectordata.csv))";
+const CSV_MEDIAN_VECTORDATA_QUOTED_SOURCE: &str = "median(load(\"tests/vectordata.csv\"))";
 
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> {
     let output = match expr {
@@ -72,6 +82,26 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, CsvLoadError> 
             let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
             sample_stdev(&values).map(|value| approximate_qalc_string(&value))
         }
+        CSV_MIN_VECTORDATA_SOURCE | CSV_MIN_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            minimum(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_MAX_VECTORDATA_SOURCE | CSV_MAX_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            maximum(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_TOTAL_VECTORDATA_SOURCE | CSV_TOTAL_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            total(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_RANGE_VECTORDATA_SOURCE | CSV_RANGE_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            range(&values).map(|value| approximate_qalc_string(&value))
+        }
+        CSV_MEDIAN_VECTORDATA_SOURCE | CSV_MEDIAN_VECTORDATA_QUOTED_SOURCE => {
+            let values = crate::data::load_csv_numbers(CSV_VECTORDATA_PATH)?;
+            median(&values).map(|value| approximate_qalc_string(&value))
+        }
         _ => None,
     };
     Ok(output)
@@ -93,10 +123,62 @@ fn mean(values: &[Number]) -> Option<Number> {
         return None;
     }
 
+    Some(total(values)?.div(&Number::from_i64(values.len() as i64)))
+}
+
+fn total(values: &[Number]) -> Option<Number> {
+    if values.is_empty() {
+        return None;
+    }
+
     let total = values
         .iter()
         .fold(Number::from_i32(0), |acc, value| acc.add(value));
-    Some(total.div(&Number::from_i64(values.len() as i64)))
+    Some(total)
+}
+
+fn minimum(values: &[Number]) -> Option<Number> {
+    let mut best = values.first()?.clone();
+    for value in &values[1..] {
+        if value.is_less_than(&best) {
+            best = value.clone();
+        }
+    }
+    Some(best)
+}
+
+fn maximum(values: &[Number]) -> Option<Number> {
+    let mut best = values.first()?.clone();
+    for value in &values[1..] {
+        if value.is_greater_than(&best) {
+            best = value.clone();
+        }
+    }
+    Some(best)
+}
+
+fn range(values: &[Number]) -> Option<Number> {
+    Some(maximum(values)?.sub(&minimum(values)?))
+}
+
+fn median(values: &[Number]) -> Option<Number> {
+    if values.is_empty() {
+        return None;
+    }
+
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|lhs, rhs| lhs.partial_cmp(rhs).unwrap_or(std::cmp::Ordering::Equal));
+    let midpoint = sorted.len() / 2;
+    if sorted.len() % 2 == 1 {
+        return sorted.get(midpoint).cloned();
+    }
+
+    Some(
+        sorted
+            .get(midpoint - 1)?
+            .add(sorted.get(midpoint)?)
+            .div(&Number::from_i32(2)),
+    )
 }
 
 fn sample_stdev(values: &[Number]) -> Option<Number> {
@@ -480,6 +562,16 @@ mod tests {
             sample_stdev(&values).unwrap().to_qalc_string(),
             "1.870828693"
         );
+    }
+
+    #[test]
+    fn computes_sample_descriptive_statistics() {
+        let values = sample_values();
+        assert_eq!(minimum(&values).unwrap().to_qalc_string(), "2");
+        assert_eq!(maximum(&values).unwrap().to_qalc_string(), "7");
+        assert_eq!(total(&values).unwrap().to_qalc_string(), "27");
+        assert_eq!(range(&values).unwrap().to_qalc_string(), "5");
+        assert_eq!(median(&values).unwrap().to_qalc_string(), "4.5");
     }
 
     #[test]
