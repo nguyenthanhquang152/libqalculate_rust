@@ -48,6 +48,9 @@ pub mod context;
 /// CSV-backed data loading helpers.
 pub mod data;
 
+/// XML definition loader core with provenance and recoverable diagnostics.
+pub mod definitions;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.
