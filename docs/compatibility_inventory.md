@@ -12,14 +12,14 @@
 | Category | Total | native-pass | tooling-pass | scaffold | fallback-only | unstarted | out-of-scope |
 |---|---|---|---|---|---|---|---|
 | Public Headers | 22 | 0 | 0 | 3 | 1 | 14 | 4 |
-| Implementation Files | 41 | 0 | 0 | 5 | 3 | 33 | 0 |
-| Definition Data Files | 9 | 0 | 0 | 0 | 0 | 9 | 0 |
+| Implementation Files | 41 | 0 | 0 | 6 | 2 | 33 | 0 |
+| Definition Data Files | 9 | 0 | 0 | 8 | 0 | 1 | 0 |
 | Batch Test Files | 17 | 4 | 0 | 3 | 0 | 10 | 0 |
 | Batch Test Cases | 656 | 341 | 0 | 0 | 0 | 315 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 12 | 1 | 46 | 0 |
 
-**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, all 130 `matrixvector.batch` rows covering vector/matrix literals, constructors/accessors, arithmetic, shape helpers, and matrix functions, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, direct CSV-backed `mean(load(...))`/`stdev(load(...))`/`min(load(...))`/`max(load(...))`/`total(load(...))`/`range(load(...))`/`median(load(...))`, `geomean(abs(load(...)))`/`harmmean(abs(load(...)))`/`rms(load(...))`/`trimmean(load(...), 10)`/`winsormean(load(...), 10)`/`weighmean(load(...), genvector(2;1;100))`/`stderr(load(...))`/`meandev(load(...))`/`quartile(load(...), 1, 7)`/`percentile(load(...), 25, 7)`/`decile(load(...), 9, 7)`/`iqr(load(...))` proof for `vectordata.csv`, direct paired CSV `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` proof for `vectordata.csv` and `vectordata2.csv`, quoted-path forms for those direct CSV consumers, fallback-disabled native session-variable execution for the original `stats.batch` `name=load(...)` setup/delete rows, and selected literal statistics `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` evidence. The batch manifest currently has 341 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader/statistics evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`; and session-variable statistics evidence is recorded by `src/ffi.rs::tests::fallback_disabled_preserves_csv_loaded_statistics_session_variables`.
+**Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, all 130 `matrixvector.batch` rows covering vector/matrix literals, constructors/accessors, arithmetic, shape helpers, and matrix functions, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, direct CSV-backed `mean(load(...))`/`stdev(load(...))`/`min(load(...))`/`max(load(...))`/`total(load(...))`/`range(load(...))`/`median(load(...))`, `geomean(abs(load(...)))`/`harmmean(abs(load(...)))`/`rms(load(...))`/`trimmean(load(...), 10)`/`winsormean(load(...), 10)`/`weighmean(load(...), genvector(2;1;100))`/`stderr(load(...))`/`meandev(load(...))`/`quartile(load(...), 1, 7)`/`percentile(load(...), 25, 7)`/`decile(load(...), 9, 7)`/`iqr(load(...))` proof for `vectordata.csv`, direct paired CSV `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` proof for `vectordata.csv` and `vectordata2.csv`, quoted-path forms for those direct CSV consumers, fallback-disabled native session-variable execution for the original `stats.batch` `name=load(...)` setup/delete rows, and selected literal statistics `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` evidence. Epic 9 now has a Rust XML definition loader scaffold in `src/definitions.rs` that parses upstream XML into raw items, categories, actions, provenance, and recoverable diagnostics; it does not populate semantic registries or claim unit/function/dataset/currency parity. The batch manifest currently has 341 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader/statistics evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`; XML loader scaffold evidence is recorded by `tests/definition_loader.rs`; and session-variable statistics evidence is recorded by `src/ffi.rs::tests::fallback_disabled_preserves_csv_loaded_statistics_session_variables`.
 
 ---
 
@@ -87,7 +87,7 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | 1 | `Calculator.cc` | Core calculator state, construction, messages | `fallback-only` for construction only via `src/ffi.rs` |
 | 2 | `Calculator-calculate.cc` | Expression evaluation engine | `fallback-only` via `src/ffi.rs` |
 | 3 | `Calculator-convert.cc` | Unit/base conversion | `unstarted` |
-| 4 | `Calculator-definitions.cc` | Definition loading from XML | `fallback-only` via `src/ffi.rs` |
+| 4 | `Calculator-definitions.cc` | Definition loading from XML | `scaffold` via `src/definitions.rs`; calculator registry loading remains `fallback-only` via `src/ffi.rs` |
 | 5 | `Calculator-parse.cc` | Expression parsing | `unstarted` for direct parser APIs; used internally by fallback evaluation |
 | 6 | `Calculator-plot.cc` | Gnuplot integration | `unstarted` |
 
@@ -150,8 +150,8 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 
 | Status | Families | File Count |
 |---|---|---|
-| `scaffold` | MathStructure matrix/vector, MathStructure print, Number, BuiltinFunctions matrix/vector, selected statistical functions | 5 |
-| `fallback-only` | Calculator construction, calculation, definitions | 3 |
+| `scaffold` | MathStructure matrix/vector, MathStructure print, Number, BuiltinFunctions matrix/vector, selected statistical functions, Definition XML loader | 6 |
+| `fallback-only` | Calculator construction, calculation | 2 |
 | `unstarted` | Calculator conversion/parsing/plot APIs, remaining MathStructure, remaining BuiltinFunctions, ExpressionItem, Function, Variable, Unit, Prefix, DataSet, DateTime, Utility | 33 |
 
 ---
@@ -204,14 +204,14 @@ Maps all 9 definition data files from `../libqalculate/data/` to Rust loading st
 
 | # | Data File | Format | Content | Rust Status | Notes |
 |---|---|---|---|---|---|
-| 1 | `currencies.xml.in` | XML | Currency definitions and exchange rate metadata | `unstarted` | ~170 currencies; names use `@TRANSLATORS` markers |
-| 2 | `datasets.xml.in` | XML | Dataset definitions (elements, planets) | `unstarted` | References `elements.xml.in` and `planets.xml.in` |
-| 3 | `elements.xml.in` | XML | Periodic table element properties | `unstarted` | 118 elements with physical/chemical properties |
-| 4 | `functions.xml.in` | XML | Math/science function definitions | `unstarted` | Builtin function metadata and argument specs |
-| 5 | `planets.xml.in` | XML | Solar system planet/body data | `unstarted` | Orbital and physical parameters |
-| 6 | `prefixes.xml.in` | XML | SI, binary, and other prefix definitions | `unstarted` | Decimal (yocto–quetta), binary (kibi–exbi), number prefixes |
-| 7 | `units.xml.in` | XML | Unit definitions and conversion relations | `unstarted` | ~600 units across all domains |
-| 8 | `variables.xml.in` | XML | Built-in variable definitions | `unstarted` | Mathematical/physical constants |
+| 1 | `currencies.xml.in` | XML | Currency definitions and exchange rate metadata | `scaffold` | Generic XML loader preserves built-in unit items, names, categories, and provenance; currency semantics/rates remain #49 |
+| 2 | `datasets.xml.in` | XML | Dataset definitions (elements, planets) | `scaffold` | Generic XML loader preserves dataset items/properties; lookup semantics remain #48 |
+| 3 | `elements.xml.in` | XML | Periodic table element properties | `scaffold` | Generic XML loader preserves data object rows/provenance; dataset lookup semantics remain #48 |
+| 4 | `functions.xml.in` | XML | Math/science function definitions | `scaffold` | Generic XML loader preserves built-in function metadata; function registry semantics remain #47 |
+| 5 | `planets.xml.in` | XML | Solar system planet/body data | `scaffold` | Generic XML loader preserves data object rows/provenance; dataset lookup semantics remain #48 |
+| 6 | `prefixes.xml.in` | XML | SI, binary, and other prefix definitions | `scaffold` | Generic XML loader preserves prefix items and names; prefix semantics remain #46 |
+| 7 | `units.xml.in` | XML | Unit definitions and conversion relations | `scaffold` | Generic XML loader preserves unit items, category paths, and raw fields; conversion semantics remain #46/#50 |
+| 8 | `variables.xml.in` | XML | Built-in variable definitions | `scaffold` | Generic XML loader preserves variable items and names; variable registry semantics remain #47 |
 | 9 | `rates.json` | JSON | Exchange rate data (updated externally) | `unstarted` | ECB-sourced rates; fetched at runtime in upstream |
 
 ### Data Loading Pipeline Status
@@ -219,9 +219,9 @@ Maps all 9 definition data files from `../libqalculate/data/` to Rust loading st
 ```
 XML/JSON files → Parser → Definition Registry → Calculator State
      ↑                        ↑                        ↑
-  Present in           No Rust XML            No Rust registry
-  upstream data/       parser yet             (ffi.rs delegates
-  directory                                    to C++ loadDefs)
+  Present in           Rust XML scaffold      No Rust registry
+  upstream data/       preserves raw          (ffi.rs delegates
+  directory            provenance             to C++ loadDefs)
 ```
 
 ---
@@ -465,6 +465,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 |---|---|---|
 | `src/lib.rs` | `includes.h` (partial), crate root | `scaffold` |
 | `src/ffi.rs` | `Calculator.h`, `Calculator.cc`, `Calculator-calculate.cc`, `Calculator-definitions.cc` (partial) | `fallback-only` |
+| `src/definitions.rs` | `Calculator-definitions.cc`, upstream `data/*.xml.in` | `scaffold` |
 | `src/number.rs` | `Number.h`, `Number.cc` | mixed: focused native evidence, scaffold, unstarted |
 | `src/batch.rs` | — (no upstream equivalent; native batch parser) | `tooling-pass` |
 | `src/main.rs` | `../src/qalc.cc` (partial CLI parity) | mixed |

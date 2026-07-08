@@ -33,3 +33,10 @@ path = "fuzz_targets/operator_parser.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "definition_loader"
+path = "fuzz_targets/definition_loader.rs"
+test = false
+doc = false
+bench = false
