@@ -468,6 +468,16 @@ fn is_polynomial_native_expression(expr: &crate::ast::Expression) -> bool {
         false
     })
 }
+
+fn is_dataset_native_expression(expr: &crate::ast::Expression) -> bool {
+    expression_contains(expr, &|expr| {
+        let crate::ast::Expression::FunctionCall { function, .. } = expr else {
+            return false;
+        };
+        crate::datasets::is_dataset_function_name(function.id())
+    })
+}
+
 fn evaluate_general_expression_natively(
     profile: PrintProfile,
     parsed: &crate::ast::Expression,
@@ -730,6 +740,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
             || is_geometry_expression(ast)
             || is_text_native_expression(ast)
             || is_polynomial_native_expression(ast)
+            || is_dataset_native_expression(ast)
         {
             // Build a context from session settings so native evaluation
             // respects user configuration (precision, base, etc.).

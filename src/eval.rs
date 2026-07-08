@@ -743,6 +743,9 @@ fn evaluate_ast_rec(
         Expression::Symbolic(sym) => evaluate_symbolic(sym, context),
         Expression::FunctionCall { function, args } => {
             let fid = function.id();
+            if let Some(res) = crate::datasets::evaluate_raw_dataset_function(fid, args) {
+                return res;
+            }
             if let Some(res) = crate::functions::utility_string::evaluate_raw(fid, args, context) {
                 return res.map_err(|e| e.message);
             }

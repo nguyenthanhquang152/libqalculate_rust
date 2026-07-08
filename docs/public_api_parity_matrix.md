@@ -20,7 +20,7 @@ FFI-only rows name the actual Rust wrapper and cannot be counted as `native-pass
 | 5 | `ExpressionItem.h` | Shared name, registration, metadata, lifecycle APIs | future `definitions` | `unstarted` | no | #42, #64 |
 | 6 | `Variable.h` | Known/unknown variables, assumptions, value APIs | future `variables` | `unstarted` | no | #45, #64 |
 | 7 | `Function.h` | MathFunction and Argument APIs | future `functions` | `unstarted` | no | #30-#35, #64 |
-| 8 | `DataSet.h` | DataSet, DataProperty, DataObject APIs | future `datasets` | `unstarted` | no | #48, #64 |
+| 8 | `DataSet.h` | DataSet, DataProperty, DataObject APIs | `src/datasets.rs` | `scaffold` | no | #64 |
 | 9 | `Unit.h` | Unit, AliasUnit, CompositeUnit APIs | future `units` | `unstarted` | no | #38-#40, #64 |
 | 10 | `Prefix.h` | Decimal, binary, and number prefix APIs | future `units` | `unstarted` | no | #37, #64 |
 | 11 | `QalculateDateTime.h` | Date and time APIs | future `datetime` | `unstarted` | no | #49, #64 |
@@ -36,7 +36,7 @@ FFI-only rows name the actual Rust wrapper and cannot be counted as `native-pass
 | ExpressionItem | `ExpressionItem.h` | name management; registration; type identification; properties; lifecycle | future `definitions` | `unstarted` | #42, #64 |
 | Variable | `Variable.h` | construction; value get/set; assumptions; known/unknown discrimination | future `variables` | `unstarted` | #45, #64 |
 | Function | `Function.h` | construction; argument management; evaluation; condition checks; subfunction support | future `functions` | `unstarted` | #30-#35, #64 |
-| DataSet | `DataSet.h` | construction; property management; object lookup; data loading | future `datasets` | `unstarted` | #48, #64 |
+| DataSet | `DataSet.h` | construction; property management; object lookup; data loading | `src/datasets.rs` | `scaffold` | #64 |
 | Unit | `Unit.h` | construction; conversion; composite units; prefix management; base-unit relations | future `units` | `unstarted` | #38-#40, #64 |
 | Prefix | `Prefix.h` | construction; value; name management; type identification | future `units` | `unstarted` | #37, #64 |
 | Date/time | `QalculateDateTime.h` | construction; calendar conversion; arithmetic; formatting | future `datetime` | `unstarted` | #49, #64 |
@@ -50,13 +50,13 @@ FFI-only rows name the actual Rust wrapper and cannot be counted as `native-pass
 | API families classified | 11 |
 | Native-pass public API families | 0 |
 | FFI-only public API headers | 1 |
-| Scaffold public API headers | 3 |
-| Unstarted public API headers | 8 |
+| Scaffold public API headers | 4 |
+| Unstarted public API headers | 7 |
 
 ## Closure Notes
 
 - `Calculator.h` is the only FFI-only public API row and is explicitly tied to `src/ffi.rs`.
-- `Number.h`, `includes.h`, and `qalculate.h` are scaffold rows; they do not imply native parity.
+- `Number.h`, `DataSet.h`, `includes.h`, and `qalculate.h` are scaffold rows; they do not imply native parity.
 - Full Rust public API design and symbol-by-symbol implementation are tracked by #64 and later implementation issues.
 - #176 closes the Epic 8 matrix/vector diagnostics follow-up by documenting fail-closed behavior for unsupported diagnostic families; it does not change the `MathStructure.h` public API status.
 - There are no approved public API deviations in `docs/deviations.md` for this matrix.

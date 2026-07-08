@@ -1286,6 +1286,53 @@ fn assert_native_oracle_cases(qalc: &Path, defs: &Path, cases: &[NativeOracleCas
 }
 
 #[test]
+fn focused_issue48_dataset_lookup_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue48_dataset_lookup_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let default_settings = &[][..];
+    let cases: &[NativeOracleCase<'_>] = &[
+        ("dataset-atom-h-mass", "atom(H; mass)", default_settings),
+        ("dataset-atom-he-mass", "atom(He; mass)", default_settings),
+        ("dataset-atom-h-name", "atom(H; name)", default_settings),
+        ("dataset-atom-1-symbol", "atom(1; symbol)", default_settings),
+        (
+            "dataset-atom-hydrogen-number",
+            "atom(Hydrogen; number)",
+            default_settings,
+        ),
+        (
+            "dataset-planet-earth-radius",
+            "planet(Earth; radius)",
+            default_settings,
+        ),
+        (
+            "dataset-planet-earth-gravity",
+            "planet(Earth; gravity)",
+            default_settings,
+        ),
+        (
+            "dataset-planet-mars-mass",
+            "planet(Mars; mass)",
+            default_settings,
+        ),
+        (
+            "dataset-planet-pluto-mass",
+            "planet(Pluto; mass)",
+            default_settings,
+        ),
+    ];
+
+    assert_native_oracle_cases(&qalc, &defs, cases);
+}
+
+#[test]
 fn focused_issue41_vector_matrix_literal_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
         eprintln!(

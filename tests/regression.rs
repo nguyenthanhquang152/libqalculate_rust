@@ -1,4 +1,5 @@
 use libqalculate_rust::batch::read_batch_cases;
+use libqalculate_rust::context::CalculatorContext;
 
 #[test]
 fn local_regression_fixture_is_stable() {
@@ -7,4 +8,28 @@ fn local_regression_fixture_is_stable() {
     assert_eq!(cases.len(), 4);
     assert_eq!(cases[0].expression, "0");
     assert_eq!(cases[0].expected, ["0"]);
+}
+
+#[test]
+fn reduced_dataset_lookup_regressions_match_focused_oracle_cases() {
+    let mut context = CalculatorContext::new();
+    let cases = [
+        ("atom(H; mass)", "1.008 u"),
+        ("atom(He; mass)", "4.00260 u"),
+        ("atom(H; name)", "\"Hydrogen\""),
+        ("atom(1; symbol)", "'H'"),
+        ("atom(Hydrogen; number)", "1"),
+        ("planet(Earth; radius)", "6371.0 km"),
+        ("planet(Earth; gravity)", "9.80665 m/s²"),
+        ("planet(Mars; mass)", "6.4171E23 kg"),
+        ("planet(Pluto; mass)", "1.3E22 kg"),
+    ];
+
+    for (expression, expected) in cases {
+        context.clear_messages();
+        let actual = context
+            .parse_and_evaluate_to_string(expression)
+            .unwrap_or_else(|error| panic!("{expression:?} failed: {error}"));
+        assert_eq!(actual, expected, "{expression}");
+    }
 }
