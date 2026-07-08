@@ -412,6 +412,35 @@ fn run_oracle_expression_with_isolated_user_dir(
     }
 }
 
+fn run_unit_oracle_expression_with_isolated_user_dir(
+    qalc_path: &Path,
+    defs: &Path,
+    expression: &str,
+) -> CapturedOutput {
+    let user_dir = tempfile::tempdir().expect("temporary qalc user dir");
+    let output = Command::new(qalc_path)
+        .env("LC_ALL", "C.UTF-8")
+        .env("TZ", "UTC")
+        .env("QALCULATE_DEFINITIONS_DIR", defs)
+        .env("QALCULATE_USER_DIR", user_dir.path())
+        .arg("-defaults")
+        .arg("-terse")
+        .arg("-set")
+        .arg("decimal_comma 0")
+        .arg("-set")
+        .arg("unicode 0")
+        .arg(expression)
+        .output()
+        .expect("failed to execute C++ qalc unit oracle");
+
+    CapturedOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        exit_code: output.status.code().unwrap_or(-1),
+        fallback_state: None,
+    }
+}
+
 // ── Rust subject runner ───────────────────────────────────────────────────────
 
 /// Run a single expression through the Rust implementation.
@@ -1428,6 +1457,63 @@ fn focused_issue49_currency_conversion_oracle_cases() {
     ];
 
     assert_native_oracle_cases_with_isolated_oracle_user_dir(&qalc, &defs, cases);
+}
+
+#[test]
+fn focused_issue50_unit_conversion_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue50_unit_conversion_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases = [
+        ("5 dm3 to L", "5 L"),
+        ("25 dm^3 to L", "25 L"),
+        ("20 miles / 2h to km/h", "16.09344 km/h"),
+        ("1.74 to ft", "5 ft + 8.503937008 in"),
+        ("1.74 m to ft", "5 ft + 8.503937008 in"),
+        ("1.74 m to -ft", "5.708661417 ft"),
+        ("100 lbf * 60 mph to hp", "15.99999752 hp"),
+        ("50 Ω * 2 A", "100 V"),
+        ("50 Ω * 2 A to base", "100 kg*m^2/(A*s^3)"),
+        ("50 W * 2 s", "100 J"),
+        ("10 N / 5 Pa", "2 m^2"),
+        ("5 m/s to s/m", "0.2 s/m"),
+        ("1000 bit to b?byte", "0.1220703125 KiB"),
+        ("500 megabit/s * 2 h to b?byte", "419.0951586 GiB"),
+    ];
+
+    for (expression, expected) in cases {
+        let cpp_out = run_unit_oracle_expression_with_isolated_user_dir(&qalc, &defs, expression);
+        assert_eq!(cpp_out.stdout, expected, "oracle drift for {expression}");
+        assert_eq!(cpp_out.exit_code, 0, "oracle exit for {expression}");
+
+        let rust_out = run_rust_expression(expression, &[], &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{expression:?} did not run natively"
+        );
+    }
 }
 
 #[test]

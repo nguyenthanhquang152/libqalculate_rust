@@ -310,6 +310,12 @@ impl Calculator {
                         fallback_state: FallbackState::Native,
                     });
                 }
+                if let Some(output) = native_unit_conversion_output(profile, expr, settings)? {
+                    return Ok(CalculationOutput {
+                        output,
+                        fallback_state: FallbackState::Native,
+                    });
+                }
             }
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 return Ok(CalculationOutput {
@@ -640,6 +646,27 @@ fn native_currency_conversion_output(
     };
 
     Ok(Some(formatted))
+}
+
+fn native_unit_conversion_output(
+    profile: PrintProfile,
+    expr: &str,
+    settings: &[&str],
+) -> Result<Option<String>, CalculatorError> {
+    if !settings.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(output) =
+        crate::unit_conversion::native_output(expr).map_err(CalculatorError::NativeEvaluation)?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(match profile {
+        PrintProfile::Api => output,
+        PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+    }))
 }
 
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
