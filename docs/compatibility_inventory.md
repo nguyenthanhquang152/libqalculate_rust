@@ -59,7 +59,7 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 | 12 | `Unit.h` | `src/units.rs` | `scaffold` | Typed loaded definitions for base, alias, composite, and builtin units; conversion APIs remain unstarted |
 | 13 | `Prefix.h` | `src/units.rs` | `scaffold` | Typed loaded decimal/binary prefix definitions with names and exponents; full multiplier API remains incomplete |
 | 14 | `DataSet.h` | `src/datasets.rs` | `scaffold` | Typed loaded `DatasetDefinition`, `DatasetPropertyDefinition`, and `DatasetObject` records exist with focused lookup; full public API remains incomplete |
-| 15 | `QalculateDateTime.h` | — | `unstarted` | Date/time arithmetic types |
+| 15 | `QalculateDateTime.h` | `src/datetime.rs` | `scaffold` | Validated Gregorian date/time value model with exact seconds, UTC timestamps/differences, ordering, and exact day/month/year arithmetic; parsing, localized formatting, current-time functions, and calendar conversions remain incomplete |
 | 16 | `includes.h` | `src/lib.rs` (partial) | `scaffold` | Enums, options structs referenced but not fully ported |
 | 17 | `definitions.h` | — | `unstarted` | Definition loading constants and version macros |
 | 18 | `qalculate.h` | — | `scaffold` | Umbrella `#include` header; not directly needed in Rust module system |
@@ -72,8 +72,8 @@ Maps all 22 C++ public headers from `../libqalculate/libqalculate/*.h` to their 
 
 - **native-pass (0)**: —
 - **fallback-only (1)**: `Calculator.h`
-- **scaffold (8)**: `Number.h`, `Function.h`, `Variable.h`, `Unit.h`, `Prefix.h`, `DataSet.h`, `includes.h`, `qalculate.h`
-- **unstarted (9)**: `MathStructure.h`, `MathStructure-support.h`, `ExpressionItem.h`, `BuiltinFunctions.h`, `QalculateDateTime.h`, `definitions.h`, `util.h`, `bernoulli_numbers.h`, `primes.h`
+- **scaffold (9)**: `Number.h`, `Function.h`, `Variable.h`, `Unit.h`, `Prefix.h`, `DataSet.h`, `QalculateDateTime.h`, `includes.h`, `qalculate.h`
+- **unstarted (8)**: `MathStructure.h`, `MathStructure-support.h`, `ExpressionItem.h`, `BuiltinFunctions.h`, `definitions.h`, `util.h`, `bernoulli_numbers.h`, `primes.h`
 - **out-of-scope (4)**: `Calculator_p.h`, `MathStructure_p.h`, `ExpressionItem_p.h`, `support.h`
 
 ---
@@ -145,16 +145,16 @@ Maps all 41 C++ `.cc` implementation files from `../libqalculate/libqalculate/*.
 | 4 | `Unit.cc` | Unit | `scaffold` via `src/units.rs` typed loaded unit metadata, descriptions, hidden flags, currency countries, parts, and base relations; conversion remains unstarted |
 | 5 | `Prefix.cc` | Prefix | `scaffold` via `src/units.rs` typed loaded prefix names/exponents; full prefix value semantics remain incomplete |
 | 6 | `DataSet.cc` | DataSet | `scaffold` via `src/datasets.rs` typed dataset/property/object loading and focused `atom`/`planet` lookup; mutation/save/full API parity remains incomplete |
-| 7 | `QalculateDateTime.cc` | DateTime | `unstarted` |
+| 7 | `QalculateDateTime.cc` | DateTime | `scaffold` via `src/datetime.rs` validated Gregorian value model, exact `Number` seconds, UTC timestamp/difference helpers, ordering, and exact day/month/year arithmetic; date string parsing/printing, timezone/localtime behavior, calendar conversions, and datetime built-in functions remain unstarted |
 | 8 | `util.cc` | Utility | `unstarted` |
 
 ### Families by Status
 
 | Status | Families | File Count |
 |---|---|---|
-| `scaffold` | MathStructure matrix/vector, MathStructure print, Number, BuiltinFunctions matrix/vector, selected statistical functions, Definition XML loader, Function typed loader, Variable typed loader, Unit typed loader, Prefix typed loader, DataSet typed loader/lookup | 11 |
+| `scaffold` | MathStructure matrix/vector, MathStructure print, Number, BuiltinFunctions matrix/vector, selected statistical functions, Definition XML loader, Function typed loader, Variable typed loader, Unit typed loader, Prefix typed loader, DataSet typed loader/lookup, DateTime value model | 12 |
 | `fallback-only` | Calculator construction, calculation | 2 |
-| `unstarted` | Calculator conversion/parsing/plot APIs, remaining MathStructure, remaining BuiltinFunctions, ExpressionItem, DateTime, Utility | 28 |
+| `unstarted` | Calculator conversion/parsing/plot APIs, remaining MathStructure, remaining BuiltinFunctions, ExpressionItem, Utility | 27 |
 
 ---
 
@@ -482,7 +482,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 
 ### Upstream Files with No Rust Counterpart
 
-31 of 41 `.cc` implementation responsibilities remain unstarted (Calculator conversion/parsing/plot APIs, remaining MathStructure files, remaining BuiltinFunctions files, ExpressionItem, Function, Variable, DataSet, DateTime, and util families).
+30 of 41 `.cc` implementation responsibilities remain unstarted (Calculator conversion/parsing/plot APIs, remaining MathStructure files, remaining BuiltinFunctions files, ExpressionItem, Function, Variable, DataSet, and util families).
 
 ---
 

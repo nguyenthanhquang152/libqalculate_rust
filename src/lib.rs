@@ -64,6 +64,9 @@ pub mod datasets;
 /// Native exchange-rate parsing and currency conversion.
 pub mod rates;
 
+/// Native date/time value model.
+pub mod datetime;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.

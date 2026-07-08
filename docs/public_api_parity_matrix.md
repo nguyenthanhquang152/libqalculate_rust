@@ -23,7 +23,7 @@ FFI-only rows name the actual Rust wrapper and cannot be counted as `native-pass
 | 8 | `DataSet.h` | DataSet, DataProperty, DataObject APIs | `src/datasets.rs` | `scaffold` | no | #64 |
 | 9 | `Unit.h` | Unit, AliasUnit, CompositeUnit APIs | future `units` | `unstarted` | no | #38-#40, #64 |
 | 10 | `Prefix.h` | Decimal, binary, and number prefix APIs | future `units` | `unstarted` | no | #37, #64 |
-| 11 | `QalculateDateTime.h` | Date and time APIs | future `datetime` | `unstarted` | no | #49, #64 |
+| 11 | `QalculateDateTime.h` | Date and time APIs | `src/datetime.rs` | `scaffold` | no | #52-#54, #64 |
 | 12 | `includes.h` | Public enums, option structs, and constants used by calculator/parser/printing APIs | `src/lib.rs` partial constants, future `options` | `scaffold` | no | #22, #64 |
 
 ## API Family Matrix
@@ -39,7 +39,7 @@ FFI-only rows name the actual Rust wrapper and cannot be counted as `native-pass
 | DataSet | `DataSet.h` | construction; property management; object lookup; data loading | `src/datasets.rs` | `scaffold` | #64 |
 | Unit | `Unit.h` | construction; conversion; composite units; prefix management; base-unit relations | future `units` | `unstarted` | #38-#40, #64 |
 | Prefix | `Prefix.h` | construction; value; name management; type identification | future `units` | `unstarted` | #37, #64 |
-| Date/time | `QalculateDateTime.h` | construction; calendar conversion; arithmetic; formatting | future `datetime` | `unstarted` | #49, #64 |
+| Date/time | `QalculateDateTime.h` | construction; calendar conversion; arithmetic; formatting | `src/datetime.rs` | `scaffold` | #52-#54, #64 |
 | Options and enums | `includes.h` | parse/evaluation/print options; enum constants; settings structures | `src/lib.rs`, future `options` | `scaffold` | #22, #64 |
 
 ## Status Summary

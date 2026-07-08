@@ -11,6 +11,7 @@
 //!   child ordering behavior to preserve in later parser/evaluator tasks.
 //! - `../libqalculate/libqalculate/includes.h` for `ComparisonType`.
 
+use crate::datetime::DateTime;
 use crate::number::Number;
 use std::ops::Index;
 
@@ -411,10 +412,11 @@ impl Symbol {
     }
 }
 
-/// Date/time literal carried by an AST leaf before full date semantics are ported.
+/// Date/time literal carried by an AST leaf.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DateTimeLiteral {
     source: String,
+    value: Option<DateTime>,
 }
 
 impl DateTimeLiteral {
@@ -422,12 +424,26 @@ impl DateTimeLiteral {
     pub fn new(source: impl Into<String>) -> Self {
         Self {
             source: source.into(),
+            value: None,
+        }
+    }
+
+    /// Creates a date/time literal from a validated date/time value.
+    pub fn from_value(value: DateTime) -> Self {
+        Self {
+            source: value.source_string(),
+            value: Some(value),
         }
     }
 
     /// Returns the source representation for this date/time literal.
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    /// Returns the validated value when the literal was built from one.
+    pub fn value(&self) -> Option<&DateTime> {
+        self.value.as_ref()
     }
 }
 
