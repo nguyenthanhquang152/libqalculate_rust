@@ -104,6 +104,13 @@ The test harness must model:
 Do not add silent tolerances for floats, whitespace, Unicode, date/time, or path formatting.
 Any tolerance is a compatibility decision and must be reviewed.
 
+Date/time oracle runs use the pinned policy `TZ=UTC`, `LC_ALL=C`, `LANG=C`, and
+`QALCULATE_DEFINITIONS_DIR=../libqalculate/data`. `dates.batch` rows may be used as
+inventory or fallback-agreement evidence before native parser/function support lands, but
+they are not native parity until the Rust side reports `fallback=native`. Dynamic clock
+defaults (`now`, `today`, `tomorrow`, `yesterday`) must be injected, pinned, or excluded
+before a task claims date/time parity.
+
 ## 6. Testing Layers
 
 | Layer | Command | Purpose |

@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
 set -eu
 
+export TZ=UTC
+export LC_ALL=C
+export LANG=C
+export QALCULATE_DEFINITIONS_DIR="${QALCULATE_DEFINITIONS_DIR:-../libqalculate/data}"
+
 if [ -n "${QALCULATE_ORACLE:-}" ]; then
   cargo test --test oracle -- --nocapture
   exit 0
