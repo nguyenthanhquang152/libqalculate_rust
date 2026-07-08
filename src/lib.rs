@@ -35,6 +35,7 @@ mod numberbase;
 mod session;
 mod statistics;
 mod text;
+mod unit_conversion;
 
 /// Calculator options module.
 pub mod options;

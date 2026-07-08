@@ -72,3 +72,45 @@ fn reduced_currency_conversion_regressions_match_focused_oracle_cases() {
         );
     }
 }
+
+#[test]
+fn reduced_unit_conversion_regressions_match_focused_oracle_cases() {
+    let cases = [
+        ("5 dm3 to L", "5 L"),
+        ("25 dm^3 to L", "25 L"),
+        ("20 miles / 2h to km/h", "16.09344 km/h"),
+        ("1.74 to ft", "5 ft + 8.503937008 in"),
+        ("1.74 m to ft", "5 ft + 8.503937008 in"),
+        ("1.74 m to -ft", "5.708661417 ft"),
+        ("100 lbf * 60 mph to hp", "15.99999752 hp"),
+        ("50 Ω * 2 A", "100 V"),
+        ("50 Ω * 2 A to base", "100 kg*m^2/(A*s^3)"),
+        ("50 W * 2 s", "100 J"),
+        ("10 N / 5 Pa", "2 m^2"),
+        ("5 m/s to s/m", "0.2 s/m"),
+        ("1000 bit to b?byte", "0.1220703125 KiB"),
+        ("500 megabit/s * 2 h to b?byte", "419.0951586 GiB"),
+    ];
+
+    for (expression, expected) in cases {
+        let output = assert_cmd::Command::cargo_bin("qalc-rs")
+            .expect("qalc-rs binary")
+            .args(["--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            expected,
+            "{expression}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("fallback=native"),
+            "{expression} should run natively"
+        );
+    }
+}
