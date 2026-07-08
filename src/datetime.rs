@@ -14,6 +14,9 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
 const SECONDS_PER_DAY: i64 = 86_400;
+const GREGORIAN_FIXED_UNIX_EPOCH: f64 = 719_163.0;
+const J2000: f64 = 730_120.5;
+const MEAN_SYNODIC_MONTH: f64 = 29.530_588_861;
 const LS_FIRST_YEAR: i64 = 1972;
 const LS_LAST_YEAR: i64 = 2016;
 
@@ -624,7 +627,16 @@ pub fn format_iso_datetime_with_offset(value: &DateTime, offset_minutes: Option<
 
 /// Evaluates the focused native date/time parser/formatter expression slice.
 pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
-    let Some((lhs, target)) = split_conversion(expr.trim()) else {
+    let trimmed = expr.trim();
+
+    if let Some(output) = native_date_arithmetic_output(trimmed)? {
+        return Ok(Some(output));
+    }
+    if let Some(output) = native_datetime_function_output(trimmed)? {
+        return Ok(Some(output));
+    }
+
+    let Some((lhs, target)) = split_conversion(trimmed) else {
         return Ok(None);
     };
 
@@ -635,16 +647,11 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
         return Ok(Some(format_time_of_day(seconds)));
     }
 
-    let Some(literal) = unquote(lhs.trim()) else {
-        return Ok(None);
-    };
     if !target.to_ascii_lowercase().starts_with("utc") {
         return Ok(None);
     }
 
-    convert_datetime_literal_to_zone(literal, target)
-        .map(Some)
-        .map_err(|error| error.to_string())
+    native_utc_conversion_output(lhs, target)
 }
 
 impl PartialEq for DateTime {
@@ -820,6 +827,187 @@ fn unquote(input: &str) -> Option<&str> {
         })
 }
 
+fn native_date_arithmetic_output(input: &str) -> Result<Option<String>, String> {
+    let Some((left, rest)) = parse_leading_quoted(input) else {
+        return Ok(None);
+    };
+    let left = parse_datetime_arg(left)?;
+    let rest = rest.trim_start();
+
+    if let Some(days) = rest.strip_prefix('+') {
+        let days = parse_day_count(days.trim())?;
+        let shifted = left
+            .value
+            .add_days(&days)
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(format_quoted_datetime(&shifted, None)));
+    }
+
+    if let Some(right) = rest.strip_prefix('-') {
+        let Some((right, trailing)) = parse_leading_quoted(right.trim_start()) else {
+            return Ok(None);
+        };
+        if !trailing.trim().is_empty() {
+            return Ok(None);
+        }
+        let right = parse_datetime_arg(right)?;
+        let days = right.value.days_to(&left.value);
+        return Ok(Some(format_day_duration(&days)));
+    }
+
+    Ok(None)
+}
+
+fn native_datetime_function_output(input: &str) -> Result<Option<String>, String> {
+    if let Some(inner) = strip_function_call(input, "addDays") {
+        let Some((date, days)) = inner.split_once(';') else {
+            return Err("addDays requires date and day count".to_string());
+        };
+        let date = parse_datetime_arg(date.trim())?;
+        let days = parse_number_literal(days)?;
+        let shifted = date
+            .value
+            .add_days(&days)
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(format_quoted_datetime(&shifted, None)));
+    }
+
+    if let Some(inner) = strip_function_call(input, "timestamp") {
+        let date = parse_datetime_arg(inner.trim())?;
+        return Ok(Some(parsed_datetime_utc_timestamp(&date).to_qalc_string()));
+    }
+
+    if let Some(inner) = strip_function_call(input, "lunarphase") {
+        let date = parse_datetime_arg(inner.trim())?;
+        return Ok(Some(format!("{:.8}", lunar_phase_fraction(&date))));
+    }
+
+    Ok(None)
+}
+
+fn native_utc_conversion_output(lhs: &str, target: &str) -> Result<Option<String>, String> {
+    let target_offset = parse_timezone_target(target).map_err(|error| error.to_string())?;
+    let lhs = lhs.trim();
+
+    if let Some(literal) = unquote(lhs) {
+        return convert_datetime_literal_to_zone(literal, target)
+            .map(Some)
+            .map_err(|error| error.to_string());
+    }
+
+    if let Some(inner) = strip_function_call(lhs, "stamptodate") {
+        let timestamp = parse_number_literal(inner)?;
+        return format_timestamp_to_zone(&timestamp, target_offset).map(Some);
+    }
+
+    if let Some(inner) = strip_function_call(lhs, "nextlunarphase") {
+        let Some((phase, date)) = inner.split_once(',') else {
+            return Err("nextlunarphase requires phase and date".to_string());
+        };
+        let phase = parse_phase_fraction(phase)?;
+        let date = parse_datetime_arg(date.trim())?;
+        let value = next_lunar_phase_datetime(&date, phase)?;
+        return format_utc_datetime_to_zone(&value, target_offset).map(Some);
+    }
+
+    Ok(None)
+}
+
+fn parse_leading_quoted(input: &str) -> Option<(&str, &str)> {
+    let input = input.trim_start();
+    let quote = input.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, ch) in input.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == quote {
+            return Some((&input[1..index], &input[index + ch.len_utf8()..]));
+        }
+    }
+    None
+}
+
+fn strip_function_call<'a>(input: &'a str, name: &str) -> Option<&'a str> {
+    let rest = input.strip_prefix(name)?.trim_start();
+    rest.strip_prefix('(')
+        .and_then(|inner| inner.strip_suffix(')'))
+        .map(str::trim)
+}
+
+fn parse_datetime_arg(input: &str) -> Result<ParsedDateTime, String> {
+    let input = unquote(input.trim()).unwrap_or_else(|| input.trim());
+    parse_datetime_literal(input).map_err(|error| error.to_string())
+}
+
+fn parse_number_literal(input: &str) -> Result<Number, String> {
+    input
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+        .parse::<Number>()
+        .map_err(|_| format!("invalid number {}", input.trim()))
+}
+
+fn parse_day_count(input: &str) -> Result<Number, String> {
+    let input = input.trim();
+    let day_count = input
+        .strip_suffix('d')
+        .ok_or_else(|| format!("expected day quantity, got {input}"))?;
+    parse_number_literal(day_count)
+}
+
+fn parse_phase_fraction(input: &str) -> Result<f64, String> {
+    let phase = parse_number_literal(input)?.to_f64();
+    let phase = if phase > 1.0 { phase / 360.0 } else { phase };
+    if !(0.0..1.0).contains(&phase) {
+        return Err(format!("invalid lunar phase {}", input.trim()));
+    }
+    Ok(phase)
+}
+
+fn parsed_datetime_utc_timestamp(parsed: &ParsedDateTime) -> Number {
+    parsed.value.timestamp_utc().sub(&Number::from_i64(
+        i64::from(parsed.offset_minutes.unwrap_or(0)) * 60,
+    ))
+}
+
+fn format_timestamp_to_zone(timestamp: &Number, offset_minutes: i32) -> Result<String, String> {
+    let shifted = timestamp.add(&Number::from_i64(i64::from(offset_minutes) * 60));
+    let value = DateTime::from_timestamp_utc(&shifted).map_err(|error| error.to_string())?;
+    Ok(format_quoted_datetime(&value, Some(offset_minutes)))
+}
+
+fn format_utc_datetime_to_zone(value: &DateTime, offset_minutes: i32) -> Result<String, String> {
+    let shifted = value
+        .add_seconds(&Number::from_i64(i64::from(offset_minutes) * 60))
+        .map_err(|error| error.to_string())?;
+    Ok(format_quoted_datetime(&shifted, Some(offset_minutes)))
+}
+
+fn format_quoted_datetime(value: &DateTime, offset_minutes: Option<i32>) -> String {
+    format!(
+        "\"{}\"",
+        format_iso_datetime_with_offset(value, offset_minutes)
+    )
+}
+
+fn format_day_duration(days: &Number) -> String {
+    let mut out = days.to_qalc_string();
+    if let Some(stripped) = out.strip_prefix('-') {
+        out = format!("−{stripped}");
+    }
+    format!("{out} d")
+}
+
 fn parse_time_sum(input: &str) -> Result<Option<i64>, String> {
     let mut total = 0i64;
     for term in input.split('+') {
@@ -911,6 +1099,550 @@ fn format_second_component(second: &Number) -> String {
     } else {
         raw
     }
+}
+
+fn lunar_phase_fraction(date: &ParsedDateTime) -> f64 {
+    positive_mod(
+        lunar_phase_degrees(datetime_to_universal_fixed(date)),
+        360.0,
+    ) / 360.0
+}
+
+fn next_lunar_phase_datetime(date: &ParsedDateTime, phase: f64) -> Result<DateTime, String> {
+    let fixed = lunar_phase_at_or_after_degrees(phase * 360.0, datetime_to_universal_fixed(date));
+    let timestamp = ((fixed - GREGORIAN_FIXED_UNIX_EPOCH) * SECONDS_PER_DAY as f64).floor();
+    if !timestamp.is_finite() {
+        return Err("lunar phase timestamp is out of range".to_string());
+    }
+    DateTime::from_timestamp_utc(&Number::from_i64(timestamp as i64))
+        .map_err(|error| error.to_string())
+}
+
+fn datetime_to_universal_fixed(date: &ParsedDateTime) -> f64 {
+    parsed_datetime_utc_timestamp(date).to_f64() / SECONDS_PER_DAY as f64
+        + GREGORIAN_FIXED_UNIX_EPOCH
+}
+
+fn fixed_from_gregorian(year: i64, month: i64, day: i64) -> f64 {
+    let y = year - 1;
+    (y * 365 + y.div_euclid(4) - y.div_euclid(100)
+        + y.div_euclid(400)
+        + ((367 * month - 362).div_euclid(12))
+        + if month > 2 {
+            if is_leap_year(year) {
+                -1
+            } else {
+                -2
+            }
+        } else {
+            0
+        }
+        + day) as f64
+}
+
+fn gregorian_year_from_fixed(fixed: f64) -> i64 {
+    let days = fixed.floor() as i64 - GREGORIAN_FIXED_UNIX_EPOCH as i64;
+    civil_from_days(days).0
+}
+
+fn gregorian_date_difference(y1: i64, m1: i64, d1: i64, y2: i64, m2: i64, d2: i64) -> f64 {
+    fixed_from_gregorian(y2, m2, d2) - fixed_from_gregorian(y1, m1, d1)
+}
+
+fn ephemeris_correction(tee: f64) -> f64 {
+    let mut year = gregorian_year_from_fixed(tee.floor()) as f64;
+    if !(-500.0..=2150.0).contains(&year) {
+        let year2 = ((year - 1820.0) / 100.0).powi(2) * 32.0 - 20.0;
+        return (year2 + (2150.0 - year) * 0.5628) / SECONDS_PER_DAY as f64;
+    }
+    if year < 500.0 {
+        year /= 100.0;
+        return cal_poly(
+            year,
+            &[
+                10583.6,
+                -1014.41,
+                33.78311,
+                -5.952053,
+                -0.1798452,
+                0.022174192,
+                0.0090316521,
+            ],
+        ) / SECONDS_PER_DAY as f64;
+    }
+    if year < 1600.0 {
+        year = (year - 1000.0) / 100.0;
+        return cal_poly(
+            year,
+            &[
+                1574.2,
+                -556.01,
+                71.23472,
+                0.319781,
+                -0.8503463,
+                -0.005050998,
+                0.0083572073,
+            ],
+        ) / SECONDS_PER_DAY as f64;
+    }
+    if year < 1700.0 {
+        year -= 1600.0;
+        return cal_poly(year, &[120.0, -0.9808, -0.01532, 0.000140272128])
+            / SECONDS_PER_DAY as f64;
+    }
+    if year < 1800.0 {
+        year -= 1700.0;
+        return cal_poly(
+            year,
+            &[8.118780842, -0.005092142, 0.003336121, -0.0000266484],
+        ) / SECONDS_PER_DAY as f64;
+    }
+    if year < 1900.0 {
+        year = gregorian_date_difference(1900, 1, 1, year as i64, 7, 1) / 36_525.0;
+        return cal_poly(
+            year,
+            &[
+                -0.000009, 0.003844, 0.083563, 0.865736, 4.867575, 15.845535, 31.332267, 38.291999,
+                28.316289, 11.636204, 2.043794,
+            ],
+        );
+    }
+    if year < 1987.0 {
+        year = gregorian_date_difference(1900, 1, 1, year as i64, 7, 1) / 36_525.0;
+        return cal_poly(
+            year,
+            &[
+                -0.00002, 0.000297, 0.025184, -0.181133, 0.553040, -0.861938, 0.677066, -0.212591,
+            ],
+        );
+    }
+    if year < 2006.0 {
+        year -= 2000.0;
+        return cal_poly(
+            year,
+            &[
+                63.86,
+                0.3345,
+                -0.060374,
+                0.0017275,
+                0.000651814,
+                0.00002373599,
+            ],
+        ) / SECONDS_PER_DAY as f64;
+    }
+    if year <= 2050.0 {
+        year -= 2000.0;
+        return cal_poly(year, &[62.92, 0.32217, 0.005589]) / SECONDS_PER_DAY as f64;
+    }
+    let year2 = ((year - 1820.0) / 100.0).powi(2) * 32.0 - 20.0;
+    (year2 + (2150.0 - year) * 0.5628) / SECONDS_PER_DAY as f64
+}
+
+fn dynamical_from_universal(tee: f64) -> f64 {
+    tee + ephemeris_correction(tee)
+}
+
+fn universal_from_dynamical(tee: f64) -> f64 {
+    tee - ephemeris_correction(tee)
+}
+
+fn julian_centuries(tee: f64) -> f64 {
+    (dynamical_from_universal(tee) - J2000) / 36_525.0
+}
+
+fn nutation(tee: f64) -> f64 {
+    let c = julian_centuries(tee);
+    -0.004778 * deg_sin(cal_poly(c, &[124.90, -1934.134, 0.002063]))
+        - 0.0003667 * deg_sin(cal_poly(c, &[201.11, 72001.5377, 0.00057]))
+}
+
+fn aberration(tee: f64) -> f64 {
+    0.0000974 * deg_cos(177.63 + 35999.01848 * julian_centuries(tee)) - 0.005575
+}
+
+fn solar_longitude(tee: f64) -> f64 {
+    const COEFFICIENTS: [f64; 49] = [
+        403406.0, 195207.0, 119433.0, 112392.0, 3891.0, 2819.0, 1721.0, 660.0, 350.0, 334.0, 314.0,
+        268.0, 242.0, 234.0, 158.0, 132.0, 129.0, 114.0, 99.0, 93.0, 86.0, 78.0, 72.0, 68.0, 64.0,
+        46.0, 38.0, 37.0, 32.0, 29.0, 28.0, 27.0, 27.0, 25.0, 24.0, 21.0, 21.0, 20.0, 18.0, 17.0,
+        14.0, 13.0, 13.0, 13.0, 12.0, 10.0, 10.0, 10.0, 10.0,
+    ];
+    const MULTIPLIERS: [f64; 49] = [
+        0.9287892,
+        35999.1376958,
+        35999.4089666,
+        35998.7287385,
+        71998.20261,
+        71998.4403,
+        36000.35726,
+        71997.4812,
+        32964.4678,
+        -19.4410,
+        445267.1117,
+        45036.8840,
+        3.1008,
+        22518.4434,
+        -19.9739,
+        65928.9345,
+        9038.0293,
+        3034.7684,
+        33718.148,
+        3034.448,
+        -2280.773,
+        29929.992,
+        31556.493,
+        149.588,
+        9037.750,
+        107997.405,
+        -4444.176,
+        151.771,
+        67555.316,
+        31556.080,
+        -4561.540,
+        107996.706,
+        1221.655,
+        62894.167,
+        31437.369,
+        14578.298,
+        -31931.757,
+        34777.243,
+        1221.999,
+        62894.511,
+        -4442.039,
+        107997.909,
+        119.066,
+        16859.071,
+        -4.578,
+        26895.292,
+        -39.127,
+        12297.536,
+        90073.778,
+    ];
+    const ADDENDS: [f64; 49] = [
+        270.54861, 340.19128, 63.91854, 331.26220, 317.843, 86.631, 240.052, 310.26, 247.23,
+        260.87, 297.82, 343.14, 166.79, 81.53, 3.50, 132.75, 182.95, 162.03, 29.8, 266.4, 249.2,
+        157.6, 257.8, 185.1, 69.9, 8.0, 197.1, 250.4, 65.3, 162.7, 341.5, 291.6, 98.5, 146.7,
+        110.0, 5.2, 342.6, 230.9, 256.1, 45.3, 242.9, 115.2, 151.8, 285.3, 53.3, 126.6, 205.7,
+        85.9, 146.1,
+    ];
+
+    let c = julian_centuries(tee);
+    let series = COEFFICIENTS
+        .iter()
+        .zip(MULTIPLIERS)
+        .zip(ADDENDS)
+        .map(|((coefficient, multiplier), addend)| coefficient * deg_sin(addend + multiplier * c))
+        .sum::<f64>();
+
+    positive_mod(
+        282.7771834
+            + 36000.76953744 * c
+            + 0.000005729577951308232 * series
+            + aberration(tee)
+            + nutation(tee),
+        360.0,
+    )
+}
+
+fn mean_lunar_longitude(c: f64) -> f64 {
+    positive_mod(
+        cal_poly(
+            c,
+            &[
+                218.3164477,
+                481267.88123421,
+                -0.0015786,
+                1.0 / 538841.0,
+                -1.0 / 65194000.0,
+            ],
+        ),
+        360.0,
+    )
+}
+
+fn lunar_elongation(c: f64) -> f64 {
+    positive_mod(
+        cal_poly(
+            c,
+            &[
+                297.8501921,
+                445267.1114034,
+                -0.0018819,
+                1.0 / 545868.0,
+                -1.0 / 113065000.0,
+            ],
+        ),
+        360.0,
+    )
+}
+
+fn solar_anomaly(c: f64) -> f64 {
+    positive_mod(
+        cal_poly(
+            c,
+            &[357.5291092, 35999.0502909, -0.0001536, 1.0 / 24490000.0],
+        ),
+        360.0,
+    )
+}
+
+fn lunar_anomaly(c: f64) -> f64 {
+    positive_mod(
+        cal_poly(
+            c,
+            &[
+                134.9633964,
+                477198.8675055,
+                0.0087414,
+                1.0 / 69699.0,
+                -1.0 / 14712000.0,
+            ],
+        ),
+        360.0,
+    )
+}
+
+fn moon_node(c: f64) -> f64 {
+    positive_mod(
+        cal_poly(
+            c,
+            &[
+                93.2720950,
+                483202.0175233,
+                -0.0036539,
+                -1.0 / 3526000.0,
+                1.0 / 863310000.0,
+            ],
+        ),
+        360.0,
+    )
+}
+
+fn lunar_longitude(tee: f64) -> f64 {
+    const ARG_D: [f64; 59] = [
+        0.0, 2.0, 2.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0,
+        4.0, 2.0, 2.0, 1.0, 1.0, 2.0, 2.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 2.0, 0.0, 0.0, 2.0, 2.0,
+        2.0, 4.0, 0.0, 3.0, 2.0, 4.0, 0.0, 2.0, 2.0, 2.0, 4.0, 0.0, 4.0, 1.0, 2.0, 0.0, 1.0, 3.0,
+        4.0, 2.0, 0.0, 1.0, 2.0,
+    ];
+    const ARG_M: [f64; 59] = [
+        0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, -1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 1.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, -2.0, 1.0, 2.0, -2.0,
+        0.0, 0.0, -1.0, 0.0, 0.0, 1.0, -1.0, 2.0, 2.0, 1.0, -1.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0,
+        1.0, 0.0, 0.0, -1.0, 2.0, 1.0, 0.0,
+    ];
+    const ARG_MP: [f64; 59] = [
+        1.0, -1.0, 0.0, 2.0, 0.0, 0.0, -2.0, -1.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 1.0, -1.0,
+        3.0, -2.0, -1.0, 0.0, -1.0, 0.0, 1.0, 2.0, 0.0, -3.0, -2.0, -1.0, -2.0, 1.0, 0.0, 2.0, 0.0,
+        -1.0, 1.0, 0.0, -1.0, 2.0, -1.0, 1.0, -2.0, -1.0, -1.0, -2.0, 0.0, 1.0, 4.0, 0.0, -2.0,
+        0.0, 2.0, 1.0, -2.0, -3.0, 2.0, 1.0, -1.0, 3.0,
+    ];
+    const ARG_F: [f64; 59] = [
+        0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0, 2.0, -2.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0,
+        2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0, 0.0, 0.0, 0.0, 0.0, -2.0, -2.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ];
+    const SINE_COEFF: [f64; 59] = [
+        6288774.0, 1274027.0, 658314.0, 213618.0, -185116.0, -114332.0, 58793.0, 57066.0, 53322.0,
+        45758.0, -40923.0, -34720.0, -30383.0, 15327.0, -12528.0, 10980.0, 10675.0, 10034.0,
+        8548.0, -7888.0, -6766.0, -5163.0, 4987.0, 4036.0, 3994.0, 3861.0, 3665.0, -2689.0,
+        -2602.0, 2390.0, -2348.0, 2236.0, -2120.0, -2069.0, 2048.0, -1773.0, -1595.0, 1215.0,
+        -1110.0, -892.0, -810.0, 759.0, -713.0, -700.0, 691.0, 596.0, 549.0, 537.0, 520.0, -487.0,
+        -399.0, -381.0, 351.0, -340.0, 330.0, 327.0, -323.0, 299.0, 294.0,
+    ];
+
+    let c = julian_centuries(tee);
+    let cap_l_prime = mean_lunar_longitude(c);
+    let cap_d = lunar_elongation(c);
+    let cap_m = solar_anomaly(c);
+    let cap_m_prime = lunar_anomaly(c);
+    let cap_f = moon_node(c);
+    let cap_e = cal_poly(c, &[1.0, -0.002516, -0.0000074]);
+    let correction = SINE_COEFF
+        .iter()
+        .zip(ARG_D)
+        .zip(ARG_M)
+        .zip(ARG_MP)
+        .zip(ARG_F)
+        .map(|((((coefficient, d), m), mp), f)| {
+            coefficient
+                * cap_e.powf(m.abs())
+                * deg_sin(d * cap_d + m * cap_m + mp * cap_m_prime + f * cap_f)
+        })
+        .sum::<f64>()
+        * 1e-6;
+    let venus = 0.003958 * deg_sin(119.75 + 131.849 * c);
+    let jupiter = 0.000318 * deg_sin(53.09 + 479264.29 * c);
+    let flat_earth = 0.001962 * deg_sin(cap_l_prime - cap_f);
+
+    positive_mod(
+        cap_l_prime + correction + venus + jupiter + flat_earth + nutation(tee),
+        360.0,
+    )
+}
+
+fn nth_new_moon(n: f64) -> f64 {
+    const E_FACTOR: [f64; 24] = [
+        0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ];
+    const SOLAR_COEFF: [f64; 24] = [
+        0.0, 1.0, 0.0, 0.0, -1.0, 1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, -1.0, 2.0, 0.0, 3.0, 1.0,
+        0.0, 1.0, -1.0, -1.0, 1.0, 0.0,
+    ];
+    const LUNAR_COEFF: [f64; 24] = [
+        1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 3.0, 0.0, 0.0, 2.0, 1.0, 2.0, 0.0, 1.0,
+        2.0, 1.0, 1.0, 1.0, 3.0, 4.0,
+    ];
+    const MOON_COEFF: [f64; 24] = [
+        0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, -2.0, 2.0, 0.0, 0.0, 2.0, -2.0, 0.0, 0.0, -2.0, 0.0,
+        -2.0, 2.0, 2.0, 2.0, -2.0, 0.0, 0.0,
+    ];
+    const SINE_COEFF: [f64; 24] = [
+        -0.40720, 0.17241, 0.01608, 0.01039, 0.00739, -0.00514, 0.00208, -0.00111, -0.00057,
+        0.00056, -0.00042, 0.00042, 0.00038, -0.00024, -0.00007, 0.00004, 0.00004, 0.00003,
+        0.00003, -0.00003, 0.00003, -0.00002, -0.00002, 0.00002,
+    ];
+    const ADD_CONST: [f64; 13] = [
+        251.88, 251.83, 349.42, 84.66, 141.74, 207.14, 154.84, 34.52, 207.19, 291.34, 161.72,
+        239.56, 331.55,
+    ];
+    const ADD_COEFF: [f64; 13] = [
+        0.016321, 26.651886, 36.412478, 18.206239, 53.303771, 2.453732, 7.306860, 27.261239,
+        0.121824, 1.844379, 24.198154, 25.513099, 3.592518,
+    ];
+    const ADD_FACTOR: [f64; 13] = [
+        0.000165, 0.000164, 0.000126, 0.000110, 0.000062, 0.000060, 0.000056, 0.000047, 0.000042,
+        0.000040, 0.000037, 0.000035, 0.000023,
+    ];
+
+    let k = n - 24_724.0;
+    let c = k / 1236.85;
+    let approx = J2000
+        + cal_poly(
+            c,
+            &[
+                5.09766,
+                29.530588861 * 1236.85,
+                0.00015437,
+                -0.000000150,
+                0.00000000073,
+            ],
+        );
+    let cap_e = cal_poly(c, &[1.0, -0.002516, -0.0000074]);
+    let solar_anomaly_n = cal_poly(c, &[2.5534, 1236.85 * 29.10535670, -0.0000014, -0.00000011]);
+    let lunar_anomaly_n = cal_poly(
+        c,
+        &[
+            201.5643,
+            385.81693528 * 1236.85,
+            0.0107582,
+            0.00001238,
+            -0.000000058,
+        ],
+    );
+    let moon_argument = cal_poly(
+        c,
+        &[
+            160.7108,
+            390.67050284 * 1236.85,
+            -0.0016118,
+            -0.00000227,
+            0.000000011,
+        ],
+    );
+    let cap_omega = cal_poly(c, &[124.7746, -1.56375588 * 1236.85, 0.0020672, 0.00000215]);
+    let correction = -0.00017 * deg_sin(cap_omega)
+        + SINE_COEFF
+            .iter()
+            .zip(E_FACTOR)
+            .zip(SOLAR_COEFF)
+            .zip(LUNAR_COEFF)
+            .zip(MOON_COEFF)
+            .map(|((((coefficient, e), solar), lunar), moon)| {
+                coefficient
+                    * cap_e.powf(e)
+                    * deg_sin(
+                        solar * solar_anomaly_n + lunar * lunar_anomaly_n + moon * moon_argument,
+                    )
+            })
+            .sum::<f64>();
+    let extra = 0.000325 * deg_sin(cal_poly(c, &[299.77, 132.8475848, -0.009173]));
+    let additional = ADD_CONST
+        .iter()
+        .zip(ADD_COEFF)
+        .zip(ADD_FACTOR)
+        .map(|((constant, coefficient), factor)| factor * deg_sin(constant + coefficient * k))
+        .sum::<f64>();
+
+    universal_from_dynamical(approx + correction + extra + additional)
+}
+
+fn lunar_phase_degrees(tee: f64) -> f64 {
+    let phi = positive_mod(lunar_longitude(tee) - solar_longitude(tee), 360.0);
+    let t0 = nth_new_moon(0.0);
+    let n = ((tee - t0) / MEAN_SYNODIC_MONTH).round();
+    let phi_prime = positive_mod((tee - nth_new_moon(n)) / MEAN_SYNODIC_MONTH, 1.0) * 360.0;
+    if (phi - phi_prime).abs() > 180.0 {
+        phi_prime
+    } else {
+        phi
+    }
+}
+
+fn lunar_phase_at_or_after_degrees(phase: f64, tee: f64) -> f64 {
+    let rate = MEAN_SYNODIC_MONTH / 360.0;
+    let tau = tee + positive_mod(phase - lunar_phase_degrees(tee), 360.0) * rate;
+    let mut a = (tau - 5.0).max(tee);
+    let mut b = tau + 5.0;
+    let mut phase_low = phase - 1e-5;
+    let mut phase_high = phase + 1e-5;
+    if phase_low < 0.0 {
+        phase_low += 360.0;
+    }
+    if phase_high > 360.0 {
+        phase_high -= 360.0;
+    }
+
+    for _ in 0..100 {
+        let test = a + (b - a) / 2.0;
+        let new_phase = lunar_phase_degrees(test);
+        if phase_high < phase_low {
+            if new_phase >= phase_low || new_phase <= phase_high {
+                return test;
+            }
+        } else if new_phase >= phase_low && new_phase <= phase_high {
+            return test;
+        }
+
+        if positive_mod(new_phase - phase, 360.0) < 180.0 {
+            b = test;
+        } else {
+            a = test;
+        }
+    }
+
+    a + (b - a) / 2.0
+}
+
+fn cal_poly(x: f64, coefficients: &[f64]) -> f64 {
+    coefficients
+        .iter()
+        .rev()
+        .fold(0.0, |acc, coefficient| acc * x + coefficient)
+}
+
+fn positive_mod(value: f64, modulus: f64) -> f64 {
+    value.rem_euclid(modulus)
+}
+
+fn deg_sin(degrees: f64) -> f64 {
+    degrees.to_radians().sin()
+}
+
+fn deg_cos(degrees: f64) -> f64 {
+    degrees.to_radians().cos()
 }
 
 /// Returns true when `year` is a Gregorian leap year.

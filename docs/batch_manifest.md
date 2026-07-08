@@ -18,8 +18,8 @@ backed by fallback-disabled oracle evidence recorded in either
 | Metric | Value |
 |--------|-------|
 | Total test cases | **656** |
-| Native-pass test cases | **344** |
-| Inventory-only test cases | **312** |
+| Native-pass test cases | **352** |
+| Inventory-only test cases | **304** |
 | Total session commands | **17** |
 | Total CSV assets | **2** (`vectordata.csv`, `vectordata2.csv`) |
 | Total batch files | **17** |
@@ -145,14 +145,14 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 | 1 | `dates.batch:1` | `10:31 + 8:30 to time` | `19:01` | — | native-pass |
 | 2 | `dates.batch:3` | `10h 31min + 8h 30min to time` | `19:01` | — | native-pass |
 | 3 | `dates.batch:5` | `"2020-07-10T07:50CET" to utc+8` | `"2020-07-10T14:50:00+08:00"` | — | native-pass |
-| 4 | `dates.batch:7` | `"2020-05-20" + 523d` | `"2021-10-25"` | — | inventory-only |
-| 5 | `dates.batch:9` | `addDays(2020-05-20; 523)` | `"2021-10-25"` | — | inventory-only |
-| 6 | `dates.batch:11` | `"2020-11-05" - "2020-10-05"` | `31 d` | — | inventory-only |
-| 7 | `dates.batch:13` | `"2020-10-05" - "2020-10-15"` | `-10 d` | — | inventory-only |
-| 8 | `dates.batch:15` | `timestamp(2020-05-20T00:00:00Z)` | `1589932800` | — | inventory-only |
-| 9 | `dates.batch:17` | `stamptodate(1 589 932 800) to utc` | `"2020-05-20T00:00:00Z"` | — | inventory-only |
-| 10 | `dates.batch:19` | `lunarphase(2022-02-11T00:00Z)` | `0.32288434` | — | inventory-only |
-| 11 | `dates.batch:21` | `nextlunarphase(0.5, 2022-02-11T00:00Z) to utc` | `"2022-02-16T16:56:27Z"` | — | inventory-only |
+| 4 | `dates.batch:7` | `"2020-05-20" + 523d` | `"2021-10-25"` | — | native-pass |
+| 5 | `dates.batch:9` | `addDays(2020-05-20; 523)` | `"2021-10-25"` | — | native-pass |
+| 6 | `dates.batch:11` | `"2020-11-05" - "2020-10-05"` | `31 d` | — | native-pass |
+| 7 | `dates.batch:13` | `"2020-10-05" - "2020-10-15"` | `-10 d` | — | native-pass |
+| 8 | `dates.batch:15` | `timestamp(2020-05-20T00:00:00Z)` | `1589932800` | — | native-pass |
+| 9 | `dates.batch:17` | `stamptodate(1 589 932 800) to utc` | `"2020-05-20T00:00:00Z"` | — | native-pass |
+| 10 | `dates.batch:19` | `lunarphase(2022-02-11T00:00Z)` | `0.32288434` | — | native-pass |
+| 11 | `dates.batch:21` | `nextlunarphase(0.5, 2022-02-11T00:00Z) to utc` | `"2022-02-16T16:56:27Z"` | — | native-pass |
 
 ---
 
