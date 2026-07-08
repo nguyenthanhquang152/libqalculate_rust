@@ -171,7 +171,7 @@ fn completed_matrixvector_manifest_is_reflected_in_compatibility_inventory() {
     let inventory = fs::read_to_string("docs/compatibility_inventory.md")
         .expect("docs/compatibility_inventory.md should be readable");
     assert!(
-        inventory.contains("| Batch Test Files | 17 | 4 | 0 | 3 | 0 | 10 | 0 |"),
+        inventory.contains("| Batch Test Files | 17 | 4 | 0 | 4 | 0 | 9 | 0 |"),
         "compatibility inventory summary should count matrixvector.batch as a native-pass batch file"
     );
     assert!(

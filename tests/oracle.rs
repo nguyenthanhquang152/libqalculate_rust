@@ -73,8 +73,13 @@ const ORACLE_TZ: &str = "UTC";
 const ORACLE_LC_ALL: &str = "C";
 const ORACLE_LANG: &str = "C";
 
-const ISSUE54_DATE_POLICY_CASES: &[(&str, &str)] = &[
+const ISSUE52_DATE_NATIVE_CASES: &[(&str, &str)] = &[
+    ("dates.batch:1", "10:31 + 8:30 to time"),
+    ("dates.batch:3", "10h 31min + 8h 30min to time"),
     ("dates.batch:5", r#""2020-07-10T07:50CET" to utc+8"#),
+];
+
+const ISSUE54_DATE_POLICY_CASES: &[(&str, &str)] = &[
     ("dates.batch:15", "timestamp(2020-05-20T00:00:00Z)"),
     ("dates.batch:17", "stamptodate(1 589 932 800) to utc"),
 ];
@@ -776,6 +781,52 @@ fn issue54_datetime_oracle_policy_marks_missing_qalc_incomplete() {
         error.contains("inventory-only date cases are incomplete"),
         "unexpected missing-qalc policy error: {error}"
     );
+}
+
+#[test]
+fn focused_issue52_datetime_parser_formatter_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue52_datetime_parser_formatter_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let statuses = oracle_manifest::load_parity_statuses();
+
+    for (case_id, expression) in ISSUE52_DATE_NATIVE_CASES {
+        assert_eq!(
+            oracle_manifest::status_for_case(&statuses, case_id),
+            "native-pass",
+            "{case_id} must be manifest-promoted only with fallback-disabled evidence"
+        );
+
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
 }
 
 #[test]
