@@ -269,6 +269,12 @@ fn evaluate_multiplication(
         product = product.mul(&num);
     }
 
+    if other_terms.len() == 1 {
+        if let Some(scaled) = scale_collection_by_number(&other_terms[0], &product) {
+            return Ok(scaled);
+        }
+    }
+
     if product.is_zero() {
         return Ok(Expression::Number(product));
     }
@@ -291,6 +297,22 @@ fn evaluate_multiplication(
     Ok(Expression::Multiplication(
         NaryChildren::new(all_terms).map_err(|e| e.to_string())?,
     ))
+}
+
+fn scale_collection_by_number(expr: &Expression, factor: &Number) -> Option<Expression> {
+    let Expression::Vector(items) = expr else {
+        return None;
+    };
+
+    items
+        .iter()
+        .map(|item| match item {
+            Expression::Number(number) => Some(Expression::Number(number.mul(factor))),
+            Expression::Vector(_) => scale_collection_by_number(item, factor),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Expression::Vector)
 }
 
 fn evaluate_symbolic(sym: &Symbol, context: &mut CalculatorContext) -> Result<Expression, String> {

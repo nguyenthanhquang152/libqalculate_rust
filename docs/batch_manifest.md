@@ -1006,6 +1006,13 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 **Cases**: 11
 **Session commands**: 0
 
+**Focused native evidence**: `tests/oracle.rs::focused_issue47_variables_batch_session_oracle_cases`
+validates the upstream file with `qalc --test-file` and then evaluates all rows in
+one fallback-disabled native `CalculatorContext`, preserving `alpha`/`beta`
+session state. The per-row manifest statuses remain `inventory-only` because the
+generic manifest oracle runner starts a fresh `qalc-rs` process per case and does
+not preserve user-defined variables between rows.
+
 ### Test Cases
 
 | # | case_id | Expression | Expected | Settings | Status |

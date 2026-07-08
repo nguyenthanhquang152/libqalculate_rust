@@ -1,5 +1,8 @@
+use libqalculate_rust::ast::Expression;
 use libqalculate_rust::context::CalculatorContext;
+use libqalculate_rust::eval::evaluate_ast;
 use libqalculate_rust::messages::{MessageStage, MessageType};
+use libqalculate_rust::parser::operators::parse_expression;
 
 struct EnvGuard {
     name: &'static str,
@@ -27,6 +30,25 @@ impl Drop for EnvGuard {
             }
         }
     }
+}
+
+fn evaluate_expression(context: &mut CalculatorContext, input: &str) -> Expression {
+    let expression = parse_expression(input).expect("expression parses");
+    evaluate_ast(&expression, context).expect("expression evaluates")
+}
+
+fn assert_number_vector(expression: &Expression, expected: &[&str]) {
+    let Expression::Vector(items) = expression else {
+        panic!("expected vector, got {expression:?}");
+    };
+    let actual = items
+        .iter()
+        .map(|item| match item {
+            Expression::Number(number) => number.to_string(),
+            other => panic!("expected number vector item, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -96,6 +118,14 @@ fn test_native_variable_evaluation() {
             .to_string(),
         "13"
     );
+
+    // beta := [1,2,3]
+    let res = evaluate_expression(&mut context, "beta := [1,2,3]");
+    assert_number_vector(&res, &["1", "2", "3"]);
+
+    // beta*2
+    let res = evaluate_expression(&mut context, "beta*2");
+    assert_number_vector(&res, &["2", "4", "6"]);
 }
 
 #[test]
