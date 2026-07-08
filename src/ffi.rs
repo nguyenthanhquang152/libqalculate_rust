@@ -283,6 +283,12 @@ impl Calculator {
         );
 
         if fallback_disabled_by_env() {
+            if let Some(output) = native_currency_conversion_output(profile, expr, settings)? {
+                return Ok(CalculationOutput {
+                    output,
+                    fallback_state: FallbackState::Native,
+                });
+            }
             if settings.is_empty() {
                 if let Some(output) = native_data_output(profile, expr)? {
                     return Ok(CalculationOutput {
@@ -594,6 +600,46 @@ fn native_session_output(
         PrintProfile::Api => output,
         PrintProfile::Qalc => output.replace('-', "\u{2212}"),
     }))
+}
+
+fn native_currency_conversion_output(
+    profile: PrintProfile,
+    expr: &str,
+    settings: &[&str],
+) -> Result<Option<String>, CalculatorError> {
+    if !settings.is_empty() {
+        return Ok(None);
+    }
+
+    let parsed = crate::parser::operators::parse_expression(expr).ok();
+    let Some(ast) = parsed else {
+        return Ok(None);
+    };
+
+    let Some((amount, src, tgt)) = crate::rates::match_currency_conversion(&ast) else {
+        return Ok(None);
+    };
+
+    let dir = crate::rates::definitions_dir();
+    let catalog = crate::rates::RatesCatalog::load_from_dir(&dir)
+        .map_err(|e| CalculatorError::NativeEvaluation(e.to_string()))?;
+
+    let converted = catalog
+        .convert(&amount, &src, &tgt)
+        .map_err(CalculatorError::NativeEvaluation)?;
+
+    let mut formatted_num = crate::rates::format_qalc_currency_number(&converted);
+    if profile == PrintProfile::Qalc {
+        formatted_num = formatted_num.replace('-', "\u{2212}");
+    }
+
+    let formatted = if let Some((_, symbol)) = crate::rates::currency_info(&tgt) {
+        format!("{symbol}{formatted_num}")
+    } else {
+        format!("{formatted_num} {tgt}")
+    };
+
+    Ok(Some(formatted))
 }
 
 fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {

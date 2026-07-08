@@ -3,7 +3,7 @@
 > **Upstream version**: libqalculate 5.11.0
 > **Inventory date**: 2026-07-03
 > **Epics**: 0 — Project Bootstrap & Inventory; 1 — Workspace Foundation and Optional C++ Oracle/FFI; 2 — Numeric Core (Number); 3 — AST, Parser, and Session Commands; 8 — Vectors, Matrices, Statistics, and CSV Data; 9 — Definitions, Units, Datasets, Currencies, and Rates
-> **Tasks**: 0.1/0.2 inventory baseline; 1.1 (hybrid-build-inventory), 1.2 (ffi-sys-bindings), 1.3 (safe-ffi-calculator-wrapper), 1.4 (no-cpp-fallback-gate), 2.1-2.6 numeric-core slices; 3.1-3.5 AST, parser, name resolution, and command parsing slices; 8.1 (vector-matrix-ast-eval) and 8.2 (matrix-functions) native `matrixvector.batch` coverage; 9.1 (xml-loader-core), 9.2 (prefix-unit-loader), 9.3 (function-variable-loader), and 9.4 (datasets-elements-planets) loader/lookup scaffolds
+> **Tasks**: 0.1/0.2 inventory baseline; 1.1 (hybrid-build-inventory), 1.2 (ffi-sys-bindings), 1.3 (safe-ffi-calculator-wrapper), 1.4 (no-cpp-fallback-gate), 2.1-2.6 numeric-core slices; 3.1-3.5 AST, parser, name resolution, and command parsing slices; 8.1 (vector-matrix-ast-eval) and 8.2 (matrix-functions) native `matrixvector.batch` coverage; 9.1 (xml-loader-core), 9.2 (prefix-unit-loader), 9.3 (function-variable-loader), 9.4 (datasets-elements-planets), and 9.5 (currency-rate-loader) loader/lookup scaffolds
 
 ---
 
@@ -13,13 +13,15 @@
 |---|---|---|---|---|---|---|---|
 | Public Headers | 22 | 0 | 0 | 8 | 1 | 9 | 4 |
 | Implementation Files | 41 | 0 | 0 | 11 | 2 | 28 | 0 |
-| Definition Data Files | 9 | 0 | 0 | 8 | 0 | 1 | 0 |
+| Definition Data Files | 9 | 0 | 0 | 9 | 0 | 0 | 0 |
 | Batch Test Files | 17 | 4 | 0 | 3 | 0 | 10 | 0 |
 | Batch Test Cases | 656 | 341 | 0 | 0 | 0 | 315 | 0 |
 | CLI Behaviors | 10 | 2 | 3 | 1 | 1 | 3 | 0 |
-| Core Class API Groups | 59 | 0 | 0 | 29 | 1 | 29 | 0 |
+| Core Class API Groups | 59 | 0 | 0 | 30 | 1 | 28 | 0 |
 
 **Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, all 130 `matrixvector.batch` rows covering vector/matrix literals, constructors/accessors, arithmetic, shape helpers, and matrix functions, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, direct CSV-backed `mean(load(...))`/`stdev(load(...))`/`min(load(...))`/`max(load(...))`/`total(load(...))`/`range(load(...))`/`median(load(...))`, `geomean(abs(load(...)))`/`harmmean(abs(load(...)))`/`rms(load(...))`/`trimmean(load(...), 10)`/`winsormean(load(...), 10)`/`weighmean(load(...), genvector(2;1;100))`/`stderr(load(...))`/`meandev(load(...))`/`quartile(load(...), 1, 7)`/`percentile(load(...), 25, 7)`/`decile(load(...), 9, 7)`/`iqr(load(...))` proof for `vectordata.csv`, direct paired CSV `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` proof for `vectordata.csv` and `vectordata2.csv`, quoted-path forms for those direct CSV consumers, fallback-disabled native session-variable execution for the original `stats.batch` `name=load(...)` setup/delete rows, focused fallback-disabled native session-variable execution for all `variables.batch` rows in one context, selected literal statistics `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` evidence, and focused native dataset lookup evidence for `atom`/`planet` element and planet properties. Epic 9 now has a Rust XML definition loader scaffold in `src/definitions.rs`, a typed prefix/unit catalog in `src/units.rs`, a typed function/variable catalog in `src/definitions_catalog.rs`, and a typed dataset catalog in `src/datasets.rs` that loads upstream dataset metadata, property aliases and flags, object data rows, provenance, and focused `atom`/`planet` lookup behavior; it does not claim unit conversion, currency rate, function-body execution, full variable-evaluation, or full DataSet public API parity. The batch manifest currently has 341 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven through the manifest runner with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader/statistics evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`; XML loader scaffold evidence is recorded by `tests/definition_loader.rs`; prefix/unit loader evidence is recorded by `tests/prefix_unit_loader.rs`; function/variable loader evidence is recorded by `tests/function_variable_loader.rs`; dataset loader and lookup evidence is recorded by `tests/dataset_loader.rs`, `tests/dataset_lookup.rs`, and `tests/oracle.rs::focused_issue48_dataset_lookup_oracle_cases`; session-variable statistics evidence is recorded by `src/ffi.rs::tests::fallback_disabled_preserves_csv_loaded_statistics_session_variables`; and focused `variables.batch` session evidence is recorded by `tests/oracle.rs::focused_issue47_variables_batch_session_oracle_cases`.
+
+**Issue #49 update**: `src/rates.rs` now parses `rates.json` snapshot dates and raw per-currency rates with provenance, applies offline `eurofxref-daily.xml` precedence for the focused fiat conversion oracle cases, preserves the upstream built-in BTC relation from `Calculator.cc`, and routes only explicit currency conversions through fallback-disabled native evaluation. This does not claim network exchange-rate refresh or general unit conversion parity; those remain staged follow-ups.
 
 ---
 
@@ -204,7 +206,7 @@ Maps all 9 definition data files from `../libqalculate/data/` to Rust loading st
 
 | # | Data File | Format | Content | Rust Status | Notes |
 |---|---|---|---|---|---|
-| 1 | `currencies.xml.in` | XML | Currency definitions and exchange rate metadata | `scaffold` | Typed unit catalog loads builtin currency units, names, categories, countries, hidden flags, and provenance; currency semantics/rates remain #49 |
+| 1 | `currencies.xml.in` | XML | Currency definitions and exchange rate metadata | `scaffold` | Typed unit catalog loads builtin currency units, names, categories, countries, hidden flags, and provenance; focused explicit currency conversion uses this metadata plus `src/rates.rs`, while broader conversion remains #50 |
 | 2 | `datasets.xml.in` | XML | Dataset definitions (elements, planets) | `scaffold` | Typed dataset catalog loads element/planet metadata, property aliases, key/hidden flags, units, argument titles, and provenance; focused `atom`/`planet` lookup cases are native |
 | 3 | `elements.xml.in` | XML | Periodic table element properties | `scaffold` | Typed dataset catalog loads element object rows and key lookup by symbol, number, and name; focused `atom(...)` lookup cases are native |
 | 4 | `functions.xml.in` | XML | Math/science function definitions | `scaffold` | Typed function catalog loads builtin/user function metadata, names/aliases, categories, active/hidden flags, arguments and constraint flags, raw expressions/subfunctions, examples/descriptions, provenance, diagnostics, and parser registry names; native function bodies remain feature-specific tasks |
@@ -212,7 +214,7 @@ Maps all 9 definition data files from `../libqalculate/data/` to Rust loading st
 | 6 | `prefixes.xml.in` | XML | SI, binary, and other prefix definitions | `scaffold` | Typed prefix catalog loads decimal/binary kind, exponent, active state, name flags, provenance, and parser registry names; multiplier/conversion use remains #50 |
 | 7 | `units.xml.in` | XML | Unit definitions and conversion relations | `scaffold` | Typed unit catalog loads base/alias/composite/builtin units, category paths, systems, name flags, parts, base relations, provenance, and parser registry names; conversion semantics remain #50 |
 | 8 | `variables.xml.in` | XML | Built-in variable definitions | `scaffold` | Typed variable catalog loads builtin/known/unknown variable metadata, names/aliases, categories, active/hidden flags, values, units, uncertainty, precision, approximation flags, provenance, diagnostics, and parser registry names; broad variable evaluation semantics remain incomplete |
-| 9 | `rates.json` | JSON | Exchange rate data (updated externally) | `unstarted` | ECB-sourced rates; fetched at runtime in upstream |
+| 9 | `rates.json` | JSON | Exchange rate data (updated externally) | `scaffold` | `src/rates.rs` parses the local snapshot date and raw per-currency rates with provenance; focused native conversions use offline source precedence and do not implement network refresh |
 
 ### Data Loading Pipeline Status
 
@@ -350,7 +352,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | 2 | Definition loading | 3 | `scaffold` | `load_global_definitions()`, `load_local_definitions()`, and `load_exchange_rates()` exposed via FFI |
 | 3 | Expression parsing | 5 | `unstarted` | No direct `parse()` / `parseNumber()` wrapper yet |
 | 4 | Expression evaluation | 8 | `fallback-only` | `calculate_and_print()` and qalc-style `calculate_and_print_qalc()` exposed via FFI; fallback-disabled mode can route a small oracle-proven native numeric expression subset through `number::evaluate_expr()` and tracked variants report fallback state for oracle evidence |
-| 5 | Conversion | 6 | `unstarted` | No direct `convert()` / `convertToBaseUnits()` wrapper yet |
+| 5 | Conversion | 6 | `scaffold` | No direct `convert()` / `convertToBaseUnits()` wrapper yet; fallback-disabled qalc-style evaluation has a focused native explicit currency conversion slice for #49 |
 | 6 | Settings / options | 15+ | `unstarted` | No public settings/options wrapper yet; fallback-disabled CLI evidence accepts a narrow qalc setting subset (`input base`, `unicode`, `precision`) |
 | 7 | Messages | 4 | `unstarted` | No `message()` / `nextMessage()` wrapper yet |
 | 8 | Plot support | 3 | `unstarted` | No gnuplot wrapper yet |
@@ -459,7 +461,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | DataSet | 4 | 0 | 4 | 0 | 0 |
 | Unit | 5 | 0 | 4 | 0 | 1 |
 | Prefix | 4 | 0 | 4 | 0 | 0 |
-| **Total** | **59** | **0** | **29** | **1** | **29** |
+| **Total** | **59** | **0** | **30** | **1** | **28** |
 
 ---
 
@@ -473,6 +475,7 @@ For each of the 9 core C++ classes, maps major public API categories to Rust imp
 | `src/ffi.rs` | `Calculator.h`, `Calculator.cc`, `Calculator-calculate.cc`, `Calculator-definitions.cc` (partial) | `fallback-only` |
 | `src/definitions.rs` | `Calculator-definitions.cc`, upstream `data/*.xml.in` generic XML structure | `scaffold` |
 | `src/units.rs` | `Prefix.h`, `Prefix.cc`, `Unit.h`, `Unit.cc`, `Calculator-definitions.cc`, `prefixes.xml.in`, `units.xml.in`, `currencies.xml.in` | `scaffold` |
+| `src/rates.rs` | `Calculator-definitions.cc`, `Unit.cc`, `Calculator.cc`, `rates.json`, `eurofxref-daily.xml`, `currencies.xml.in` | `scaffold` |
 | `src/number.rs` | `Number.h`, `Number.cc` | mixed: focused native evidence, scaffold, unstarted |
 | `src/batch.rs` | — (no upstream equivalent; native batch parser) | `tooling-pass` |
 | `src/main.rs` | `../src/qalc.cc` (partial CLI parity) | mixed |

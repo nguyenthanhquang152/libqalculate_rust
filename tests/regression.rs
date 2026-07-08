@@ -1,5 +1,10 @@
 use libqalculate_rust::batch::read_batch_cases;
 use libqalculate_rust::context::CalculatorContext;
+use std::path::{Path, PathBuf};
+
+fn definitions_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../libqalculate/data")
+}
 
 #[test]
 fn local_regression_fixture_is_stable() {
@@ -31,5 +36,39 @@ fn reduced_dataset_lookup_regressions_match_focused_oracle_cases() {
             .parse_and_evaluate_to_string(expression)
             .unwrap_or_else(|error| panic!("{expression:?} failed: {error}"));
         assert_eq!(actual, expected, "{expression}");
+    }
+}
+
+#[test]
+fn reduced_currency_conversion_regressions_match_focused_oracle_cases() {
+    let cases = [
+        ("1 EUR to USD", "$1.164800000"),
+        ("1 USD to EUR", "€0.8585164835"),
+        ("10 USD to EUR", "€8.585164835"),
+        ("1 EUR to JPY", "¥184.9300000"),
+        ("1 BTC to EUR", "€66025.70000"),
+        ("0 EUR to USD", "$0"),
+    ];
+
+    for (expression, expected) in cases {
+        let output = assert_cmd::Command::cargo_bin("qalc-rs")
+            .expect("qalc-rs binary")
+            .args(["--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            expected,
+            "{expression}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("fallback=native"),
+            "{expression} should run natively"
+        );
     }
 }
