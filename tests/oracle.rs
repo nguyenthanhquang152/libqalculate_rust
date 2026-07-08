@@ -29,6 +29,7 @@
 //! cargo test --test oracle -- --ignored differential_oracle_all_batches
 //! ```
 
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -67,6 +68,18 @@ const ALL_BATCH_FILES: &[&str] = &[
     "units.batch",
     "variables.batch",
 ];
+
+const ORACLE_TZ: &str = "UTC";
+const ORACLE_LC_ALL: &str = "C";
+const ORACLE_LANG: &str = "C";
+
+const ISSUE54_DATE_POLICY_CASES: &[(&str, &str)] = &[
+    ("dates.batch:5", r#""2020-07-10T07:50CET" to utc+8"#),
+    ("dates.batch:15", "timestamp(2020-05-20T00:00:00Z)"),
+    ("dates.batch:17", "stamptodate(1 589 932 800) to utc"),
+];
+
+const DYNAMIC_CLOCK_DEFAULTS: &[&str] = &["now", "today", "tomorrow", "yesterday"];
 
 // ── DiffMismatch ──────────────────────────────────────────────────────────────
 
@@ -173,6 +186,27 @@ fn defs_dir() -> PathBuf {
     Path::new("../libqalculate/data")
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from("../libqalculate/data"))
+}
+
+fn oracle_environment_vars(defs: &Path) -> Vec<(&'static str, OsString)> {
+    vec![
+        ("TZ", OsString::from(ORACLE_TZ)),
+        ("LC_ALL", OsString::from(ORACLE_LC_ALL)),
+        ("LANG", OsString::from(ORACLE_LANG)),
+        ("QALCULATE_DEFINITIONS_DIR", defs.as_os_str().to_owned()),
+    ]
+}
+
+fn apply_oracle_environment(cmd: &mut Command, defs: &Path) {
+    for (name, value) in oracle_environment_vars(defs) {
+        cmd.env(name, value);
+    }
+}
+
+fn require_datetime_oracle(qalc: Option<PathBuf>) -> Result<PathBuf, &'static str> {
+    qalc.ok_or(
+        "datetime oracle parity requires upstream qalc; inventory-only date cases are incomplete",
+    )
 }
 
 /// Resolve the upstream tests directory.
@@ -340,9 +374,7 @@ fn run_oracle_expression_in_dir(
     current_dir: Option<&Path>,
 ) -> CapturedOutput {
     let mut cmd = Command::new(qalc_path);
-    cmd.env("LC_ALL", "C.UTF-8")
-        .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs);
+    apply_oracle_environment(&mut cmd, defs);
 
     if let Some(dir) = current_dir {
         cmd.current_dir(dir);
@@ -384,10 +416,8 @@ fn run_oracle_expression_with_isolated_user_dir(
 ) -> CapturedOutput {
     let user_dir = tempfile::tempdir().expect("temporary qalc user dir");
     let mut cmd = Command::new(qalc_path);
-    cmd.env("LC_ALL", "C.UTF-8")
-        .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs)
-        .env("QALCULATE_USER_DIR", user_dir.path())
+    apply_oracle_environment(&mut cmd, defs);
+    cmd.env("QALCULATE_USER_DIR", user_dir.path())
         .arg("-defaults")
         .arg("-terse")
         .arg("-set")
@@ -418,10 +448,9 @@ fn run_unit_oracle_expression_with_isolated_user_dir(
     expression: &str,
 ) -> CapturedOutput {
     let user_dir = tempfile::tempdir().expect("temporary qalc user dir");
-    let output = Command::new(qalc_path)
-        .env("LC_ALL", "C.UTF-8")
-        .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs)
+    let mut cmd = Command::new(qalc_path);
+    apply_oracle_environment(&mut cmd, defs);
+    let output = cmd
         .env("QALCULATE_USER_DIR", user_dir.path())
         .arg("-defaults")
         .arg("-terse")
@@ -503,11 +532,9 @@ fn run_rust_expression_in_dir(
         .arg("qalc-rs")
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
-        .arg("--")
-        .env("LC_ALL", "C.UTF-8")
-        .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", defs)
-        .env_remove("QALCULATE_DISABLE_FALLBACK")
+        .arg("--");
+    apply_oracle_environment(&mut cmd, defs);
+    cmd.env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");
 
     if let Some(dir) = current_dir {
@@ -712,6 +739,92 @@ fn report_mismatches(mismatches: &[DiffMismatch]) {
 // ── Existing tests (preserved) ────────────────────────────────────────────────
 
 #[test]
+fn issue54_oracle_environment_policy_is_pinned() {
+    let defs = Path::new("/tmp/libqalculate-data");
+    let vars = oracle_environment_vars(defs);
+
+    assert!(vars.contains(&("TZ", OsString::from("UTC"))));
+    assert!(vars.contains(&("LC_ALL", OsString::from("C"))));
+    assert!(vars.contains(&("LANG", OsString::from("C"))));
+    assert!(vars.contains(&("QALCULATE_DEFINITIONS_DIR", defs.as_os_str().to_owned())));
+}
+
+#[test]
+fn issue54_datetime_oracle_policy_keeps_dynamic_clock_out_of_parity_claims() {
+    let statuses = oracle_manifest::load_parity_statuses();
+
+    for (case_id, expression) in ISSUE54_DATE_POLICY_CASES {
+        assert_eq!(
+            oracle_manifest::status_for_case(&statuses, case_id),
+            "inventory-only",
+            "{case_id} must remain inventory-only until #52/#53 can prove native date parity"
+        );
+        for dynamic_default in DYNAMIC_CLOCK_DEFAULTS {
+            assert!(
+                !expression.contains(dynamic_default),
+                "{case_id} unexpectedly uses dynamic clock default {dynamic_default:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn issue54_datetime_oracle_policy_marks_missing_qalc_incomplete() {
+    let error = require_datetime_oracle(None).expect_err("missing qalc is incomplete");
+
+    assert!(
+        error.contains("inventory-only date cases are incomplete"),
+        "unexpected missing-qalc policy error: {error}"
+    );
+}
+
+#[test]
+fn focused_issue54_dates_oracle_environment_cases() {
+    let qalc = match require_datetime_oracle(oracle_binary()) {
+        Ok(qalc) => qalc,
+        Err(error) => {
+            eprintln!("skipping focused_issue54_dates_oracle_environment_cases; {error}");
+            return;
+        }
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let statuses = oracle_manifest::load_parity_statuses();
+
+    for (case_id, expression) in ISSUE54_DATE_POLICY_CASES {
+        assert_eq!(
+            oracle_manifest::status_for_case(&statuses, case_id),
+            "inventory-only",
+            "{case_id} fallback agreement must not be reported as native date parity"
+        );
+
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, false, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::CppFallbackEnabled.label(),
+            "{case_id} must remain fallback/inventory evidence until native date parsing is ported"
+        );
+    }
+}
+
+#[test]
 fn upstream_batch_inventory_is_available_for_oracle_tests() {
     let path = Path::new("../libqalculate/tests/parser.batch");
     if !path.exists() {
@@ -802,8 +915,9 @@ fn upstream_qalc_oracle_can_run_batch_when_available() {
     };
 
     let defs = defs_dir();
-    let status = Command::new(qalc)
-        .env("QALCULATE_DEFINITIONS_DIR", &defs)
+    let mut cmd = Command::new(qalc);
+    apply_oracle_environment(&mut cmd, &defs);
+    let status = cmd
         .arg("--test-file")
         .arg("../libqalculate/tests/parser.batch")
         .status()
@@ -1072,10 +1186,9 @@ fn focused_issue47_variables_batch_session_oracle_cases() {
 
     let defs = defs_dir();
     let batch_path = upstream_tests_dir().join("variables.batch");
-    let upstream_status = Command::new(&qalc)
-        .env("LC_ALL", "C.UTF-8")
-        .env("TZ", "UTC")
-        .env("QALCULATE_DEFINITIONS_DIR", &defs)
+    let mut upstream_cmd = Command::new(&qalc);
+    apply_oracle_environment(&mut upstream_cmd, &defs);
+    let upstream_status = upstream_cmd
         .arg("-defaults")
         .arg("-set")
         .arg("decimal_comma 0")

@@ -73,6 +73,13 @@ Current oracle tests include strict `parser.batch` and exact-operator comparison
 prove only the harness and CLI fallback path. Do not report native Rust parity unless the
 test executed Rust and C++ for the same case with C++ fallback disabled.
 
+Oracle runs pin `TZ=UTC`, `LC_ALL=C`, `LANG=C`, and
+`QALCULATE_DEFINITIONS_DIR=../libqalculate/data` unless explicitly overridden by a test.
+Date/time rows in `dates.batch` remain `inventory-only` until native parser/formatter and
+date-function support can prove them with fallback disabled. Dynamic clock defaults such as
+`now`, `today`, `tomorrow`, and `yesterday` must be excluded from parity claims unless a
+test injects or otherwise pins the clock.
+
 Final parity CI must fail when upstream `qalc` is unavailable. Local inventory jobs may skip
 with an explicit message, but skipped oracle execution means the feature remains unproven.
 
