@@ -1,4 +1,6 @@
 use libqalculate_rust::batch::{parse_batch_cases, render_batch_cases, BatchCase};
+use libqalculate_rust::datetime::DateTime;
+use libqalculate_rust::number::Number;
 use libqalculate_rust::parser::lexer::lex_line;
 use libqalculate_rust::parser::operators::parse_expression;
 use proptest::prelude::*;
@@ -26,5 +28,21 @@ proptest! {
     #[test]
     fn operator_parser_arbitrary_utf8_input_returns_or_errors_without_panicking(input in ".*") {
         let _ = parse_expression(&input);
+    }
+
+    #[test]
+    fn datetime_add_days_roundtrips_through_days_to(
+        year in 1970i64..=2100,
+        month in 1i64..=12,
+        day in 1i64..=31,
+        delta in -1000i64..=1000,
+    ) {
+        let Ok(date) = DateTime::from_ymd(year, month, day) else {
+            return Ok(());
+        };
+        let shifted = date
+            .add_days(&Number::from_i64(delta))
+            .expect("bounded day shift should stay in range");
+        prop_assert_eq!(date.days_to(&shifted), Number::from_i64(delta));
     }
 }

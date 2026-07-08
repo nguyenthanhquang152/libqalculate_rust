@@ -79,10 +79,21 @@ const ISSUE52_DATE_NATIVE_CASES: &[(&str, &str)] = &[
     ("dates.batch:5", r#""2020-07-10T07:50CET" to utc+8"#),
 ];
 
-const ISSUE54_DATE_POLICY_CASES: &[(&str, &str)] = &[
+const ISSUE53_DATE_NATIVE_CASES: &[(&str, &str)] = &[
+    ("dates.batch:7", r#""2020-05-20" + 523d"#),
+    ("dates.batch:9", "addDays(2020-05-20; 523)"),
+    ("dates.batch:11", r#""2020-11-05" - "2020-10-05""#),
+    ("dates.batch:13", r#""2020-10-05" - "2020-10-15""#),
     ("dates.batch:15", "timestamp(2020-05-20T00:00:00Z)"),
     ("dates.batch:17", "stamptodate(1 589 932 800) to utc"),
+    ("dates.batch:19", "lunarphase(2022-02-11T00:00Z)"),
+    (
+        "dates.batch:21",
+        "nextlunarphase(0.5, 2022-02-11T00:00Z) to utc",
+    ),
 ];
+
+const ISSUE54_DATE_POLICY_CASES: &[(&str, &str)] = &[];
 
 const DYNAMIC_CLOCK_DEFAULTS: &[&str] = &["now", "today", "tomorrow", "yesterday"];
 
@@ -798,6 +809,52 @@ fn focused_issue52_datetime_parser_formatter_oracle_cases() {
     let statuses = oracle_manifest::load_parity_statuses();
 
     for (case_id, expression) in ISSUE52_DATE_NATIVE_CASES {
+        assert_eq!(
+            oracle_manifest::status_for_case(&statuses, case_id),
+            "native-pass",
+            "{case_id} must be manifest-promoted only with fallback-disabled evidence"
+        );
+
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+#[test]
+fn focused_issue53_datetime_function_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue53_datetime_function_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let statuses = oracle_manifest::load_parity_statuses();
+
+    for (case_id, expression) in ISSUE53_DATE_NATIVE_CASES {
         assert_eq!(
             oracle_manifest::status_for_case(&statuses, case_id),
             "native-pass",
