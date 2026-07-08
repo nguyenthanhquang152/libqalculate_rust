@@ -118,6 +118,24 @@ fn loads_currency_units_without_claiming_rate_semantics() {
     assert!(has_name_with_flags(usd.names(), "$", "a"));
     assert!(has_name_with_flags(usd.names(), "dollars", "p"));
     assert!(usd.base().is_none(), "rate semantics belong to #49");
+
+    let eur = catalog.unit_by_name("EUR").expect("EUR currency unit");
+    assert_eq!(eur.kind(), UnitKind::Builtin);
+    assert_eq!(eur.title(), Some("European Euro"));
+    assert!(has_name_with_flags(eur.names(), "€", "au"));
+    assert!(eur.countries().iter().any(|country| country == "Germany"));
+
+    let jpy = catalog.unit_by_name("JPY").expect("JPY currency unit");
+    assert_eq!(jpy.kind(), UnitKind::Builtin);
+    assert_eq!(jpy.title(), Some("Japanese Yen"));
+    assert!(has_name_with_flags(jpy.names(), "¥", "au"));
+    assert_eq!(jpy.countries(), ["Japan"]);
+
+    let gbp = catalog.unit_by_name("GBP").expect("GBP currency unit");
+    assert_eq!(gbp.kind(), UnitKind::Builtin);
+    assert_eq!(gbp.title(), Some("British Pound"));
+    assert!(has_name_with_flags(gbp.names(), "£", "au"));
+    assert_eq!(gbp.countries(), ["United Kingdom"]);
 }
 
 #[test]

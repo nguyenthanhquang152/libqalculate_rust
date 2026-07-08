@@ -60,6 +60,9 @@ pub mod definitions_catalog;
 /// Typed dataset definitions and built-in object data catalog.
 pub mod datasets;
 
+/// Native exchange-rate parsing and currency conversion.
+pub mod rates;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.

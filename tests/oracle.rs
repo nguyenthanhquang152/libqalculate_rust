@@ -376,6 +376,42 @@ fn run_oracle_expression_in_dir(
     }
 }
 
+fn run_oracle_expression_with_isolated_user_dir(
+    qalc_path: &Path,
+    defs: &Path,
+    expression: &str,
+    settings: &[SessionCommand],
+) -> CapturedOutput {
+    let user_dir = tempfile::tempdir().expect("temporary qalc user dir");
+    let mut cmd = Command::new(qalc_path);
+    cmd.env("LC_ALL", "C.UTF-8")
+        .env("TZ", "UTC")
+        .env("QALCULATE_DEFINITIONS_DIR", defs)
+        .env("QALCULATE_USER_DIR", user_dir.path())
+        .arg("-defaults")
+        .arg("-terse")
+        .arg("-set")
+        .arg("decimal_comma 0")
+        .arg("-set")
+        .arg("curconv 0");
+
+    for setting in settings {
+        for arg in setting.to_qalc_args() {
+            cmd.arg(arg);
+        }
+    }
+
+    cmd.arg(expression);
+    let output = cmd.output().expect("failed to execute C++ qalc oracle");
+
+    CapturedOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        exit_code: output.status.code().unwrap_or(-1),
+        fallback_state: None,
+    }
+}
+
 // ── Rust subject runner ───────────────────────────────────────────────────────
 
 /// Run a single expression through the Rust implementation.
@@ -1285,6 +1321,44 @@ fn assert_native_oracle_cases(qalc: &Path, defs: &Path, cases: &[NativeOracleCas
     }
 }
 
+fn assert_native_oracle_cases_with_isolated_oracle_user_dir(
+    qalc: &Path,
+    defs: &Path,
+    cases: &[NativeOracleCase<'_>],
+) {
+    for (case_id, expression, raw_settings) in cases {
+        let settings = raw_settings
+            .iter()
+            .map(|raw| SessionCommand {
+                raw: (*raw).to_string(),
+            })
+            .collect::<Vec<_>>();
+        let cpp_out =
+            run_oracle_expression_with_isolated_user_dir(qalc, defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
 #[test]
 fn focused_issue48_dataset_lookup_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
@@ -1330,6 +1404,30 @@ fn focused_issue48_dataset_lookup_oracle_cases() {
     ];
 
     assert_native_oracle_cases(&qalc, &defs, cases);
+}
+
+#[test]
+fn focused_issue49_currency_conversion_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue49_currency_conversion_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let default_settings = &[][..];
+    let cases: &[NativeOracleCase<'_>] = &[
+        ("currency-eur-usd", "1 EUR to USD", default_settings),
+        ("currency-usd-eur", "1 USD to EUR", default_settings),
+        ("currency-10-usd-eur", "10 USD to EUR", default_settings),
+        ("currency-eur-jpy", "1 EUR to JPY", default_settings),
+        ("currency-btc-eur", "1 BTC to EUR", default_settings),
+        ("currency-zero-eur-usd", "0 EUR to USD", default_settings),
+    ];
+
+    assert_native_oracle_cases_with_isolated_oracle_user_dir(&qalc, &defs, cases);
 }
 
 #[test]

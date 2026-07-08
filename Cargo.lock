@@ -369,6 +369,7 @@ dependencies = [
  "proptest",
  "roxmltree",
  "rug",
+ "serde_json",
  "tempfile",
 ]
 
