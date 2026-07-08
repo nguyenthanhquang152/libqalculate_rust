@@ -34,6 +34,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use libqalculate_rust::batch::{batch_case_ids, is_session_command, read_batch_cases};
+use libqalculate_rust::context::CalculatorContext;
 use libqalculate_rust::ffi::FallbackState;
 use libqalculate_rust::parser::lexer::{
     lex_expression, lex_line, BasePrefix, LineKind, NumberLiteralKind, Operator, TokenKind,
@@ -986,6 +987,62 @@ fn focused_epic2_numberbase_session_oracle_cases() {
             fallback_state,
             FallbackState::Native.label(),
             "{case_id} did not run natively"
+        );
+    }
+}
+
+/// Focused fallback-disabled native evidence for the session-variable rows in
+/// `variables.batch`. The existing manifest runner executes each expression in
+/// a separate process, so this test keeps one native context alive for the full
+/// batch sequence.
+#[test]
+fn focused_issue47_variables_batch_session_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue47_variables_batch_session_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let batch_path = upstream_tests_dir().join("variables.batch");
+    let upstream_status = Command::new(&qalc)
+        .env("LC_ALL", "C.UTF-8")
+        .env("TZ", "UTC")
+        .env("QALCULATE_DEFINITIONS_DIR", &defs)
+        .arg("-defaults")
+        .arg("-set")
+        .arg("decimal_comma 0")
+        .arg("-set")
+        .arg("curconv 0")
+        .arg("--test-file")
+        .arg(&batch_path)
+        .status()
+        .expect("upstream qalc oracle should start");
+    assert!(
+        upstream_status.success(),
+        "upstream qalc rejected {}",
+        batch_path.display()
+    );
+
+    let batch_source = std::fs::read_to_string(&batch_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", batch_path.display()));
+    let cases = read_batch_cases(&batch_path)
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", batch_path.display()));
+    let case_ids =
+        batch_case_ids("variables.batch", &batch_source).expect("variables.batch case IDs");
+    let mut context = CalculatorContext::default();
+
+    for (case, case_id) in cases.iter().zip(case_ids) {
+        let actual = context
+            .parse_and_evaluate_to_string(&case.expression)
+            .unwrap_or_else(|error| panic!("{case_id} failed natively: {error}"));
+        assert_eq!(
+            actual,
+            case.expected.join("\n"),
+            "{case_id} native session output mismatch for {:?}",
+            case.expression
         );
     }
 }

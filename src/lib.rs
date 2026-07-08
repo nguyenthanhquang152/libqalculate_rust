@@ -54,6 +54,9 @@ pub mod definitions;
 /// Typed prefix and unit definitions catalog.
 pub mod units;
 
+/// Typed function and variable definitions catalog.
+pub mod definitions_catalog;
+
 /// Core `Number` representation backed by `rug` GMP/MPFR values.
 ///
 /// Upstream oracle: `../libqalculate/libqalculate/Number.h` and `Number.cc`.
