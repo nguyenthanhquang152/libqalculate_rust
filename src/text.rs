@@ -11,6 +11,10 @@ pub(crate) fn quote_text_for_qalc(text: &str) -> String {
     }
 }
 
+fn quote_datetime_for_qalc(text: &str) -> String {
+    format!("\"{}\"", escape_quoted_text(text, '"'))
+}
+
 fn get_term_degree(term: &Expression) -> f64 {
     match term {
         Expression::Number(_) => 0.0,
@@ -347,7 +351,7 @@ where
         }
         Expression::Undefined => Some("undefined".to_string()),
         Expression::Aborted => Some("aborted".to_string()),
-        Expression::DateTime(value) => Some(value.source().to_string()),
+        Expression::DateTime(value) => Some(quote_datetime_for_qalc(value.source())),
     }
 }
 
@@ -488,7 +492,7 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
         Expression::Parallel { lhs, rhs } => format_binary_raw(lhs, " parallel ", rhs),
         Expression::Undefined => "undefined".to_string(),
         Expression::Aborted => "aborted".to_string(),
-        Expression::DateTime(value) => value.source().to_string(),
+        Expression::DateTime(value) => quote_datetime_for_qalc(value.source()),
     }
 }
 
@@ -565,4 +569,32 @@ fn format_nary_raw(children: &NaryChildren, op: &str) -> String {
         .map(format_raw_expression)
         .collect::<Vec<_>>()
         .join(op)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_raw_expression, format_result_with_numbers};
+    use crate::ast::Expression;
+    use crate::parser::operators::parse_expression;
+
+    #[test]
+    fn datetime_literals_keep_quotes_when_formatted() {
+        let expr = parse_expression("\"2020-05-20\"").expect("valid date literal");
+        assert!(matches!(expr, Expression::DateTime(_)));
+
+        assert_eq!(format_raw_expression(&expr), "\"2020-05-20\"");
+        assert_eq!(
+            format_result_with_numbers(&expr, &ToString::to_string),
+            Some("\"2020-05-20\"".to_string())
+        );
+    }
+
+    #[test]
+    fn datetime_literal_format_round_trips_as_datetime_not_arithmetic() {
+        let expr = parse_expression("\"2020-05-20\"").expect("valid date literal");
+        let formatted = format_raw_expression(&expr);
+        let reparsed = parse_expression(&formatted).expect("formatted date literal reparses");
+
+        assert!(matches!(reparsed, Expression::DateTime(_)));
+    }
 }

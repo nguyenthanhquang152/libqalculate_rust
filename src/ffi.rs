@@ -310,6 +310,12 @@ impl Calculator {
                         fallback_state: FallbackState::Native,
                     });
                 }
+                if let Some(output) = native_datetime_output(profile, expr)? {
+                    return Ok(CalculationOutput {
+                        output,
+                        fallback_state: FallbackState::Native,
+                    });
+                }
                 if let Some(output) = native_unit_conversion_output(profile, expr, settings)? {
                     return Ok(CalculationOutput {
                         output,
@@ -606,6 +612,19 @@ fn native_session_output(
         PrintProfile::Api => output,
         PrintProfile::Qalc => output.replace('-', "\u{2212}"),
     }))
+}
+
+fn native_datetime_output(
+    _profile: PrintProfile,
+    expr: &str,
+) -> Result<Option<String>, CalculatorError> {
+    let Some(output) =
+        crate::datetime::native_output(expr).map_err(CalculatorError::NativeEvaluation)?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(output))
 }
 
 fn native_currency_conversion_output(

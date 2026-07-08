@@ -127,6 +127,47 @@ impl std::fmt::Display for DateTimeError {
 
 impl std::error::Error for DateTimeError {}
 
+/// Error returned when parsing a date/time literal fails.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DateTimeParseError {
+    message: String,
+}
+
+impl DateTimeParseError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for DateTimeParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for DateTimeParseError {}
+
+/// A parsed date/time plus the optional source timezone offset in minutes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedDateTime {
+    value: DateTime,
+    offset_minutes: Option<i32>,
+}
+
+impl ParsedDateTime {
+    /// Returns the validated date/time value.
+    pub fn value(&self) -> &DateTime {
+        &self.value
+    }
+
+    /// Returns the parsed timezone offset in minutes, when present.
+    pub fn offset_minutes(&self) -> Option<i32> {
+        self.offset_minutes
+    }
+}
+
 /// Validated Gregorian date/time value compatible with upstream `QalculateDateTime`.
 #[derive(Debug, Clone)]
 pub struct DateTime {
@@ -512,9 +553,98 @@ impl DateTime {
             self.day,
             self.hour,
             self.minute,
-            self.second.to_qalc_string()
+            format_second_component(&self.second)
         )
     }
+}
+
+/// Parses the date/time literal subset used by the native parser/formatter slice.
+pub fn parse_datetime_literal(input: &str) -> Result<ParsedDateTime, DateTimeParseError> {
+    let (date, rest) = input
+        .split_once('T')
+        .map_or((input, None), |(date, rest)| (date, Some(rest)));
+    let (year, month, day) = parse_date_part(date)?;
+
+    let Some(rest) = rest else {
+        return Ok(ParsedDateTime {
+            value: DateTime::from_ymd(year, month, day)
+                .map_err(|error| DateTimeParseError::new(error.to_string()))?,
+            offset_minutes: None,
+        });
+    };
+
+    let (time, zone) = split_time_and_zone(rest)?;
+    let (hour, minute, second) = parse_time_part(time)?;
+    let offset_minutes = match zone {
+        "" => None,
+        suffix => Some(parse_timezone_suffix(suffix)?),
+    };
+
+    Ok(ParsedDateTime {
+        value: DateTime::from_ymd_hms(year, month, day, hour, minute, second)
+            .map_err(|error| DateTimeParseError::new(error.to_string()))?,
+        offset_minutes,
+    })
+}
+
+/// Converts a parsed date/time literal to a target UTC offset and returns qalc text output.
+pub fn convert_datetime_literal_to_zone(
+    input: &str,
+    target: &str,
+) -> Result<String, DateTimeParseError> {
+    let parsed = parse_datetime_literal(input)?;
+    let source_offset = parsed
+        .offset_minutes
+        .ok_or_else(|| DateTimeParseError::new("source date/time has no timezone"))?;
+    let target_offset = parse_timezone_target(target)?;
+    let utc = parsed
+        .value
+        .timestamp_utc()
+        .sub(&Number::from_i64(i64::from(source_offset) * 60));
+    let shifted = utc.add(&Number::from_i64(i64::from(target_offset) * 60));
+    let value = DateTime::from_timestamp_utc(&shifted)
+        .map_err(|error| DateTimeParseError::new(error.to_string()))?;
+
+    Ok(format!(
+        "\"{}\"",
+        format_iso_datetime_with_offset(&value, Some(target_offset))
+    ))
+}
+
+/// Formats a date/time value with an optional UTC offset suffix.
+pub fn format_iso_datetime_with_offset(value: &DateTime, offset_minutes: Option<i32>) -> String {
+    let mut out = value.source_string();
+    if value.time_is_set {
+        if let Some(offset) = offset_minutes {
+            out.push_str(&format_timezone_offset(offset));
+        }
+    }
+    out
+}
+
+/// Evaluates the focused native date/time parser/formatter expression slice.
+pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
+    let Some((lhs, target)) = split_conversion(expr.trim()) else {
+        return Ok(None);
+    };
+
+    if target.eq_ignore_ascii_case("time") {
+        let Some(seconds) = parse_time_sum(lhs)? else {
+            return Ok(None);
+        };
+        return Ok(Some(format_time_of_day(seconds)));
+    }
+
+    let Some(literal) = unquote(lhs.trim()) else {
+        return Ok(None);
+    };
+    if !target.to_ascii_lowercase().starts_with("utc") {
+        return Ok(None);
+    }
+
+    convert_datetime_literal_to_zone(literal, target)
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 impl PartialEq for DateTime {
@@ -562,6 +692,224 @@ impl Ord for DateTime {
                     .partial_cmp(&other.second)
                     .expect("validated date/time seconds are comparable")
             })
+    }
+}
+
+fn parse_date_part(input: &str) -> Result<(i64, i64, i64), DateTimeParseError> {
+    let mut parts = input.split('-');
+    let year = parse_i64_part(parts.next(), "year")?;
+    let month = parse_i64_part(parts.next(), "month")?;
+    let day = parse_i64_part(parts.next(), "day")?;
+    if parts.next().is_some() {
+        return Err(DateTimeParseError::new("date has too many fields"));
+    }
+    Ok((year, month, day))
+}
+
+fn split_time_and_zone(input: &str) -> Result<(&str, &str), DateTimeParseError> {
+    let time_end = input
+        .find(|ch: char| ch == 'Z' || ch == '+' || ch == '-' || ch.is_ascii_alphabetic())
+        .unwrap_or(input.len());
+    let (time, zone) = input.split_at(time_end);
+    if time.is_empty() {
+        return Err(DateTimeParseError::new("missing time component"));
+    }
+    Ok((time, zone))
+}
+
+fn parse_time_part(input: &str) -> Result<(i64, i64, Number), DateTimeParseError> {
+    let mut parts = input.split(':');
+    let hour = parse_i64_part(parts.next(), "hour")?;
+    let minute = parse_i64_part(parts.next(), "minute")?;
+    let second = match parts.next() {
+        Some(second) => second
+            .parse::<Number>()
+            .map_err(|_| DateTimeParseError::new("invalid second"))?,
+        None => Number::new(),
+    };
+    if parts.next().is_some() {
+        return Err(DateTimeParseError::new("time has too many fields"));
+    }
+    Ok((hour, minute, second))
+}
+
+fn parse_i64_part(value: Option<&str>, name: &str) -> Result<i64, DateTimeParseError> {
+    value
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| DateTimeParseError::new(format!("missing {name}")))?
+        .parse::<i64>()
+        .map_err(|_| DateTimeParseError::new(format!("invalid {name}")))
+}
+
+fn parse_timezone_suffix(input: &str) -> Result<i32, DateTimeParseError> {
+    match input {
+        "Z" | "UTC" | "utc" => Ok(0),
+        "CET" | "cet" => Ok(60),
+        suffix if suffix.starts_with('+') || suffix.starts_with('-') => {
+            parse_offset_minutes(suffix)
+        }
+        _ => Err(DateTimeParseError::new(format!("unknown timezone {input}"))),
+    }
+}
+
+fn parse_timezone_target(input: &str) -> Result<i32, DateTimeParseError> {
+    let lower = input.to_ascii_lowercase();
+    if lower == "utc" {
+        return Ok(0);
+    }
+    let Some(rest) = lower.strip_prefix("utc") else {
+        return Err(DateTimeParseError::new(format!(
+            "unsupported timezone target {input}"
+        )));
+    };
+    parse_offset_minutes(rest)
+}
+
+fn parse_offset_minutes(input: &str) -> Result<i32, DateTimeParseError> {
+    let sign = if input.starts_with('-') { -1 } else { 1 };
+    let rest = input
+        .strip_prefix(['+', '-'])
+        .ok_or_else(|| DateTimeParseError::new("timezone offset must include sign"))?;
+    let (hours, minutes) = if let Some((hours, minutes)) = rest.split_once(':') {
+        (
+            hours
+                .parse::<i32>()
+                .map_err(|_| DateTimeParseError::new("invalid timezone hour"))?,
+            minutes
+                .parse::<i32>()
+                .map_err(|_| DateTimeParseError::new("invalid timezone minute"))?,
+        )
+    } else {
+        (
+            rest.parse::<i32>()
+                .map_err(|_| DateTimeParseError::new("invalid timezone hour"))?,
+            0,
+        )
+    };
+    if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {
+        return Err(DateTimeParseError::new("timezone offset out of range"));
+    }
+    Ok(sign * (hours * 60 + minutes))
+}
+
+fn format_timezone_offset(offset_minutes: i32) -> String {
+    if offset_minutes == 0 {
+        return "Z".to_string();
+    }
+    let sign = if offset_minutes < 0 { '-' } else { '+' };
+    let abs = offset_minutes.abs();
+    format!("{sign}{:02}:{:02}", abs / 60, abs % 60)
+}
+
+fn split_conversion(input: &str) -> Option<(&str, &str)> {
+    let (lhs, target) = input.rsplit_once(" to ")?;
+    Some((lhs.trim(), target.trim()))
+}
+
+fn unquote(input: &str) -> Option<&str> {
+    if input.len() < 2 {
+        return None;
+    }
+    input
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .or_else(|| {
+            input
+                .strip_prefix('\'')
+                .and_then(|rest| rest.strip_suffix('\''))
+        })
+}
+
+fn parse_time_sum(input: &str) -> Result<Option<i64>, String> {
+    let mut total = 0i64;
+    for term in input.split('+') {
+        let Some(seconds) = parse_time_quantity(term.trim())? else {
+            return Ok(None);
+        };
+        total = total
+            .checked_add(seconds)
+            .ok_or_else(|| "time sum is out of range".to_string())?;
+    }
+    Ok(Some(total))
+}
+
+fn parse_time_quantity(input: &str) -> Result<Option<i64>, String> {
+    if let Some(seconds) = parse_clock_time(input)? {
+        return Ok(Some(seconds));
+    }
+    parse_unit_time(input)
+}
+
+fn parse_clock_time(input: &str) -> Result<Option<i64>, String> {
+    if !input.contains(':') {
+        return Ok(None);
+    }
+    let (hour, minute, second) = parse_time_part(input).map_err(|error| error.to_string())?;
+    let second =
+        number_to_i64(&second).ok_or_else(|| "time seconds must be integer".to_string())?;
+    if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=59).contains(&second) {
+        return Err("time component out of range".to_string());
+    }
+    Ok(Some(hour * 3_600 + minute * 60 + second))
+}
+
+fn parse_unit_time(input: &str) -> Result<Option<i64>, String> {
+    let mut total = 0i64;
+    let mut matched = false;
+    for part in input.split_whitespace() {
+        let (value, suffix) = split_number_suffix(part);
+        if value.is_empty() || suffix.is_empty() {
+            return Ok(None);
+        }
+        let value = value
+            .parse::<i64>()
+            .map_err(|_| format!("invalid time quantity {part}"))?;
+        let seconds = match suffix {
+            "h" | "hr" | "hour" | "hours" => value * 3_600,
+            "min" | "minute" | "minutes" => value * 60,
+            "s" | "sec" | "second" | "seconds" => value,
+            _ => return Ok(None),
+        };
+        total = total
+            .checked_add(seconds)
+            .ok_or_else(|| "time quantity is out of range".to_string())?;
+        matched = true;
+    }
+    Ok(matched.then_some(total))
+}
+
+fn split_number_suffix(input: &str) -> (&str, &str) {
+    let split = input
+        .find(|ch: char| !ch.is_ascii_digit())
+        .unwrap_or(input.len());
+    input.split_at(split)
+}
+
+fn number_to_i64(value: &Number) -> Option<i64> {
+    (0..=60).find(|candidate| value == &Number::from_i64(*candidate))
+}
+
+fn format_time_of_day(seconds: i64) -> String {
+    let seconds = seconds.rem_euclid(SECONDS_PER_DAY);
+    let hour = seconds / 3_600;
+    let minute = (seconds % 3_600) / 60;
+    let second = seconds % 60;
+    if second == 0 {
+        format!("{hour:02}:{minute:02}")
+    } else {
+        format!("{hour:02}:{minute:02}:{second:02}")
+    }
+}
+
+fn format_second_component(second: &Number) -> String {
+    if let Some(second) = number_to_i64(second) {
+        return format!("{second:02}");
+    }
+    let raw = second.to_qalc_string();
+    if raw.starts_with("0.") {
+        format!("0{raw}")
+    } else {
+        raw
     }
 }
 

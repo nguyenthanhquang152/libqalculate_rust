@@ -436,6 +436,14 @@ impl DateTimeLiteral {
         }
     }
 
+    /// Creates a date/time literal from source text and a validated value.
+    pub fn from_source_and_value(source: impl Into<String>, value: DateTime) -> Self {
+        Self {
+            source: source.into(),
+            value: Some(value),
+        }
+    }
+
     /// Returns the source representation for this date/time literal.
     pub fn source(&self) -> &str {
         &self.source

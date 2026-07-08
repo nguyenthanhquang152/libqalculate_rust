@@ -11,7 +11,7 @@
 //!   `../libqalculate/tests/percentages.batch` for compatibility fixtures.
 
 use crate::{
-    ast::{ComparisonOperator, Expression, FunctionRef, NaryChildren, Symbol},
+    ast::{ComparisonOperator, DateTimeLiteral, Expression, FunctionRef, NaryChildren, Symbol},
     number::Number,
     parser::lexer::{
         lex_expression, BasePrefix, LexErrorKind, NumberLiteralKind, Operator, Span, Token,
@@ -763,7 +763,15 @@ impl Parser {
             TokenKind::Number { text, kind } => parse_number_literal(&text, kind)
                 .map(Expression::Number)
                 .map_err(|_| ParseError::new(ParseErrorKind::InvalidNumber, token.span)),
-            TokenKind::StringLiteral(value) => Ok(Expression::Text(value)),
+            TokenKind::StringLiteral(value) => {
+                if let Ok(parsed) = crate::datetime::parse_datetime_literal(&value) {
+                    Ok(Expression::DateTime(
+                        DateTimeLiteral::from_source_and_value(value, parsed.value().clone()),
+                    ))
+                } else {
+                    Ok(Expression::Text(value))
+                }
+            }
             TokenKind::Identifier(name) => {
                 if self.adjacent_open_paren_follows(token.span) {
                     self.advance(); // consume OpenParen
