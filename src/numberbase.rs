@@ -632,6 +632,12 @@ mod tests {
     }
 
     #[test]
+    fn format_binary_pads_to_next_byte_group() {
+        assert_eq!(format_binary(256, None), "0000 0001 0000 0000");
+        assert_eq!(format_binary(52, Some(16)), "0000 0000 0011 0100");
+    }
+
+    #[test]
     fn session_settings_are_normalized_to_state() {
         let settings = NativeSessionSettings::from_raw(&[
             "set input base 16",
