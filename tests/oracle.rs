@@ -568,6 +568,18 @@ fn run_oracle_markup_expression(
     }
 }
 
+fn normalize_nonterse_qalc_result_lines(stdout: &str) -> String {
+    stdout
+        .lines()
+        .map(|line| {
+            line.rsplit_once(" = ")
+                .map_or(line, |(_, result)| result)
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn run_oracle_expression_with_isolated_user_dir(
     qalc_path: &Path,
     defs: &Path,
@@ -1757,6 +1769,50 @@ fn focused_epic6_strings_oracle_cases() {
             fallback_state,
             FallbackState::Native.label(),
             "{case_id} did not run natively"
+        );
+    }
+}
+
+#[test]
+fn focused_message_formatting_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_message_formatting_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases = [
+        ("message-formatting:warning", r#"warning("first")"#),
+        ("message-formatting:message", r#"message("second")"#),
+        ("message-formatting:error", r#"error("third")"#),
+    ];
+
+    for (case_id, expression) in cases {
+        let cpp_out = run_oracle_markup_expression(&qalc, &defs, None, expression, &[]);
+        let rust_out = run_rust_expression(expression, &[], &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+        assert_eq!(
+            normalize_nonterse_qalc_result_lines(&cpp_out.stdout),
+            rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
         );
     }
 }

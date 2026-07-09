@@ -228,10 +228,14 @@ fn evaluate_expression_with_settings(
 
     match result {
         Ok(result) => {
+            let native_message_had_error = calc.last_native_message_had_error();
             if report_fallback {
                 eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());
             }
             println!("{}", result.output);
+            if native_message_had_error {
+                std::process::exit(1);
+            }
             Ok(())
         }
         Err(err) => {

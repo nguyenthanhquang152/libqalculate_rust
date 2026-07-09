@@ -435,12 +435,12 @@ fn evaluate_message_function(
     validate_arity(name, args, 1, Some(1))?;
     let message = text_argument_to_string(&args[0], context)?;
     context.messages.push(CalculatorMessage::new(
-        message.clone(),
+        message,
         message_type,
         MessageCategory::None,
         MessageStage::Calculation,
     ));
-    Ok(Expression::Text(message))
+    Ok(Expression::Number(Number::from_i32(0)))
 }
 
 fn evaluated_string_expression(
