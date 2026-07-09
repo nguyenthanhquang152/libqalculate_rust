@@ -1,6 +1,6 @@
 //! Text formatting and Unicode helpers for qalc-compatible string values.
 
-use crate::ast::{Expression, NaryChildren};
+use crate::ast::{Expression, NaryChildren, PrecedenceClass};
 use crate::number::Number;
 
 pub(crate) fn quote_text_for_qalc(text: &str) -> String {
@@ -18,7 +18,6 @@ fn quote_datetime_for_qalc(text: &str) -> String {
 fn get_term_degree(term: &Expression) -> f64 {
     match term {
         Expression::Number(_) => 0.0,
-        Expression::Symbolic(_) | Expression::Variable(_) => 1.0,
         Expression::Power { base, exponent } => {
             if let Expression::Number(ref num) = **exponent {
                 num.to_f64() * get_term_degree(base)
@@ -40,7 +39,14 @@ fn is_term_negative(term: &Expression) -> bool {
     match term {
         Expression::Number(num) => num.is_negative(),
         Expression::Negate(_) => true,
-        Expression::Multiplication(nary) => nary.as_slice().iter().any(is_term_negative),
+        Expression::Multiplication(nary) => {
+            nary.as_slice()
+                .iter()
+                .filter(|term| is_term_negative(term))
+                .count()
+                % 2
+                == 1
+        }
         _ => false,
     }
 }
@@ -51,11 +57,9 @@ fn get_absolute_term(term: &Expression) -> Expression {
         Expression::Number(num) => Expression::Number(num.abs()),
         Expression::Multiplication(nary) => {
             let mut new_factors = Vec::new();
-            let mut negated = false;
             for factor in nary.as_slice() {
-                if !negated && is_term_negative(factor) {
+                if is_term_negative(factor) {
                     new_factors.push(get_absolute_term(factor));
-                    negated = true;
                 } else {
                     new_factors.push(factor.clone());
                 }
@@ -66,11 +70,129 @@ fn get_absolute_term(term: &Expression) -> Expression {
     }
 }
 
-fn needs_parens_in_division(expr: &Expression) -> bool {
-    matches!(
-        expr,
-        Expression::Addition(_) | Expression::Multiplication(_)
-    )
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChildPosition {
+    Nary,
+    Subtrahend,
+    Left,
+    Right,
+    PrefixOperand,
+    PostfixOperand,
+    PowerBase,
+    PowerExponent,
+    AssignmentValue,
+}
+
+fn precedence_rank(expr: &Expression) -> u8 {
+    match expr.operator_metadata().map(|metadata| metadata.precedence) {
+        Some(PrecedenceClass::Assignment) => 0,
+        Some(PrecedenceClass::Conversion) => 1,
+        Some(PrecedenceClass::LogicalXor) => 2,
+        Some(PrecedenceClass::LogicalOr) => 3,
+        Some(PrecedenceClass::LogicalAnd) => 6,
+        Some(PrecedenceClass::BitwiseOr) => 7,
+        Some(PrecedenceClass::BitwiseXor) => 8,
+        Some(PrecedenceClass::BitwiseAnd) => 9,
+        Some(PrecedenceClass::Comparison) => 10,
+        Some(PrecedenceClass::Shift) => 11,
+        Some(PrecedenceClass::Additive) => 12,
+        Some(PrecedenceClass::Parallel) => 13,
+        Some(PrecedenceClass::Multiplicative) => 14,
+        Some(PrecedenceClass::Prefix) => 16,
+        Some(PrecedenceClass::Power) => 16,
+        Some(PrecedenceClass::Primary) | None => 18,
+    }
+}
+
+fn has_operator_shape(expr: &Expression) -> bool {
+    expr.operator_metadata().is_some()
+}
+
+fn needs_parentheses(parent: &Expression, child: &Expression, position: ChildPosition) -> bool {
+    if !has_operator_shape(child) {
+        return false;
+    }
+
+    let child_precedence = precedence_rank(child);
+    let parent_precedence = precedence_rank(parent);
+    if child_precedence < parent_precedence {
+        return true;
+    }
+    if child_precedence > parent_precedence {
+        return false;
+    }
+
+    match (parent, position) {
+        (Expression::Addition(_), ChildPosition::Subtrahend) => true,
+        (Expression::Addition(_), ChildPosition::Nary) => matches!(child, Expression::Addition(_)),
+        (Expression::Multiplication(_), ChildPosition::Nary) => matches!(
+            child,
+            Expression::Division { .. }
+                | Expression::Remainder { .. }
+                | Expression::Modulo { .. }
+                | Expression::IntegerDivision { .. }
+                | Expression::Multiplication(_)
+        ),
+        (Expression::Division { .. }, ChildPosition::Right) => true,
+        (Expression::Power { .. }, ChildPosition::PowerBase) => true,
+        (Expression::Factorial(_), ChildPosition::PostfixOperand)
+        | (Expression::DoubleFactorial(_), ChildPosition::PostfixOperand)
+        | (Expression::MultiFactorial { .. }, ChildPosition::PostfixOperand)
+        | (Expression::Percent(_), ChildPosition::PostfixOperand) => {
+            !matches!(child, Expression::Power { .. })
+        }
+        (
+            Expression::Remainder { .. }
+            | Expression::Modulo { .. }
+            | Expression::IntegerDivision { .. }
+            | Expression::ShiftLeft { .. }
+            | Expression::ShiftRight { .. }
+            | Expression::LogicalXor { .. }
+            | Expression::Parallel { .. }
+            | Expression::Conversion { .. },
+            ChildPosition::Right,
+        ) => true,
+        (Expression::Comparison { .. }, ChildPosition::Left | ChildPosition::Right) => true,
+        _ => false,
+    }
+}
+
+fn parenthesize_if_needed(
+    parent: &Expression,
+    child: &Expression,
+    position: ChildPosition,
+    formatted: String,
+) -> String {
+    if needs_parentheses(parent, child, position) {
+        format!("({formatted})")
+    } else {
+        formatted
+    }
+}
+
+fn format_raw_child(parent: &Expression, child: &Expression, position: ChildPosition) -> String {
+    let formatted = format_raw_expression(child);
+    parenthesize_if_needed(parent, child, position, formatted)
+}
+
+fn format_result_child<F>(
+    parent: &Expression,
+    child: &Expression,
+    position: ChildPosition,
+    format_number: &F,
+) -> Option<String>
+where
+    F: Fn(&Number) -> String,
+{
+    let formatted = format_result_with_numbers(child, format_number)?;
+    Some(parenthesize_if_needed(parent, child, position, formatted))
+}
+
+fn multiplication_separator(prev_expr: &Expression, expr: &Expression) -> &'static str {
+    match (prev_expr, expr) {
+        (Expression::Number(_), Expression::Unit { .. }) => " ",
+        _ => "*",
+    }
 }
 
 pub(crate) fn format_result_with_numbers<F>(expr: &Expression, format_number: &F) -> Option<String>
@@ -101,7 +223,7 @@ where
                     .then_with(|| format_raw_expression(a).cmp(&format_raw_expression(b)))
             });
 
-            if !terms.is_empty() && is_term_negative(&terms[0]) {
+            if is_term_negative(&terms[0]) {
                 if let Some(pos) = terms.iter().position(|t| !is_term_negative(t)) {
                     let first_pos = terms.remove(pos);
                     terms.insert(0, first_pos);
@@ -111,15 +233,20 @@ where
             let mut out = String::new();
             for (index, child) in terms.iter().enumerate() {
                 if index == 0 {
-                    let s = format_result_with_numbers(child, format_number)?;
+                    let s = format_result_child(expr, child, ChildPosition::Nary, format_number)?;
                     out.push_str(&s);
                 } else if is_term_negative(child) {
                     let abs_child = get_absolute_term(child);
-                    let s = format_result_with_numbers(&abs_child, format_number)?;
+                    let s = format_result_child(
+                        expr,
+                        &abs_child,
+                        ChildPosition::Subtrahend,
+                        format_number,
+                    )?;
                     out.push_str(" - ");
                     out.push_str(&s);
                 } else {
-                    let s = format_result_with_numbers(child, format_number)?;
+                    let s = format_result_child(expr, child, ChildPosition::Nary, format_number)?;
                     out.push_str(" + ");
                     out.push_str(&s);
                 }
@@ -129,38 +256,15 @@ where
         Expression::Multiplication(children) => {
             let mut parts = Vec::new();
             for child in children.as_slice() {
-                let s = format_result_with_numbers(child, format_number)?;
+                let s = format_result_child(expr, child, ChildPosition::Nary, format_number)?;
                 parts.push((child, s));
             }
             let mut out = String::new();
             for i in 0..parts.len() {
                 let (expr, s) = &parts[i];
                 if i > 0 {
-                    let (prev_expr, prev_s) = &parts[i - 1];
-                    let need_sep = match (prev_expr, expr) {
-                        (Expression::Number(_), Expression::Symbolic(_)) => false,
-                        (Expression::Number(_), Expression::Variable(_)) => false,
-                        (Expression::Number(_), Expression::Power { .. }) => false,
-                        (Expression::Number(_), Expression::FunctionCall { .. }) => false,
-                        (Expression::Symbolic(_), Expression::Symbolic(_)) => false,
-                        (Expression::Symbolic(_), Expression::Variable(_)) => false,
-                        (Expression::Variable(_), Expression::Symbolic(_)) => false,
-                        (Expression::Variable(_), Expression::Variable(_)) => false,
-                        (Expression::Power { .. }, Expression::Symbolic(_)) => false,
-                        (Expression::Power { .. }, Expression::Variable(_)) => false,
-                        _ => {
-                            !(s.chars()
-                                .next()
-                                .is_some_and(|c| c.is_alphabetic() || c == '(')
-                                && prev_s
-                                    .chars()
-                                    .last()
-                                    .is_some_and(|c| c.is_alphanumeric() || c == ')'))
-                        }
-                    };
-                    if need_sep {
-                        out.push('*');
-                    }
+                    let (prev_expr, _) = &parts[i - 1];
+                    out.push_str(multiplication_separator(prev_expr, expr));
                 }
                 out.push_str(s);
             }
@@ -170,27 +274,22 @@ where
             numerator,
             denominator,
         } => {
-            let num_str = format_result_with_numbers(numerator, format_number)?;
-            let den_str = format_result_with_numbers(denominator, format_number)?;
-            let num_formatted = if needs_parens_in_division(numerator) {
-                format!("({num_str})")
-            } else {
-                num_str
-            };
-            let den_formatted = if needs_parens_in_division(denominator) {
-                format!("({den_str})")
-            } else {
-                den_str
-            };
+            let num_formatted =
+                format_result_child(expr, numerator, ChildPosition::Left, format_number)?;
+            let den_formatted =
+                format_result_child(expr, denominator, ChildPosition::Right, format_number)?;
             Some(format!("{num_formatted} / {den_formatted}"))
         }
         Expression::Negate(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted =
+                format_result_child(expr, child, ChildPosition::PrefixOperand, format_number)?;
             Some(format!("-{formatted}"))
         }
         Expression::Power { base, exponent } => {
-            let base_str = format_result_with_numbers(base, format_number)?;
-            let exp_str = format_result_with_numbers(exponent, format_number)?;
+            let base_str =
+                format_result_child(expr, base, ChildPosition::PowerBase, format_number)?;
+            let exp_str =
+                format_result_child(expr, exponent, ChildPosition::PowerExponent, format_number)?;
             Some(format!("{base_str}^{exp_str}"))
         }
         Expression::FunctionCall { function, args } => {
@@ -225,35 +324,35 @@ where
             }
         }
         Expression::Remainder { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l}%{r}"))
         }
         Expression::Modulo { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l} mod {r}"))
         }
         Expression::IntegerDivision { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l}//{r}"))
         }
         Expression::ShiftLeft { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l}<<{r}"))
         }
         Expression::ShiftRight { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l}>>{r}"))
         }
         Expression::BitwiseAnd(children) => {
             let formatted = children
                 .as_slice()
                 .iter()
-                .map(|item| format_result_with_numbers(item, format_number))
+                .map(|item| format_result_child(expr, item, ChildPosition::Nary, format_number))
                 .collect::<Option<Vec<_>>>()?;
             Some(formatted.join("&"))
         }
@@ -261,7 +360,7 @@ where
             let formatted = children
                 .as_slice()
                 .iter()
-                .map(|item| format_result_with_numbers(item, format_number))
+                .map(|item| format_result_child(expr, item, ChildPosition::Nary, format_number))
                 .collect::<Option<Vec<_>>>()?;
             Some(formatted.join("|"))
         }
@@ -269,19 +368,20 @@ where
             let formatted = children
                 .as_slice()
                 .iter()
-                .map(|item| format_result_with_numbers(item, format_number))
+                .map(|item| format_result_child(expr, item, ChildPosition::Nary, format_number))
                 .collect::<Option<Vec<_>>>()?;
             Some(formatted.join(" xor "))
         }
         Expression::BitwiseNot(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted =
+                format_result_child(expr, child, ChildPosition::PrefixOperand, format_number)?;
             Some(format!("~{formatted}"))
         }
         Expression::LogicalAnd(children) => {
             let formatted = children
                 .as_slice()
                 .iter()
-                .map(|item| format_result_with_numbers(item, format_number))
+                .map(|item| format_result_child(expr, item, ChildPosition::Nary, format_number))
                 .collect::<Option<Vec<_>>>()?;
             Some(formatted.join(" and "))
         }
@@ -289,17 +389,18 @@ where
             let formatted = children
                 .as_slice()
                 .iter()
-                .map(|item| format_result_with_numbers(item, format_number))
+                .map(|item| format_result_child(expr, item, ChildPosition::Nary, format_number))
                 .collect::<Option<Vec<_>>>()?;
             Some(formatted.join(" or "))
         }
         Expression::LogicalXor { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l} xor {r}"))
         }
         Expression::LogicalNot(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted =
+                format_result_child(expr, child, ChildPosition::PrefixOperand, format_number)?;
             Some(format!("not {formatted}"))
         }
         Expression::Comparison { op, lhs, rhs } => {
@@ -311,42 +412,70 @@ where
                 crate::ast::ComparisonOperator::Greater => ">",
                 crate::ast::ComparisonOperator::GreaterOrEqual => ">=",
             };
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
-            Some(format!("{l}{op_str}{r}"))
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
+            Some(format!("{l} {op_str} {r}"))
         }
         Expression::Conversion { expr, target } => {
-            let e = format_result_with_numbers(expr, format_number)?;
-            let t = format_result_with_numbers(target, format_number)?;
+            let e = format_result_child(
+                &Expression::Conversion {
+                    expr: expr.clone(),
+                    target: target.clone(),
+                },
+                expr,
+                ChildPosition::Left,
+                format_number,
+            )?;
+            let t = format_result_child(
+                &Expression::Conversion {
+                    expr: expr.clone(),
+                    target: target.clone(),
+                },
+                target,
+                ChildPosition::Right,
+                format_number,
+            )?;
             Some(format!("{e} to {t}"))
         }
         Expression::Assignment { variable, value } => {
-            let val = format_result_with_numbers(value, format_number)?;
+            let val =
+                format_result_child(expr, value, ChildPosition::AssignmentValue, format_number)?;
             Some(format!("{variable}:={val}"))
         }
         Expression::Inverse(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted = format_result_child(expr, child, ChildPosition::Right, format_number)?;
             Some(format!("1/{formatted}"))
         }
         Expression::Factorial(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted =
+                format_result_child(expr, child, ChildPosition::PostfixOperand, format_number)?;
             Some(format!("{formatted}!"))
         }
         Expression::DoubleFactorial(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted =
+                format_result_child(expr, child, ChildPosition::PostfixOperand, format_number)?;
             Some(format!("{formatted}!!"))
         }
         Expression::MultiFactorial { expr, count } => {
-            let formatted = format_result_with_numbers(expr, format_number)?;
+            let formatted = format_result_child(
+                &Expression::MultiFactorial {
+                    expr: expr.clone(),
+                    count: *count,
+                },
+                expr,
+                ChildPosition::PostfixOperand,
+                format_number,
+            )?;
             Some(format!("{}{}", formatted, "!".repeat(*count as usize)))
         }
         Expression::Percent(child) => {
-            let formatted = format_result_with_numbers(child, format_number)?;
+            let formatted =
+                format_result_child(expr, child, ChildPosition::PostfixOperand, format_number)?;
             Some(format!("{formatted}%"))
         }
         Expression::Parallel { lhs, rhs } => {
-            let l = format_result_with_numbers(lhs, format_number)?;
-            let r = format_result_with_numbers(rhs, format_number)?;
+            let l = format_result_child(expr, lhs, ChildPosition::Left, format_number)?;
+            let r = format_result_child(expr, rhs, ChildPosition::Right, format_number)?;
             Some(format!("{l} parallel {r}"))
         }
         Expression::Undefined => Some("undefined".to_string()),
@@ -369,42 +498,19 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
             out.push_str(unit.id());
             out
         }
-        Expression::Addition(children) => format_addition(children),
+        Expression::Addition(children) => format_addition(expr, children),
         Expression::Multiplication(children) => {
             let mut parts = Vec::new();
             for child in children.as_slice() {
-                let s = format_raw_expression(child);
+                let s = format_raw_child(expr, child, ChildPosition::Nary);
                 parts.push((child, s));
             }
             let mut out = String::new();
             for i in 0..parts.len() {
                 let (expr, s) = &parts[i];
                 if i > 0 {
-                    let (prev_expr, prev_s) = &parts[i - 1];
-                    let need_sep = match (prev_expr, expr) {
-                        (Expression::Number(_), Expression::Symbolic(_)) => false,
-                        (Expression::Number(_), Expression::Variable(_)) => false,
-                        (Expression::Number(_), Expression::Power { .. }) => false,
-                        (Expression::Number(_), Expression::FunctionCall { .. }) => false,
-                        (Expression::Symbolic(_), Expression::Symbolic(_)) => false,
-                        (Expression::Symbolic(_), Expression::Variable(_)) => false,
-                        (Expression::Variable(_), Expression::Symbolic(_)) => false,
-                        (Expression::Variable(_), Expression::Variable(_)) => false,
-                        (Expression::Power { .. }, Expression::Symbolic(_)) => false,
-                        (Expression::Power { .. }, Expression::Variable(_)) => false,
-                        _ => {
-                            !(s.chars()
-                                .next()
-                                .is_some_and(|c| c.is_alphabetic() || c == '(')
-                                && prev_s
-                                    .chars()
-                                    .last()
-                                    .is_some_and(|c| c.is_alphanumeric() || c == ')'))
-                        }
-                    };
-                    if need_sep {
-                        out.push('*');
-                    }
+                    let (prev_expr, _) = &parts[i - 1];
+                    out.push_str(multiplication_separator(prev_expr, expr));
                 }
                 out.push_str(s);
             }
@@ -414,25 +520,20 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
             numerator,
             denominator,
         } => {
-            let num_str = format_raw_expression(numerator);
-            let den_str = format_raw_expression(denominator);
-            let num_formatted = if needs_parens_in_division(numerator) {
-                format!("({num_str})")
-            } else {
-                num_str
-            };
-            let den_formatted = if needs_parens_in_division(denominator) {
-                format!("({den_str})")
-            } else {
-                den_str
-            };
+            let num_formatted = format_raw_child(expr, numerator, ChildPosition::Left);
+            let den_formatted = format_raw_child(expr, denominator, ChildPosition::Right);
             format!("{num_formatted}/{den_formatted}")
         }
-        Expression::Negate(child) => format!("-{}", format_raw_expression(child)),
+        Expression::Negate(child) => {
+            format!(
+                "-{}",
+                format_raw_child(expr, child, ChildPosition::PrefixOperand)
+            )
+        }
         Expression::Power { base, exponent } => format!(
             "{}^{}",
-            format_raw_expression(base),
-            format_raw_expression(exponent)
+            format_raw_child(expr, base, ChildPosition::PowerBase),
+            format_raw_child(expr, exponent, ChildPosition::PowerExponent)
         ),
         Expression::FunctionCall { function, args } => {
             let args = args
@@ -443,22 +544,45 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
             format!("{}({})", function.id(), args)
         }
         Expression::Vector(items) => {
-            let formatted = items.iter().map(format_raw_expression).collect::<Vec<_>>();
-            format!("[{}]", formatted.join("  "))
+            if let Some(rows) = expr.as_matrix_rows() {
+                let rows = rows
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(format_raw_expression)
+                            .collect::<Vec<_>>()
+                            .join("  ")
+                    })
+                    .collect::<Vec<_>>();
+                format!("[{}]", rows.join("; "))
+            } else {
+                let formatted = items.iter().map(format_raw_expression).collect::<Vec<_>>();
+                format!("[{}]", formatted.join("  "))
+            }
         }
-        Expression::Remainder { lhs, rhs } => format_binary_raw(lhs, "%", rhs),
-        Expression::Modulo { lhs, rhs } => format_binary_raw(lhs, " mod ", rhs),
-        Expression::IntegerDivision { lhs, rhs } => format_binary_raw(lhs, "//", rhs),
-        Expression::ShiftLeft { lhs, rhs } => format_binary_raw(lhs, "<<", rhs),
-        Expression::ShiftRight { lhs, rhs } => format_binary_raw(lhs, ">>", rhs),
-        Expression::BitwiseAnd(children) => format_nary_raw(children, "&"),
-        Expression::BitwiseOr(children) => format_nary_raw(children, "|"),
-        Expression::BitwiseXor(children) => format_nary_raw(children, " xor "),
-        Expression::BitwiseNot(child) => format!("~{}", format_raw_expression(child)),
-        Expression::LogicalAnd(children) => format_nary_raw(children, " and "),
-        Expression::LogicalOr(children) => format_nary_raw(children, " or "),
-        Expression::LogicalXor { lhs, rhs } => format_binary_raw(lhs, " xor ", rhs),
-        Expression::LogicalNot(child) => format!("not {}", format_raw_expression(child)),
+        Expression::Remainder { lhs, rhs } => format_binary_raw(expr, lhs, "%", rhs),
+        Expression::Modulo { lhs, rhs } => format_binary_raw(expr, lhs, " mod ", rhs),
+        Expression::IntegerDivision { lhs, rhs } => format_binary_raw(expr, lhs, "//", rhs),
+        Expression::ShiftLeft { lhs, rhs } => format_binary_raw(expr, lhs, "<<", rhs),
+        Expression::ShiftRight { lhs, rhs } => format_binary_raw(expr, lhs, ">>", rhs),
+        Expression::BitwiseAnd(children) => format_nary_raw(expr, children, "&"),
+        Expression::BitwiseOr(children) => format_nary_raw(expr, children, "|"),
+        Expression::BitwiseXor(children) => format_nary_raw(expr, children, " xor "),
+        Expression::BitwiseNot(child) => {
+            format!(
+                "~{}",
+                format_raw_child(expr, child, ChildPosition::PrefixOperand)
+            )
+        }
+        Expression::LogicalAnd(children) => format_nary_raw(expr, children, " and "),
+        Expression::LogicalOr(children) => format_nary_raw(expr, children, " or "),
+        Expression::LogicalXor { lhs, rhs } => format_binary_raw(expr, lhs, " xor ", rhs),
+        Expression::LogicalNot(child) => {
+            format!(
+                "not {}",
+                format_raw_child(expr, child, ChildPosition::PrefixOperand)
+            )
+        }
         Expression::Comparison { op, lhs, rhs } => {
             let op = match op {
                 crate::ast::ComparisonOperator::Equal => "=",
@@ -468,28 +592,69 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
                 crate::ast::ComparisonOperator::Greater => ">",
                 crate::ast::ComparisonOperator::GreaterOrEqual => ">=",
             };
-            format_binary_raw(lhs, op, rhs)
+            format_binary_raw(expr, lhs, &format!(" {op} "), rhs)
         }
         Expression::Conversion { expr, target } => format!(
             "{} to {}",
-            format_raw_expression(expr),
-            format_raw_expression(target)
+            format_raw_child(
+                &Expression::Conversion {
+                    expr: expr.clone(),
+                    target: target.clone(),
+                },
+                expr,
+                ChildPosition::Left
+            ),
+            format_raw_child(
+                &Expression::Conversion {
+                    expr: expr.clone(),
+                    target: target.clone(),
+                },
+                target,
+                ChildPosition::Right
+            )
         ),
         Expression::Assignment { variable, value } => {
-            format!("{variable}:={}", format_raw_expression(value))
+            format!(
+                "{variable}:={}",
+                format_raw_child(expr, value, ChildPosition::AssignmentValue)
+            )
         }
-        Expression::Inverse(child) => format!("1/{}", format_raw_expression(child)),
-        Expression::Factorial(child) => format!("{}!", format_raw_expression(child)),
-        Expression::DoubleFactorial(child) => format!("{}!!", format_raw_expression(child)),
+        Expression::Inverse(child) => {
+            format!("1/{}", format_raw_child(expr, child, ChildPosition::Right))
+        }
+        Expression::Factorial(child) => {
+            format!(
+                "{}!",
+                format_raw_child(expr, child, ChildPosition::PostfixOperand)
+            )
+        }
+        Expression::DoubleFactorial(child) => {
+            format!(
+                "{}!!",
+                format_raw_child(expr, child, ChildPosition::PostfixOperand)
+            )
+        }
         Expression::MultiFactorial { expr, count } => {
             format!(
                 "{}{}",
-                format_raw_expression(expr),
+                format_raw_child(
+                    &Expression::MultiFactorial {
+                        expr: expr.clone(),
+                        count: *count,
+                    },
+                    expr,
+                    ChildPosition::PostfixOperand
+                ),
                 "!".repeat(*count as usize)
             )
         }
-        Expression::Percent(child) => format!("{}%", format_raw_expression(child)),
-        Expression::Parallel { lhs, rhs } => format_binary_raw(lhs, " parallel ", rhs),
+        Expression::Percent(child) => {
+            format!(
+                "{}%",
+                format_raw_child(expr, child, ChildPosition::PostfixOperand)
+            )
+        }
+        Expression::Parallel { lhs, rhs } => format_binary_raw(expr, lhs, " parallel ", rhs),
         Expression::Undefined => "undefined".to_string(),
         Expression::Aborted => "aborted".to_string(),
         Expression::DateTime(value) => quote_datetime_for_qalc(value.source()),
@@ -519,7 +684,7 @@ fn escape_quoted_text(text: &str, quote: char) -> String {
     escaped
 }
 
-fn format_addition(children: &NaryChildren) -> String {
+fn format_addition(parent: &Expression, children: &NaryChildren) -> String {
     let mut terms = children.as_slice().to_vec();
     terms.sort_by(|a, b| {
         let deg_a = get_term_degree(a);
@@ -530,7 +695,7 @@ fn format_addition(children: &NaryChildren) -> String {
             .then_with(|| format_raw_expression(a).cmp(&format_raw_expression(b)))
     });
 
-    if !terms.is_empty() && is_term_negative(&terms[0]) {
+    if is_term_negative(&terms[0]) {
         if let Some(pos) = terms.iter().position(|t| !is_term_negative(t)) {
             let first_pos = terms.remove(pos);
             terms.insert(0, first_pos);
@@ -540,33 +705,37 @@ fn format_addition(children: &NaryChildren) -> String {
     let mut out = String::new();
     for (index, child) in terms.iter().enumerate() {
         if index == 0 {
-            out.push_str(&format_raw_expression(child));
+            out.push_str(&format_raw_child(parent, child, ChildPosition::Nary));
         } else if is_term_negative(child) {
             let abs_child = get_absolute_term(child);
             out.push_str(" - ");
-            out.push_str(&format_raw_expression(&abs_child));
+            out.push_str(&format_raw_child(
+                parent,
+                &abs_child,
+                ChildPosition::Subtrahend,
+            ));
         } else {
             out.push_str(" + ");
-            out.push_str(&format_raw_expression(child));
+            out.push_str(&format_raw_child(parent, child, ChildPosition::Nary));
         }
     }
     out
 }
 
-fn format_binary_raw(lhs: &Expression, op: &str, rhs: &Expression) -> String {
+fn format_binary_raw(parent: &Expression, lhs: &Expression, op: &str, rhs: &Expression) -> String {
     format!(
         "{}{}{}",
-        format_raw_expression(lhs),
+        format_raw_child(parent, lhs, ChildPosition::Left),
         op,
-        format_raw_expression(rhs)
+        format_raw_child(parent, rhs, ChildPosition::Right)
     )
 }
 
-fn format_nary_raw(children: &NaryChildren, op: &str) -> String {
+fn format_nary_raw(parent: &Expression, children: &NaryChildren, op: &str) -> String {
     children
         .as_slice()
         .iter()
-        .map(format_raw_expression)
+        .map(|child| format_raw_child(parent, child, ChildPosition::Nary))
         .collect::<Vec<_>>()
         .join(op)
 }
@@ -574,8 +743,76 @@ fn format_nary_raw(children: &NaryChildren, op: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{format_raw_expression, format_result_with_numbers};
-    use crate::ast::Expression;
+    use crate::ast::{
+        ComparisonOperator, Expression, FunctionRef, NaryChildren, PrefixRef, Symbol, UnitRef,
+        VariableRef,
+    };
+    use crate::number::Number;
     use crate::parser::operators::parse_expression;
+    use proptest::prelude::*;
+
+    fn n(value: i32) -> Expression {
+        Expression::Number(Number::from_i32(value))
+    }
+
+    fn sym(name: &str) -> Expression {
+        Expression::Symbolic(Symbol::new(name))
+    }
+
+    fn operands(children: Vec<Expression>) -> NaryChildren {
+        NaryChildren::new(children).expect("valid n-ary expression")
+    }
+
+    fn add(children: Vec<Expression>) -> Expression {
+        Expression::Addition(operands(children))
+    }
+
+    fn mul(children: Vec<Expression>) -> Expression {
+        Expression::Multiplication(operands(children))
+    }
+
+    fn div(numerator: Expression, denominator: Expression) -> Expression {
+        Expression::Division {
+            numerator: Box::new(numerator),
+            denominator: Box::new(denominator),
+        }
+    }
+
+    fn pow(base: Expression, exponent: Expression) -> Expression {
+        Expression::Power {
+            base: Box::new(base),
+            exponent: Box::new(exponent),
+        }
+    }
+
+    fn neg(expr: Expression) -> Expression {
+        Expression::Negate(Box::new(expr))
+    }
+
+    fn rem(lhs: Expression, rhs: Expression) -> Expression {
+        Expression::Remainder {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    fn lt(lhs: Expression, rhs: Expression) -> Expression {
+        Expression::Comparison {
+            op: ComparisonOperator::Less,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    fn raw(input: &str) -> String {
+        let expr = parse_expression(input).unwrap_or_else(|err| panic!("parse {input:?}: {err}"));
+        format_raw_expression(&expr)
+    }
+
+    fn result(input: &str) -> String {
+        let expr = parse_expression(input).unwrap_or_else(|err| panic!("parse {input:?}: {err}"));
+        format_result_with_numbers(&expr, &Number::to_string).expect("expression should format")
+    }
 
     #[test]
     fn datetime_literals_keep_quotes_when_formatted() {
@@ -596,5 +833,242 @@ mod tests {
         let reparsed = parse_expression(&formatted).expect("formatted date literal reparses");
 
         assert!(matches!(reparsed, Expression::DateTime(_)));
+    }
+
+    #[test]
+    fn raw_formatter_preserves_precedence_boundaries() {
+        let cases = [
+            ("x * (y + z)", "x*(y + z)"),
+            ("(x + y) * z", "(x + y)*z"),
+            ("(x + y)^2", "(x + y)^2"),
+            ("1/(x + y)", "1/(x + y)"),
+            ("-(x + y)", "-(x + y)"),
+            ("-x^2", "-x^2"),
+            ("x^y^z", "x^y^z"),
+            ("(x + y)!", "(x + y)!"),
+            ("sqrt(x + 1)", "sqrt(x + 1)"),
+            ("x < y + z", "x < y + z"),
+            ("x and (y or z)", "x and (y or z)"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(raw(input), expected, "raw formatting {input:?}");
+        }
+    }
+
+    #[test]
+    fn result_formatter_preserves_precedence_boundaries() {
+        let cases = [
+            ("x * (y + z)", "x*(y + z)"),
+            ("(x + y)^2", "(x + y)^2"),
+            ("1/(x + y)", "1 / (x + y)"),
+            ("-(x + y)", "-(x + y)"),
+            ("sqrt(x + 1)", "sqrt(x + 1)"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(result(input), expected, "result formatting {input:?}");
+        }
+    }
+
+    #[test]
+    fn addition_orders_by_degree_and_formats_negative_terms() {
+        let expr = add(vec![
+            n(1),
+            sym("x"),
+            neg(pow(sym("x"), n(4))),
+            div(pow(sym("x"), n(3)), sym("y")),
+            mul(vec![sym("x"), sym("y")]),
+        ]);
+        assert_eq!(format_raw_expression(&expr), "x*y - x^4 + x^3/y + x + 1");
+        assert_eq!(
+            format_result_with_numbers(&expr, &Number::to_string),
+            Some("x*y - x^4 + x^3 / y + x + 1".to_string())
+        );
+
+        let power_base_degree = add(vec![
+            pow(mul(vec![sym("x"), sym("y")]), n(3)),
+            pow(sym("z"), n(2)),
+        ]);
+        assert_eq!(format_raw_expression(&power_base_degree), "(x*y)^3 + z^2");
+
+        let negative_factor = add(vec![sym("x"), mul(vec![n(-2), sym("x")])]);
+        assert_eq!(format_raw_expression(&negative_factor), "x - 2*x");
+        assert_eq!(
+            format_result_with_numbers(&negative_factor, &Number::to_string),
+            Some("x - 2*x".to_string())
+        );
+
+        let even_negative_product = add(vec![sym("a"), mul(vec![n(-2), neg(sym("x"))])]);
+        assert_eq!(format_raw_expression(&even_negative_product), "-2*-x + a");
+
+        let odd_negative_product = add(vec![
+            sym("a"),
+            mul(vec![n(-2), neg(sym("x")), neg(sym("y"))]),
+        ]);
+        assert_eq!(format_raw_expression(&odd_negative_product), "a - 2*x*y");
+    }
+
+    #[test]
+    fn addition_subtrahend_keeps_grouping() {
+        let grouped = add(vec![sym("y"), sym("z")]);
+        let expr = add(vec![sym("x"), neg(grouped)]);
+
+        assert_eq!(format_raw_expression(&expr), "x - (y + z)");
+        assert_eq!(
+            format_result_with_numbers(&expr, &Number::to_string),
+            Some("x - (y + z)".to_string())
+        );
+    }
+
+    #[test]
+    fn equal_precedence_raw_parentheses_preserve_tree_shape() {
+        let cases = [
+            (
+                add(vec![add(vec![sym("x"), sym("y")]), sym("z")]),
+                "(x + y) + z",
+            ),
+            (
+                mul(vec![sym("x"), mul(vec![sym("y"), sym("z")])]),
+                "x*(y*z)",
+            ),
+            (mul(vec![sym("x"), div(sym("y"), sym("z"))]), "x*(y/z)"),
+            (div(sym("x"), div(sym("y"), sym("z"))), "x/(y/z)"),
+            (pow(pow(sym("x"), sym("y")), sym("z")), "(x^y)^z"),
+            (pow(sym("x"), pow(sym("y"), sym("z"))), "x^y^z"),
+            (neg(pow(sym("x"), n(2))), "-x^2"),
+            (Expression::Factorial(Box::new(neg(sym("x")))), "(-x)!"),
+            (
+                Expression::Factorial(Box::new(pow(sym("x"), n(2)))),
+                "(x^2)!",
+            ),
+            (
+                Expression::Factorial(Box::new(Expression::Factorial(Box::new(sym("x"))))),
+                "(x!)!",
+            ),
+            (rem(sym("x"), rem(sym("y"), sym("z"))), "x%(y%z)"),
+            (lt(sym("x"), lt(sym("y"), sym("z"))), "x < (y < z)"),
+        ];
+
+        for (expr, expected) in cases {
+            assert_eq!(format_raw_expression(&expr), expected);
+        }
+    }
+
+    #[test]
+    fn equal_precedence_result_parentheses_preserve_tree_shape() {
+        let cases = [
+            (
+                add(vec![add(vec![sym("x"), sym("y")]), sym("z")]),
+                "(x + y) + z",
+            ),
+            (
+                mul(vec![sym("x"), mul(vec![sym("y"), sym("z")])]),
+                "x*(y*z)",
+            ),
+            (mul(vec![sym("x"), div(sym("y"), sym("z"))]), "x*(y / z)"),
+            (div(sym("x"), div(sym("y"), sym("z"))), "x / (y / z)"),
+            (pow(pow(sym("x"), sym("y")), sym("z")), "(x^y)^z"),
+            (pow(sym("x"), pow(sym("y"), sym("z"))), "x^y^z"),
+            (neg(pow(sym("x"), n(2))), "-x^2"),
+            (Expression::Factorial(Box::new(neg(sym("x")))), "(-x)!"),
+            (
+                Expression::Factorial(Box::new(pow(sym("x"), n(2)))),
+                "(x^2)!",
+            ),
+            (
+                Expression::Factorial(Box::new(Expression::Factorial(Box::new(sym("x"))))),
+                "(x!)!",
+            ),
+            (rem(sym("x"), rem(sym("y"), sym("z"))), "x%(y%z)"),
+            (lt(sym("x"), lt(sym("y"), sym("z"))), "x < (y < z)"),
+        ];
+
+        for (expr, expected) in cases {
+            assert_eq!(
+                format_result_with_numbers(&expr, &Number::to_string),
+                Some(expected.to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn vectors_matrices_functions_units_and_variables_format_by_name() {
+        let vector = Expression::Vector(vec![sym("x"), sym("y")]);
+        assert_eq!(format_raw_expression(&vector), "[x  y]");
+        assert_eq!(
+            format_result_with_numbers(&vector, &Number::to_string),
+            Some("[x  y]".to_string())
+        );
+
+        let matrix = Expression::matrix(vec![vec![sym("x"), sym("y")], vec![n(1), n(2)]])
+            .expect("valid matrix");
+        assert_eq!(format_raw_expression(&matrix), "[x  y; 1  2]");
+        assert_eq!(
+            format_result_with_numbers(&matrix, &Number::to_string),
+            Some("[x  y; 1  2]".to_string())
+        );
+
+        let function = Expression::FunctionCall {
+            function: FunctionRef::new("sqrt"),
+            args: vec![Expression::Addition(operands(vec![sym("x"), n(1)]))],
+        };
+        assert_eq!(format_raw_expression(&function), "sqrt(x + 1)");
+
+        let unit = Expression::Multiplication(operands(vec![
+            n(5),
+            Expression::Unit {
+                unit: UnitRef::new("m"),
+                prefix: None,
+                plural: false,
+            },
+        ]));
+        assert_eq!(
+            format_result_with_numbers(&unit, &Number::to_string),
+            Some("5 m".to_string())
+        );
+        assert_eq!(format_raw_expression(&unit), "5 m");
+
+        let prefixed_unit = Expression::Unit {
+            unit: UnitRef::new("m"),
+            prefix: Some(PrefixRef::new("k")),
+            plural: false,
+        };
+        assert_eq!(format_raw_expression(&prefixed_unit), "km");
+
+        let variable = Expression::Variable(VariableRef::new("stored_value"));
+        assert_eq!(format_raw_expression(&variable), "stored_value");
+    }
+
+    fn atom_text() -> impl Strategy<Value = String> {
+        prop_oneof![
+            (0i32..=9).prop_map(|value| value.to_string()),
+            prop::sample::select(&["a", "b", "c", "x", "y", "z"]).prop_map(str::to_string),
+        ]
+    }
+
+    fn formatted_subset_text() -> impl Strategy<Value = String> {
+        prop_oneof![
+            atom_text(),
+            (atom_text(), atom_text()).prop_map(|(a, b)| format!("{a} + {b}")),
+            (atom_text(), atom_text()).prop_map(|(a, b)| format!("{a}*{b}")),
+            (atom_text(), atom_text(), atom_text())
+                .prop_map(|(a, b, c)| format!("{a}*({b} + {c})")),
+            (atom_text(), atom_text()).prop_map(|(a, b)| format!("{a}/({b} + 1)")),
+            (atom_text(), atom_text()).prop_map(|(a, b)| format!("({a} + {b})^2")),
+            atom_text().prop_map(|a| format!("sqrt({a} + 1)")),
+            (atom_text(), atom_text()).prop_map(|(a, b)| format!("{a} < {b} + 1")),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn raw_formatter_is_idempotent_for_constrained_precedence_subset(input in formatted_subset_text()) {
+            let parsed = parse_expression(&input).expect("generated expression should parse");
+            let formatted = format_raw_expression(&parsed);
+            let reparsed = parse_expression(&formatted)
+                .unwrap_or_else(|err| panic!("formatted expression {formatted:?} should parse: {err}"));
+            prop_assert_eq!(format_raw_expression(&reparsed), formatted);
+        }
     }
 }
