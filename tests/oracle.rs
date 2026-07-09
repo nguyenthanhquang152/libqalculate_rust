@@ -1094,6 +1094,62 @@ fn focused_issue57_latex_html_markup_oracle_cases() {
 }
 
 #[test]
+fn focused_issue58_unicode_ascii_output_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue58_unicode_ascii_output_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: [(&str, &str, &[&str]); 2] = [
+        (
+            "unicode-on-sexagesimal-output",
+            "52.34 to sexa",
+            &["/set unicode 1"],
+        ),
+        (
+            "unicode-off-sexagesimal-output",
+            "52.34 to sexa",
+            &["/set unicode 0"],
+        ),
+    ];
+
+    for (case_id, expression, raw_settings) in cases {
+        let settings = raw_settings
+            .iter()
+            .map(|raw| SessionCommand {
+                raw: (*raw).to_string(),
+            })
+            .collect::<Vec<_>>();
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+}
+
+#[test]
 fn focused_issue52_datetime_parser_formatter_oracle_cases() {
     let Some(qalc) = oracle_binary() else {
         eprintln!(

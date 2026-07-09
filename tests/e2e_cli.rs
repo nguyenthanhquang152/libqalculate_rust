@@ -162,6 +162,68 @@ fn cli_applies_limited_set_for_native_numberbase_evidence() {
 }
 
 #[test]
+fn cli_applies_unicode_on_setting_for_native_sexagesimal_output() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "/set unicode 1", "--", "52.34 to sexa"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("52°20′24″\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_applies_unicode_off_setting_for_native_sexagesimal_output() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "/set unicode 0", "--", "52.34 to sexa"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("52o20'24\"\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_applies_u8_flags_for_native_sexagesimal_output() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut unicode_cmd = qalc_rs();
+    unicode_cmd
+        .args(["-u8", "--", "52.34 to sexa"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("52°20′24″\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+
+    let mut ascii_cmd = qalc_rs();
+    ascii_cmd
+        .args(["+u8", "--", "52.34 to sexa"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("52o20'24\"\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
 fn cli_applies_precision_setting_for_native_rational_output() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
