@@ -10,6 +10,7 @@ const MAX_NATIVE_PRECISION_DIGITS: usize = 4096;
 pub(crate) struct NativeSessionSettings {
     input_base: Option<u32>,
     unicode: bool,
+    unicode_setting_seen: bool,
     precision_digits: Option<usize>,
     interval_display: Option<u8>,
     interval_calculation: Option<u8>,
@@ -47,8 +48,9 @@ impl NativeSessionSettings {
                     SetSetting::InputBase(b) if b == 10 || b == 16 => {
                         state.input_base = Some(b);
                     }
-                    SetSetting::Unicode(true) => {
-                        state.unicode = true;
+                    SetSetting::Unicode(value) => {
+                        state.unicode = value;
+                        state.unicode_setting_seen = true;
                     }
                     SetSetting::Precision(p) if p > 0 && p <= MAX_NATIVE_PRECISION_DIGITS => {
                         state.precision_digits = Some(p);
@@ -98,6 +100,10 @@ impl NativeSessionSettings {
         self.unicode
     }
 
+    pub(crate) const fn has_unicode_setting(self) -> bool {
+        self.unicode_setting_seen
+    }
+
     pub(crate) const fn precision_digits(self) -> usize {
         match self.precision_digits {
             Some(precision) => precision,
@@ -108,6 +114,7 @@ impl NativeSessionSettings {
     pub(crate) const fn is_empty(self) -> bool {
         self.input_base.is_none()
             && !self.unicode
+            && !self.unicode_setting_seen
             && self.precision_digits.is_none()
             && self.interval_display.is_none()
             && self.interval_calculation.is_none()
@@ -276,6 +283,7 @@ mod tests {
             Some(NativeSessionSettings {
                 input_base: Some(10),
                 unicode: true,
+                unicode_setting_seen: true,
                 precision_digits: Some(128),
                 interval_display: Some(2),
                 interval_calculation: Some(2),
@@ -293,6 +301,7 @@ mod tests {
             Some(NativeSessionSettings {
                 input_base: None,
                 unicode: false,
+                unicode_setting_seen: false,
                 precision_digits: None,
                 interval_display: None,
                 interval_calculation: None,
@@ -315,6 +324,7 @@ mod tests {
             Some(NativeSessionSettings {
                 input_base: None,
                 unicode: false,
+                unicode_setting_seen: false,
                 precision_digits: None,
                 interval_display: None,
                 interval_calculation: None,

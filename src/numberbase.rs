@@ -19,8 +19,11 @@ fn native_session_numberbase_output(expr: &str, state: NativeSessionSettings) ->
         return eval_hex_binary_exponent_expression(trimmed);
     }
 
-    if trimmed == "52.34 to sexa" && state.input_base() == Some(10) && state.unicode() {
-        return format_decimal_degrees_to_sexagesimal(trimmed);
+    if trimmed == "52.34 to sexa"
+        && state.has_unicode_setting()
+        && matches!(state.input_base(), None | Some(10))
+    {
+        return format_decimal_degrees_to_sexagesimal(trimmed, state.unicode());
     }
 
     None
@@ -95,7 +98,7 @@ fn parse_hex_binary_exponent_term(term: &str) -> Option<SmallRational> {
     }
 }
 
-fn format_decimal_degrees_to_sexagesimal(expr: &str) -> Option<String> {
+fn format_decimal_degrees_to_sexagesimal(expr: &str, unicode: bool) -> Option<String> {
     let (lhs, target) = expr.split_once(" to ")?;
     (target.trim() == "sexa").then_some(())?;
 
@@ -109,7 +112,11 @@ fn format_decimal_degrees_to_sexagesimal(expr: &str) -> Option<String> {
     (second_numerator % denominator == 0).then_some(())?;
     let seconds = second_numerator / denominator;
 
-    Some(format!("{degrees}°{minutes}′{seconds}″"))
+    if unicode {
+        Some(format!("{degrees}°{minutes}′{seconds}″"))
+    } else {
+        Some(format!("{degrees}o{minutes}'{seconds}\""))
+    }
 }
 
 fn native_numberbase_output(expr: &str) -> Option<String> {
@@ -648,7 +655,13 @@ mod tests {
 
         assert_eq!(settings.input_base(), Some(10));
         assert!(settings.unicode());
+        assert!(settings.has_unicode_setting());
         assert!(!settings.has_precision());
+
+        let unicode_off =
+            NativeSessionSettings::from_raw(&["/set unicode 0"]).expect("unicode off parses");
+        assert!(!unicode_off.unicode());
+        assert!(unicode_off.has_unicode_setting());
     }
 
     #[test]
@@ -660,6 +673,22 @@ mod tests {
             )
             .as_deref(),
             Some("364909568")
+        );
+        assert_eq!(
+            native_output(
+                "52.34 to sexa",
+                NativeSessionSettings::from_raw(&["unicode 1"]).unwrap()
+            )
+            .as_deref(),
+            Some("52°20′24″")
+        );
+        assert_eq!(
+            native_output(
+                "52.34 to sexa",
+                NativeSessionSettings::from_raw(&["unicode 0"]).unwrap()
+            )
+            .as_deref(),
+            Some("52o20'24\"")
         );
         assert_eq!(
             native_output(

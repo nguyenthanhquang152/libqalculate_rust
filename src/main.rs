@@ -14,9 +14,15 @@ enum OutputMode {
     Html,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct LeadingModes {
+    output_mode: OutputMode,
+    settings: Vec<String>,
+}
+
 fn main() {
     let mut raw_args = env::args().skip(1).collect::<Vec<_>>();
-    let output_mode = take_leading_output_mode(&mut raw_args);
+    let leading_modes = take_leading_modes(&mut raw_args);
     let mut args = raw_args.into_iter();
     let result = match args.next().as_deref() {
         Some("--version") | Some("-V") => {
@@ -33,19 +39,29 @@ fn main() {
             Some(path) => parse_batch(Path::new(&path)),
             None => Err("--parse-batch requires a file path".to_owned()),
         },
-        Some("-set") => evaluate_expression_with_leading_setting(args, output_mode),
+        Some("-set") => evaluate_expression_with_leading_setting(
+            args,
+            leading_modes.output_mode,
+            leading_modes.settings,
+        ),
         Some("--help") | Some("-h") | None => {
             print_help();
             Ok(())
         }
         Some("--") => match args.next() {
-            Some(expression) => evaluate_expression(join_expression(expression, args), output_mode),
+            Some(expression) => evaluate_expression_with_settings(
+                join_expression(expression, args),
+                leading_modes.settings,
+                leading_modes.output_mode,
+            ),
             None => Err("-- requires an expression".to_owned()),
         },
         Some(other) if other.starts_with("--") => Err(format!("unknown argument: {other}")),
-        Some(expression) => {
-            evaluate_expression(join_expression(expression.to_owned(), args), output_mode)
-        }
+        Some(expression) => evaluate_expression_with_settings(
+            join_expression(expression.to_owned(), args),
+            leading_modes.settings,
+            leading_modes.output_mode,
+        ),
     };
 
     if let Err(error) = result {
@@ -60,6 +76,8 @@ fn print_help() {
     println!("  --list-upstream-tests  List upstream .batch fixtures");
     println!("  --parse-batch <path>   Parse a libqalculate .batch fixture");
     println!("  -set <setting>         Limited native-evidence qalc setting support");
+    println!("  -u8                   Enable Unicode output signs");
+    println!("  +u8                   Disable Unicode output signs");
     println!("  --latex                Format expression output as LaTeX markup");
     println!("  --html                 Format expression output as HTML markup");
     println!("  <expression>           Evaluate through the C++ fallback bridge");
@@ -97,11 +115,15 @@ fn join_expression(first: String, rest: impl Iterator<Item = String>) -> String 
     expression
 }
 
-fn take_leading_output_mode(args: &mut Vec<String>) -> OutputMode {
+fn take_leading_modes(args: &mut Vec<String>) -> LeadingModes {
     let mut output_mode = OutputMode::Text;
+    let mut settings = Vec::new();
     loop {
         let Some(first) = args.first() else {
-            return output_mode;
+            return LeadingModes {
+                output_mode,
+                settings,
+            };
         };
         match first.as_str() {
             "--latex" | "-latex" => {
@@ -112,7 +134,20 @@ fn take_leading_output_mode(args: &mut Vec<String>) -> OutputMode {
                 output_mode = OutputMode::Html;
                 args.remove(0);
             }
-            _ => return output_mode,
+            "-u8" => {
+                settings.push("unicode 1".to_string());
+                args.remove(0);
+            }
+            "+u8" => {
+                settings.push("unicode 0".to_string());
+                args.remove(0);
+            }
+            _ => {
+                return LeadingModes {
+                    output_mode,
+                    settings,
+                };
+            }
         }
     }
 }
@@ -120,9 +155,8 @@ fn take_leading_output_mode(args: &mut Vec<String>) -> OutputMode {
 fn evaluate_expression_with_leading_setting(
     mut args: impl Iterator<Item = String>,
     output_mode: OutputMode,
+    mut settings: Vec<String>,
 ) -> Result<(), String> {
-    let mut settings = Vec::new();
-
     loop {
         let Some(setting) = args.next() else {
             return Err("-set requires a setting".to_owned());
@@ -151,10 +185,6 @@ fn evaluate_expression_with_leading_setting(
             None => return Err("-set requires an expression".to_owned()),
         }
     }
-}
-
-fn evaluate_expression(expression: String, output_mode: OutputMode) -> Result<(), String> {
-    evaluate_expression_with_settings(expression, Vec::new(), output_mode)
 }
 
 fn evaluate_expression_with_settings(
