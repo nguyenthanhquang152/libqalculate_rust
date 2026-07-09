@@ -737,12 +737,36 @@ fn qalc_profile_formats_nonterminating_and_large_rationals_like_upstream() {
     assert_eq!(evaluate_expr("2e303").unwrap().to_qalc_string(), "2E303");
     assert_eq!(evaluate_expr("12e303").unwrap().to_qalc_string(), "1.2E304");
     assert_eq!(
+        evaluate_expr("1000000000000").unwrap().to_qalc_string(),
+        "1000000000000"
+    );
+    assert_eq!(
+        evaluate_expr("10000000000000").unwrap().to_qalc_string(),
+        "1E13"
+    );
+    assert_eq!(
+        evaluate_expr("12345000000000").unwrap().to_qalc_string(),
+        "1.2345E13"
+    );
+    assert_eq!(
         evaluate_expr("123456789012345").unwrap().to_qalc_string(),
         "1.234567890E14"
     );
     assert_eq!(
         evaluate_expr("129999999999999").unwrap().to_qalc_string(),
         "1.300000000E14"
+    );
+    assert_eq!(
+        evaluate_expr("99999999999999").unwrap().to_qalc_string(),
+        "1E14"
+    );
+    assert_eq!(
+        evaluate_expr("99999999994999").unwrap().to_qalc_string(),
+        "9.999999999E13"
+    );
+    assert_eq!(
+        evaluate_expr("12345678905000").unwrap().to_qalc_string(),
+        "1.234567891E13"
     );
 }
 

@@ -73,6 +73,60 @@ const ORACLE_TZ: &str = "UTC";
 const ORACLE_LC_ALL: &str = "C";
 const ORACLE_LANG: &str = "C";
 
+const ISSUE55_NUMBER_FORMATTING_CASES: &[(&str, &str)] = &[
+    ("parser.batch:3", "-0"),
+    ("parser.batch:18", "-0."),
+    ("parser.batch:36", "12345.67890"),
+    ("parser.batch:53", "1e303"),
+    ("numberbase.batch:1", "52 to bin"),
+    ("numberbase.batch:3", "52 to bin16"),
+    ("numberbase.batch:5", "52 to oct"),
+    ("numberbase.batch:7", "52 to hex"),
+    ("numberbase.batch:21", "1978 to roman"),
+    ("numberbase.batch:23", "52 to base 32"),
+    ("numberbase.batch:25", "sqrt(32) to base sqrt(2)"),
+];
+
+const ISSUE55_ADDITIONAL_NUMBER_FORMATTING_CASES: &[(&str, &str, &[&str])] = &[
+    ("issue55-small-negative-exponent-decimal", "1e-3", &[]),
+    ("issue55-normalized-scientific-decimal", "1.23e-5", &[]),
+    (
+        "issue55-large-integer-below-scientific-threshold",
+        "1000000000000",
+        &[],
+    ),
+    (
+        "issue55-large-integer-at-scientific-threshold",
+        "10000000000000",
+        &[],
+    ),
+    (
+        "issue55-large-integer-trims-zero-fraction",
+        "12345000000000",
+        &[],
+    ),
+    (
+        "issue55-large-integer-preserves-rounded-zero-fraction",
+        "12345678901234",
+        &[],
+    ),
+    (
+        "issue55-large-integer-rounds-mantissa-carry",
+        "99999999999999",
+        &[],
+    ),
+    (
+        "issue55-large-integer-rounds-down-boundary",
+        "99999999994999",
+        &[],
+    ),
+    (
+        "issue55-large-integer-rounds-up-boundary",
+        "12345678905000",
+        &[],
+    ),
+];
+
 const ISSUE52_DATE_NATIVE_CASES: &[(&str, &str)] = &[
     ("dates.batch:1", "10:31 + 8:30 to time"),
     ("dates.batch:3", "10h 31min + 8h 30min to time"),
@@ -792,6 +846,54 @@ fn issue54_datetime_oracle_policy_marks_missing_qalc_incomplete() {
         error.contains("inventory-only date cases are incomplete"),
         "unexpected missing-qalc policy error: {error}"
     );
+}
+
+#[test]
+fn focused_issue55_number_formatting_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue55_number_formatting_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let settings = Vec::new();
+    let statuses = oracle_manifest::load_parity_statuses();
+
+    for (case_id, expression) in ISSUE55_NUMBER_FORMATTING_CASES {
+        assert_eq!(
+            oracle_manifest::status_for_case(&statuses, case_id),
+            "native-pass",
+            "{case_id} must be manifest-promoted only with fallback-disabled evidence"
+        );
+
+        let cpp_out = run_oracle_expression(&qalc, &defs, expression, &settings);
+        let rust_out = run_rust_expression(expression, &settings, &defs, true, true);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "{case_id} stdout mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "{case_id} stderr mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "{case_id} exit-code mismatch for {expression:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{case_id} did not run natively"
+        );
+    }
+
+    assert_native_oracle_cases(&qalc, &defs, ISSUE55_ADDITIONAL_NUMBER_FORMATTING_CASES);
 }
 
 #[test]
