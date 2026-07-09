@@ -87,6 +87,47 @@ fn cli_evaluates_positional_expression_via_fallback() {
 }
 
 #[test]
+fn cli_formats_native_message_functions_with_fallback_disabled() {
+    let mut warning = qalc_rs();
+    warning
+        .arg("--")
+        .arg(r#"warning("first")"#)
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("warning: first\n0\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+
+    let mut info = qalc_rs();
+    info.arg("--")
+        .arg(r#"message("second")"#)
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("second\n0\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+
+    let mut error = qalc_rs();
+    error
+        .arg("--")
+        .arg(r#"error("third")"#)
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .code(1)
+        .stdout("error: third\n0\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
 fn cli_evaluates_negative_expression_after_separator() {
     let mut cmd = qalc_rs();
     cmd.args(["--", "-0"])

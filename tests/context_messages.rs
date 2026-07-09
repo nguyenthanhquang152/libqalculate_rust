@@ -107,6 +107,25 @@ fn test_message_queue_warnings_and_errors() {
 }
 
 #[test]
+fn test_message_queue_drain_prevents_leaks_between_calculations() {
+    let mut context = CalculatorContext::default();
+
+    let warning = context
+        .parse_and_evaluate_to_string(r#"warning("first")"#)
+        .expect("warning() should evaluate");
+    assert_eq!(warning, "0");
+    assert_eq!(context.messages.drain_qalc_lines(), ["warning: first"]);
+    assert!(context.messages.is_empty());
+
+    let info = context
+        .parse_and_evaluate_to_string(r#"message("second")"#)
+        .expect("message() should evaluate");
+    assert_eq!(info, "0");
+    assert_eq!(context.messages.drain_qalc_lines(), ["second"]);
+    assert!(context.messages.is_empty());
+}
+
+#[test]
 fn test_no_fallback_assertion() {
     // Assert that the native context parsing/evaluating flows do not touch C++ fallback.
     // Setting QALCULATE_DISABLE_FALLBACK=1 ensures FFI fallback errors are thrown if used.

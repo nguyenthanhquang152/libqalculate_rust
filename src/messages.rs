@@ -14,6 +14,20 @@ pub enum MessageType {
     Error = 2,
 }
 
+impl MessageType {
+    /// Return the qalc line prefix for this severity.
+    ///
+    /// Upstream prints informational messages as bare text; warnings and errors
+    /// carry an explicit severity prefix.
+    pub const fn qalc_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::Information => None,
+            Self::Warning => Some("warning"),
+            Self::Error => Some("error"),
+        }
+    }
+}
+
 /// The stage of calculation or conversion during which the message was generated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(i32)]
@@ -92,6 +106,14 @@ impl CalculatorMessage {
     pub fn stage(&self) -> MessageStage {
         self.stage
     }
+
+    /// Format this message as a qalc-compatible diagnostic line.
+    pub fn to_qalc_line(&self) -> String {
+        match self.message_type.qalc_prefix() {
+            Some(prefix) => format!("{prefix}: {}", self.message),
+            None => self.message.clone(),
+        }
+    }
 }
 
 /// A queue of `CalculatorMessage`s representing warnings and errors from the current session.
@@ -135,6 +157,14 @@ impl MessageQueue {
         }
     }
 
+    /// Drain messages in FIFO order, formatting each line like qalc output.
+    pub fn drain_qalc_lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.messages)
+            .into_iter()
+            .map(|message| message.to_qalc_line())
+            .collect()
+    }
+
     /// Clear all messages in the queue.
     pub fn clear(&mut self) {
         self.messages.clear();
@@ -143,5 +173,73 @@ impl MessageQueue {
     /// Get a read-only slice of all messages currently in the queue.
     pub fn get_messages(&self) -> &[CalculatorMessage] {
         &self.messages
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CalculatorMessage, MessageCategory, MessageQueue, MessageStage, MessageType};
+
+    #[test]
+    fn message_types_map_to_qalc_prefixes() {
+        assert_eq!(MessageType::Information.qalc_prefix(), None);
+        assert_eq!(MessageType::Warning.qalc_prefix(), Some("warning"));
+        assert_eq!(MessageType::Error.qalc_prefix(), Some("error"));
+    }
+
+    #[test]
+    fn messages_format_as_qalc_lines() {
+        let info = CalculatorMessage::new(
+            "loaded".to_string(),
+            MessageType::Information,
+            MessageCategory::None,
+            MessageStage::Calculation,
+        );
+        let warning = CalculatorMessage::new(
+            "ambiguous input".to_string(),
+            MessageType::Warning,
+            MessageCategory::ImplicitMultiplication,
+            MessageStage::Parsing,
+        );
+        let error = CalculatorMessage::new(
+            "invalid expression".to_string(),
+            MessageType::Error,
+            MessageCategory::Parsing,
+            MessageStage::Parsing,
+        );
+
+        assert_eq!(info.to_qalc_line(), "loaded");
+        assert_eq!(warning.to_qalc_line(), "warning: ambiguous input");
+        assert_eq!(error.to_qalc_line(), "error: invalid expression");
+    }
+
+    #[test]
+    fn draining_qalc_lines_preserves_order_and_clears_queue() {
+        let mut queue = MessageQueue::new();
+        queue.push(CalculatorMessage::new(
+            "first".to_string(),
+            MessageType::Information,
+            MessageCategory::None,
+            MessageStage::Calculation,
+        ));
+        queue.push(CalculatorMessage::new(
+            "second".to_string(),
+            MessageType::Warning,
+            MessageCategory::None,
+            MessageStage::Calculation,
+        ));
+        queue.push(CalculatorMessage::new(
+            "third".to_string(),
+            MessageType::Error,
+            MessageCategory::None,
+            MessageStage::Calculation,
+        ));
+
+        assert_eq!(
+            queue.drain_qalc_lines(),
+            ["first", "warning: second", "error: third"]
+        );
+        assert!(queue.is_empty());
+        assert!(queue.drain_qalc_lines().is_empty());
     }
 }

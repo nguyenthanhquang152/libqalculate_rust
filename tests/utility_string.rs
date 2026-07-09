@@ -121,6 +121,40 @@ fn qalc_profile_prefixes_hex_unicode_code_output() {
 }
 
 #[test]
+fn qalc_profile_formats_native_message_lines_and_status() {
+    let _guard = EnvGuard::set("QALCULATE_DISABLE_FALLBACK", "1");
+    let mut calc = Calculator::new();
+
+    let warning = calc
+        .calculate_and_print_qalc_with_fallback_state(r#"warning("first")"#, 1000)
+        .expect("warning() should evaluate natively");
+    assert_eq!(warning.output, "warning: first\n0");
+    assert_eq!(warning.fallback_state, FallbackState::Native);
+    assert!(!calc.last_native_message_had_error());
+
+    let info = calc
+        .calculate_and_print_qalc_with_fallback_state(r#"message("second")"#, 1000)
+        .expect("message() should evaluate natively");
+    assert_eq!(info.output, "second\n0");
+    assert_eq!(info.fallback_state, FallbackState::Native);
+    assert!(!calc.last_native_message_had_error());
+
+    let error = calc
+        .calculate_and_print_qalc_with_fallback_state(r#"error("third")"#, 1000)
+        .expect("error() should evaluate natively and report message status");
+    assert_eq!(error.output, "error: third\n0");
+    assert_eq!(error.fallback_state, FallbackState::Native);
+    assert!(calc.last_native_message_had_error());
+
+    let plain = calc
+        .calculate_and_print_qalc_with_fallback_state("1 + 1", 1000)
+        .expect("plain arithmetic should still evaluate natively");
+    assert_eq!(plain.output, "2");
+    assert_eq!(plain.fallback_state, FallbackState::Native);
+    assert!(!calc.last_native_message_had_error());
+}
+
+#[test]
 fn invalid_text_and_codepoints_are_rejected() {
     let mut ctx = CalculatorContext::new();
 

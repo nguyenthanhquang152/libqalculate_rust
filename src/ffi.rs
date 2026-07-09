@@ -51,6 +51,7 @@ pub(crate) mod sys {
 pub struct Calculator {
     inner: UniquePtr<sys::Calculator>,
     native_context: crate::context::CalculatorContext,
+    last_native_message_had_error: bool,
     _phantom: PhantomData<*mut ()>,
 }
 
@@ -133,8 +134,14 @@ impl Calculator {
         Self {
             inner,
             native_context: crate::context::CalculatorContext::default(),
+            last_native_message_had_error: false,
             _phantom: PhantomData,
         }
+    }
+
+    /// Whether the last native evaluation emitted an error-severity message.
+    pub fn last_native_message_had_error(&self) -> bool {
+        self.last_native_message_had_error
     }
 
     /// Load the exchange rates for currencies.
@@ -295,6 +302,7 @@ impl Calculator {
         expr: &str,
         settings: &[&str],
     ) -> Result<CalculationOutput, CalculatorError> {
+        self.last_native_message_had_error = false;
         if let Some(output) = native_markup_output(mode, expr, settings, &mut self.native_context)?
         {
             return Ok(CalculationOutput {
@@ -328,6 +336,7 @@ impl Calculator {
         timeout_ms: i32,
         settings: &[&str],
     ) -> Result<CalculationOutput, CalculatorError> {
+        self.last_native_message_had_error = false;
         assert!(
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
@@ -383,8 +392,9 @@ impl Calculator {
                 }
             }
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
+                self.last_native_message_had_error = output.has_error_message;
                 return Ok(CalculationOutput {
-                    output,
+                    output: output.output,
                     fallback_state: FallbackState::Native,
                 });
             }
@@ -821,17 +831,70 @@ fn native_unit_conversion_output(
     }))
 }
 
-fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) -> Option<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeOutput {
+    output: String,
+    has_error_message: bool,
+}
+
+impl NativeOutput {
+    fn plain(output: String) -> Self {
+        Self {
+            output,
+            has_error_message: false,
+        }
+    }
+}
+
+fn native_output_with_messages(
+    profile: PrintProfile,
+    output: String,
+    context: &mut crate::context::CalculatorContext,
+) -> NativeOutput {
+    let has_error_message = context
+        .messages
+        .get_messages()
+        .iter()
+        .any(|message| message.message_type() == crate::messages::MessageType::Error);
+
+    if profile != PrintProfile::Qalc {
+        context.messages.clear();
+        return NativeOutput {
+            output,
+            has_error_message,
+        };
+    }
+
+    let mut lines = context.messages.drain_qalc_lines();
+    if lines.is_empty() {
+        return NativeOutput {
+            output,
+            has_error_message,
+        };
+    }
+
+    lines.push(output);
+    NativeOutput {
+        output: lines.join("\n"),
+        has_error_message,
+    }
+}
+
+fn native_scaffold_output(
+    profile: PrintProfile,
+    expr: &str,
+    settings: &[&str],
+) -> Option<NativeOutput> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
 
     if let Some(output) = crate::matrix::promoted_top_level_list_literal_output(expr) {
         if !settings.is_empty() {
             return None;
         }
-        return Some(match profile {
+        return Some(NativeOutput::plain(match profile {
             PrintProfile::Api => output.to_string(),
             PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-        });
+        }));
     }
 
     if let Some(collection) = crate::matrix::parse_collection_literal(expr) {
@@ -845,7 +908,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
             &mut context,
             parsed_settings.precision_digits(),
         ) {
-            return Some(output);
+            return Some(native_output_with_messages(profile, output, &mut context));
         }
     }
 
@@ -940,7 +1003,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
             &mut context,
             parsed_settings.precision_digits(),
         ) {
-            return Some(output);
+            return Some(native_output_with_messages(profile, output, &mut context));
         }
     }
 
@@ -955,7 +1018,7 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
             &mut context,
             parsed_settings.precision_digits(),
         ) {
-            return Some(output);
+            return Some(native_output_with_messages(profile, output, &mut context));
         }
     }
 
@@ -979,14 +1042,14 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
                 &mut context,
                 parsed_settings.precision_digits(),
             ) {
-                return Some(output);
+                return Some(native_output_with_messages(profile, output, &mut context));
             }
         }
     }
 
     if !parsed_settings.has_interval_display() {
         if let Some(output) = crate::numberbase::native_output(expr, parsed_settings) {
-            return Some(output);
+            return Some(NativeOutput::plain(output));
         }
     }
 
@@ -998,15 +1061,17 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
         if parsed_settings.has_interval_display() {
             return None;
         }
-        return Some("native-scaffold-test-success".to_string());
+        return Some(NativeOutput::plain(
+            "native-scaffold-test-success".to_string(),
+        ));
     }
 
     if let Some(output) = native_boolean_evidence(expr, parsed_settings) {
-        return Some(output);
+        return Some(NativeOutput::plain(output));
     }
 
     if let Some(output) = native_interval_set_evidence(expr, parsed_settings) {
-        return Some(output);
+        return Some(NativeOutput::plain(output));
     }
 
     let evidence = native_numeric_evidence(expr)?;
@@ -1063,10 +1128,10 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
                     parsed_settings.max_decimals(),
                 ),
             };
-            Some(match profile {
+            Some(NativeOutput::plain(match profile {
                 PrintProfile::Api => output,
                 PrintProfile::Qalc => output.replace('-', "−"),
-            })
+            }))
         }
         _ => None,
     }
