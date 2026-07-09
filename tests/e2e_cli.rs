@@ -1132,6 +1132,81 @@ fn cli_rejects_unknown_arguments() {
         .stderr(predicate::str::contains("unknown argument"));
 }
 
+#[test]
+fn cli_formats_native_latex_markup_with_fallback_disabled() {
+    let mut cmd = qalc_rs();
+    cmd.args(["--latex", "-set", "precision 10", "--", "1/2 + sqrt(2)"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("$\\displaystyle \\frac{1}{2} + \\sqrt{2} \\approx \\num{1.914213562}$\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_formats_native_html_markup_with_fallback_disabled() {
+    let mut cmd = qalc_rs();
+    cmd.args(["--html", "-set", "precision 10", "--", "1/2 + sqrt(2)"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("1 / 2 + √(2) ≈ 1.914213562\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_formats_native_html_symbolic_comparison_markup() {
+    let mut cmd = qalc_rs();
+    cmd.args(["--html", "-set", "assumptions unknown", "--", "x<y"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("(<i>x</i> &lt; <i>y</i>) = (<i>x</i> &lt; <i>y</i>)\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_supports_to_latex_conversion_markup_with_fallback_disabled() {
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "precision 10", "--", "1/2 + sqrt(2) to latex"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("$\\displaystyle \\frac{1}{2} + \\sqrt{2} \\approx \\num{1.914213562}$\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
+#[test]
+fn cli_supports_to_html_conversion_markup_with_fallback_disabled() {
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "assumptions unknown", "--", "(x<y) to html"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("(<i>x</i> &lt; <i>y</i>) = (<i>x</i> &lt; <i>y</i>)\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+}
+
 fn qalc_rs() -> Command {
     let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
     cmd.env_remove("QALCULATE_DISABLE_FALLBACK")

@@ -536,6 +536,38 @@ fn run_oracle_expression_in_dir(
     }
 }
 
+fn run_oracle_markup_expression(
+    qalc_path: &Path,
+    defs: &Path,
+    output_flag: Option<&str>,
+    expression: &str,
+    settings: &[&str],
+) -> CapturedOutput {
+    let user_dir = tempfile::tempdir().expect("temporary qalc user dir");
+    let mut cmd = Command::new(qalc_path);
+    apply_oracle_environment(&mut cmd, defs);
+    cmd.env("QALCULATE_USER_DIR", user_dir.path())
+        .arg("-defaults");
+
+    if let Some(flag) = output_flag {
+        cmd.arg(flag);
+    }
+
+    for setting in settings {
+        cmd.arg("-set").arg(setting);
+    }
+
+    cmd.arg(expression);
+    let output = cmd.output().expect("failed to execute C++ qalc oracle");
+
+    CapturedOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        exit_code: output.status.code().unwrap_or(-1),
+        fallback_state: None,
+    }
+}
+
 fn run_oracle_expression_with_isolated_user_dir(
     qalc_path: &Path,
     defs: &Path,
@@ -686,6 +718,67 @@ fn run_rust_expression_in_dir(
     let output = cmd.output();
 
     match output {
+        Ok(out) => {
+            let stderr_str = String::from_utf8_lossy(&out.stderr);
+            let mut clean_stderr = Vec::new();
+            let mut fallback_state = None;
+
+            for line in stderr_str.lines() {
+                if line.starts_with("[qalc-rs-metadata]") {
+                    fallback_state = FallbackState::from_marker(line);
+                } else {
+                    clean_stderr.push(line.to_string());
+                }
+            }
+
+            CapturedOutput {
+                stdout: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+                stderr: clean_stderr.join("\n").trim().to_string(),
+                exit_code: out.status.code().unwrap_or(-1),
+                fallback_state,
+            }
+        }
+        Err(e) => CapturedOutput {
+            stdout: String::new(),
+            stderr: format!("Failed to run qalc-rs: {e}"),
+            exit_code: -1,
+            fallback_state: None,
+        },
+    }
+}
+
+fn run_rust_markup_expression(
+    output_flag: Option<&str>,
+    expression: &str,
+    settings: &[&str],
+    defs: &Path,
+) -> CapturedOutput {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let mut cmd = Command::new(&cargo);
+    cmd.arg("run")
+        .arg("--quiet")
+        .arg("--bin")
+        .arg("qalc-rs")
+        .arg("--manifest-path")
+        .arg(manifest_dir.join("Cargo.toml"))
+        .arg("--");
+    apply_oracle_environment(&mut cmd, defs);
+    cmd.env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1");
+
+    if let Some(flag) = output_flag {
+        cmd.arg(flag);
+    }
+
+    for setting in settings {
+        cmd.arg("-set").arg(setting);
+    }
+
+    cmd.arg("--").arg(expression);
+
+    match cmd.output() {
         Ok(out) => {
             let stderr_str = String::from_utf8_lossy(&out.stderr);
             let mut clean_stderr = Vec::new();
@@ -952,6 +1045,52 @@ fn focused_issue55_number_formatting_oracle_cases() {
     }
 
     assert_native_oracle_cases(&qalc, &defs, ISSUE55_ADDITIONAL_NUMBER_FORMATTING_CASES);
+}
+
+#[test]
+fn focused_issue57_latex_html_markup_oracle_cases() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!(
+            "skipping focused_issue57_latex_html_markup_oracle_cases; \
+             C++ oracle not available (set QALCULATE_ORACLE or build upstream qalc)"
+        );
+        return;
+    };
+
+    let defs = defs_dir();
+    let cases: &[(Option<&str>, &str, &[&str])] = &[
+        (Some("--latex"), "1/2 + sqrt(2)", &["precision 10"]),
+        (Some("--html"), "1/2 + sqrt(2)", &["precision 10"]),
+        (Some("--html"), "x<y", &["assumptions unknown"]),
+        (None, "1/2 + sqrt(2) to latex", &["precision 10"]),
+        (None, "(x<y) to html", &["assumptions unknown"]),
+    ];
+
+    for (output_flag, expression, settings) in cases {
+        let cpp_out =
+            run_oracle_markup_expression(&qalc, &defs, *output_flag, expression, settings);
+        let rust_out = run_rust_markup_expression(*output_flag, expression, settings, &defs);
+        let fallback_state =
+            oracle_fallback_gate::fallback_state_label(rust_out.fallback_state, false);
+
+        assert_eq!(
+            cpp_out.stdout, rust_out.stdout,
+            "stdout mismatch for {expression:?} with {output_flag:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.stderr, rust_out.stderr,
+            "stderr mismatch for {expression:?} with {output_flag:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            cpp_out.exit_code, rust_out.exit_code,
+            "exit-code mismatch for {expression:?} with {output_flag:?}; fallback={fallback_state}"
+        );
+        assert_eq!(
+            fallback_state,
+            FallbackState::Native.label(),
+            "{expression:?} with {output_flag:?} did not run natively"
+        );
+    }
 }
 
 #[test]

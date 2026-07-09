@@ -30,6 +30,7 @@ pub mod symbolic;
 /// contained here behind the safe `Calculator` wrapper.
 pub mod ffi;
 
+mod markup;
 mod matrix;
 mod numberbase;
 mod session;

@@ -7,8 +7,17 @@ use libqalculate_rust::batch::read_batch_cases;
 use libqalculate_rust::ffi::Calculator;
 use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputMode {
+    Text,
+    Latex,
+    Html,
+}
+
 fn main() {
-    let mut args = env::args().skip(1);
+    let mut raw_args = env::args().skip(1).collect::<Vec<_>>();
+    let output_mode = take_leading_output_mode(&mut raw_args);
+    let mut args = raw_args.into_iter();
     let result = match args.next().as_deref() {
         Some("--version") | Some("-V") => {
             println!(
@@ -24,17 +33,19 @@ fn main() {
             Some(path) => parse_batch(Path::new(&path)),
             None => Err("--parse-batch requires a file path".to_owned()),
         },
-        Some("-set") => evaluate_expression_with_leading_setting(args),
+        Some("-set") => evaluate_expression_with_leading_setting(args, output_mode),
         Some("--help") | Some("-h") | None => {
             print_help();
             Ok(())
         }
         Some("--") => match args.next() {
-            Some(expression) => evaluate_expression(join_expression(expression, args)),
+            Some(expression) => evaluate_expression(join_expression(expression, args), output_mode),
             None => Err("-- requires an expression".to_owned()),
         },
         Some(other) if other.starts_with("--") => Err(format!("unknown argument: {other}")),
-        Some(expression) => evaluate_expression(join_expression(expression.to_owned(), args)),
+        Some(expression) => {
+            evaluate_expression(join_expression(expression.to_owned(), args), output_mode)
+        }
     };
 
     if let Err(error) = result {
@@ -49,6 +60,8 @@ fn print_help() {
     println!("  --list-upstream-tests  List upstream .batch fixtures");
     println!("  --parse-batch <path>   Parse a libqalculate .batch fixture");
     println!("  -set <setting>         Limited native-evidence qalc setting support");
+    println!("  --latex                Format expression output as LaTeX markup");
+    println!("  --html                 Format expression output as HTML markup");
     println!("  <expression>           Evaluate through the C++ fallback bridge");
 }
 
@@ -84,8 +97,29 @@ fn join_expression(first: String, rest: impl Iterator<Item = String>) -> String 
     expression
 }
 
+fn take_leading_output_mode(args: &mut Vec<String>) -> OutputMode {
+    let mut output_mode = OutputMode::Text;
+    loop {
+        let Some(first) = args.first() else {
+            return output_mode;
+        };
+        match first.as_str() {
+            "--latex" | "-latex" => {
+                output_mode = OutputMode::Latex;
+                args.remove(0);
+            }
+            "--html" | "-html" => {
+                output_mode = OutputMode::Html;
+                args.remove(0);
+            }
+            _ => return output_mode,
+        }
+    }
+}
+
 fn evaluate_expression_with_leading_setting(
     mut args: impl Iterator<Item = String>,
+    output_mode: OutputMode,
 ) -> Result<(), String> {
     let mut settings = Vec::new();
 
@@ -104,12 +138,14 @@ fn evaluate_expression_with_leading_setting(
                 return evaluate_expression_with_settings(
                     join_expression(expression, args),
                     settings,
+                    output_mode,
                 );
             }
             Some(expression) => {
                 return evaluate_expression_with_settings(
                     join_expression(expression, args),
                     settings,
+                    output_mode,
                 );
             }
             None => return Err("-set requires an expression".to_owned()),
@@ -117,18 +153,19 @@ fn evaluate_expression_with_leading_setting(
     }
 }
 
-fn evaluate_expression(expression: String) -> Result<(), String> {
-    evaluate_expression_with_settings(expression, Vec::new())
+fn evaluate_expression(expression: String, output_mode: OutputMode) -> Result<(), String> {
+    evaluate_expression_with_settings(expression, Vec::new(), output_mode)
 }
 
 fn evaluate_expression_with_settings(
     expression: String,
     settings: Vec<String>,
+    output_mode: OutputMode,
 ) -> Result<(), String> {
     let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
     let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
 
-    if !fallback_disabled && !settings.is_empty() {
+    if output_mode == OutputMode::Text && !fallback_disabled && !settings.is_empty() {
         return Err("session settings require QALCULATE_DISABLE_FALLBACK=1".to_owned());
     }
 
@@ -138,14 +175,25 @@ fn evaluate_expression_with_settings(
     }
 
     let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
-    let result = if setting_refs.is_empty() {
-        calc.calculate_and_print_qalc_with_fallback_state(&expression, 1000)
-    } else {
-        calc.calculate_and_print_qalc_with_settings_and_fallback_state(
+    let result = match output_mode {
+        OutputMode::Text if setting_refs.is_empty() => {
+            calc.calculate_and_print_qalc_with_fallback_state(&expression, 1000)
+        }
+        OutputMode::Text => calc.calculate_and_print_qalc_with_settings_and_fallback_state(
             &expression,
             &setting_refs,
             1000,
-        )
+        ),
+        OutputMode::Latex => calc.calculate_and_print_qalc_latex_with_settings_and_fallback_state(
+            &expression,
+            &setting_refs,
+            1000,
+        ),
+        OutputMode::Html => calc.calculate_and_print_qalc_html_with_settings_and_fallback_state(
+            &expression,
+            &setting_refs,
+            1000,
+        ),
     };
 
     match result {
