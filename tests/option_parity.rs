@@ -218,8 +218,19 @@ fn test_comprehensive_session_state_transitions() {
     assert!(context.print_options.abbreviate_names);
 
     // Test engineering display transition
-    context.apply_command("set edisp 3").unwrap();
+    context.apply_command("set edisp 2").unwrap();
     assert_eq!(context.print_options.exp_display, ExpDisplay::PowerOf10);
+
+    context.apply_command("set exp 3").unwrap();
+    assert_eq!(context.print_options.min_exp, 3);
+
+    context.apply_command("set min decimals 4").unwrap();
+    assert_eq!(context.print_options.min_decimals, 4);
+    assert!(context.print_options.use_min_decimals);
+
+    context.apply_command("set max decimals 2").unwrap();
+    assert_eq!(context.print_options.max_decimals, 2);
+    assert!(context.print_options.use_max_decimals);
 
     // Test assume transition
     context.apply_command("assume positive").unwrap();

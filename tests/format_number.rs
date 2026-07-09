@@ -38,6 +38,17 @@ fn native_qalc_output(expression: &str) -> String {
     output.output
 }
 
+fn native_qalc_output_with_settings(expression: &str, settings: &[&str]) -> String {
+    let _lock = ENV_LOCK.lock().expect("format-number env lock poisoned");
+    let _guard = EnvGuard::set("QALCULATE_DISABLE_FALLBACK", "1");
+    let mut calc = Calculator::new();
+    let output = calc
+        .calculate_and_print_qalc_with_settings_and_fallback_state(expression, settings, 1000)
+        .expect("format-number expression with settings should run natively");
+    assert_eq!(output.fallback_state, FallbackState::Native);
+    output.output
+}
+
 #[test]
 fn native_formats_parser_batch_decimal_normalization_cases() {
     for (expression, expected) in [
@@ -64,6 +75,44 @@ fn native_formats_large_integer_scientific_edges() {
         ("12345678905000", "1.234567891E13"),
     ] {
         assert_eq!(native_qalc_output(expression), expected, "{expression}");
+    }
+}
+
+#[test]
+fn native_formats_print_option_exponent_settings() {
+    for (expression, settings, expected) in [
+        ("10000000000000", &["exp 0"][..], "10000000000000"),
+        ("12345678901234", &["exp off"][..], "12345678901234"),
+        ("10000", &["exp 3"][..], "1E4"),
+        ("10000", &["exp -3"][..], "10E3"),
+        ("1e303", &["edisp 1"][..], "1e303"),
+        ("12345678901234", &["edisp 2"][..], "1.234567890 × 10^13"),
+        ("10000000000000", &["edisp 2"][..], "10^13"),
+    ] {
+        assert_eq!(
+            native_qalc_output_with_settings(expression, settings),
+            expected,
+            "{expression} with {settings:?}"
+        );
+    }
+}
+
+#[test]
+fn native_formats_print_option_decimal_limits() {
+    for (expression, settings, expected) in [
+        ("1/3", &["max decimals 2"][..], "0.33"),
+        ("2/3", &["max decimals 2"][..], "0.67"),
+        ("12345678901234", &["max decimals 2"][..], "1.23E13"),
+        ("1", &["min decimals 2"][..], "1.00"),
+        ("1.2", &["min decimals 4"][..], "1.2000"),
+        ("10000000000000", &["min decimals 2"][..], "1.00E13"),
+        ("1e303", &["min decimals 4"][..], "1.0000E303"),
+    ] {
+        assert_eq!(
+            native_qalc_output_with_settings(expression, settings),
+            expected,
+            "{expression} with {settings:?}"
+        );
     }
 }
 

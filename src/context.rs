@@ -238,12 +238,22 @@ impl CalculatorContext {
                 }
                 SetSetting::EngineeringDisplay(ed) => {
                     self.print_options.exp_display = match ed {
-                        0 => crate::options::ExpDisplay::Default,
-                        1 => crate::options::ExpDisplay::UppercaseE,
-                        2 => crate::options::ExpDisplay::LowercaseE,
-                        3 => crate::options::ExpDisplay::PowerOf10,
+                        0 => crate::options::ExpDisplay::UppercaseE,
+                        1 => crate::options::ExpDisplay::LowercaseE,
+                        2 => crate::options::ExpDisplay::PowerOf10,
                         _ => self.print_options.exp_display,
                     };
+                }
+                SetSetting::MinExponent(v) => {
+                    self.print_options.min_exp = v;
+                }
+                SetSetting::MinDecimals(v) => {
+                    self.print_options.min_decimals = v;
+                    self.print_options.use_min_decimals = v >= 0;
+                }
+                SetSetting::MaxDecimals(v) => {
+                    self.print_options.max_decimals = v;
+                    self.print_options.use_max_decimals = v >= 0;
                 }
             },
             SessionCommand::Assume(a) => match a.kind {

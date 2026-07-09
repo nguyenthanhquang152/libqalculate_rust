@@ -5374,6 +5374,40 @@ impl Number {
         self.to_qalc_string_with_precision(10)
     }
 
+    pub(crate) fn to_qalc_string_with_settings(
+        &self,
+        precision_digits: usize,
+        min_exp: Option<i32>,
+        exp_display: Option<u8>,
+        min_decimals: Option<i32>,
+        max_decimals: Option<i32>,
+    ) -> String {
+        if min_exp.is_none()
+            && exp_display.is_none()
+            && min_decimals.is_none()
+            && max_decimals.is_none()
+        {
+            return self.to_qalc_string_with_precision(precision_digits);
+        }
+
+        let (real, imag) = self.to_canonical_real_imag();
+        if imag.is_real_zero() {
+            return format_qalc_value_with_settings(
+                &real,
+                precision_digits,
+                min_exp,
+                exp_display,
+                min_decimals,
+                max_decimals,
+            );
+        }
+
+        // Keep complex settings out of scope until there is direct oracle
+        // evidence for the interaction between complex formatting and these
+        // print options.
+        self.to_qalc_string_with_precision(precision_digits)
+    }
+
     /// Formats this number for qalc-profile native evidence with a requested
     /// decimal digit count for precision-sensitive numeric output.
     pub(crate) fn to_qalc_string_with_precision(&self, precision_digits: usize) -> String {
@@ -5855,6 +5889,487 @@ fn format_qalc_float(value: &rug::Float, precision_digits: usize) -> String {
 
     let output = value.to_string_radix(10, Some(precision_digits));
     fixed_decimal_from_scientific(&output).unwrap_or(output)
+}
+
+fn format_qalc_value_with_settings(
+    value: &NumberValue,
+    precision_digits: usize,
+    min_exp: Option<i32>,
+    exp_display: Option<u8>,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> String {
+    match value {
+        NumberValue::Rational(rational) => format_qalc_rational_with_settings(
+            rational,
+            precision_digits,
+            min_exp,
+            exp_display,
+            min_decimals,
+            max_decimals,
+        ),
+        NumberValue::Float(float) => format_qalc_decimal_string_with_settings(
+            &format_qalc_float(&float.value, precision_digits),
+            precision_digits,
+            min_exp,
+            exp_display,
+            min_decimals,
+            max_decimals,
+        ),
+        NumberValue::Uncertainty {
+            value,
+            uncertainty,
+            is_relative,
+        } => {
+            if uncertainty.is_real_zero() {
+                format_qalc_value_with_settings(
+                    value,
+                    precision_digits,
+                    min_exp,
+                    exp_display,
+                    min_decimals,
+                    max_decimals,
+                )
+            } else {
+                format_qalc_uncertainty(
+                    value,
+                    uncertainty,
+                    *is_relative,
+                    precision_digits,
+                    QalcUncertaintyFormat::Significant,
+                )
+            }
+        }
+        NumberValue::Interval { lower, upper } => format!(
+            "[{}  {}]",
+            format_qalc_float_bound(&lower.value),
+            format_qalc_float_bound(&upper.value)
+        ),
+        NumberValue::PlusInfinity => "+∞".to_string(),
+        NumberValue::MinusInfinity => "-∞".to_string(),
+        _ => value.to_string(),
+    }
+}
+
+fn format_qalc_rational_with_settings(
+    rational: &Rational,
+    precision_digits: usize,
+    min_exp: Option<i32>,
+    exp_display: Option<u8>,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> String {
+    if min_exp.is_none() {
+        let output = format_qalc_value_with_uncertainty_format(
+            &NumberValue::Rational(rational.clone()),
+            precision_digits,
+            QalcUncertaintyFormat::Significant,
+        );
+        return format_qalc_decimal_string_with_settings(
+            &output,
+            precision_digits,
+            None,
+            exp_display,
+            min_decimals,
+            max_decimals,
+        );
+    };
+
+    let fixed = qalc_rational_fixed_decimal_string(rational, precision_digits);
+    format_qalc_decimal_string_with_settings(
+        &fixed,
+        precision_digits,
+        min_exp,
+        exp_display,
+        min_decimals,
+        max_decimals,
+    )
+}
+
+fn qalc_rational_fixed_decimal_string(rational: &Rational, precision_digits: usize) -> String {
+    if let Some(decimal) = rational.terminating_decimal_string() {
+        return decimal;
+    }
+
+    let binary_precision = qalc_decimal_precision_bits(precision_digits);
+    let output = rug::Float::with_val(binary_precision, &rational.value)
+        .to_string_radix(10, Some(precision_digits));
+    fixed_decimal_from_scientific(&output).unwrap_or(output)
+}
+
+fn format_qalc_decimal_string_with_settings(
+    output: &str,
+    precision_digits: usize,
+    min_exp: Option<i32>,
+    exp_display: Option<u8>,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> String {
+    if let Some(min_exp) = min_exp {
+        if let Some(scientific) = qalc_scientific_from_fixed_decimal(
+            output,
+            min_exp,
+            exp_display,
+            precision_digits,
+            min_decimals,
+            max_decimals,
+        ) {
+            return scientific;
+        }
+    } else if let Some((mantissa, exponent)) = split_qalc_exponent(output) {
+        let displayed = format_qalc_scientific_parts(
+            mantissa,
+            exponent,
+            exp_display,
+            min_decimals,
+            max_decimals,
+        );
+        return displayed;
+    }
+
+    apply_qalc_decimal_limits(output, min_decimals, max_decimals)
+}
+
+fn split_qalc_exponent(output: &str) -> Option<(&str, i32)> {
+    let exponent_pos = output.find(['E', 'e'])?;
+    let exponent = output[exponent_pos + 1..].parse::<i32>().ok()?;
+    Some((&output[..exponent_pos], exponent))
+}
+
+fn qalc_scientific_from_fixed_decimal(
+    output: &str,
+    min_exp: i32,
+    exp_display: Option<u8>,
+    precision_digits: usize,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> Option<String> {
+    if min_exp == 0 {
+        return None;
+    }
+
+    let decimal = qalc_decimal_components(output)?;
+    let (digits, exponent) = decimal.normalized_digits_and_exponent()?;
+    if !qalc_should_use_scientific_exponent(exponent, min_exp) {
+        return None;
+    }
+
+    let (significant, exponent) =
+        rounded_significant_digits(&digits, exponent, precision_digits.max(1));
+    let target_exponent = if min_exp < -1 {
+        let step = min_exp.abs();
+        exponent.div_euclid(step) * step
+    } else {
+        exponent
+    };
+
+    let digits_before_decimal = exponent - target_exponent + 1;
+    let mantissa = qalc_mantissa_from_significant(
+        &significant.digits,
+        digits_before_decimal,
+        significant.dropped_nonzero,
+    );
+    let mantissa = format!("{}{mantissa}", decimal.sign);
+    Some(format_qalc_scientific_parts(
+        &mantissa,
+        target_exponent,
+        exp_display,
+        min_decimals,
+        max_decimals,
+    ))
+}
+
+fn qalc_should_use_scientific_exponent(exponent: i32, min_exp: i32) -> bool {
+    match min_exp {
+        0 => false,
+        1 => true,
+        -1 => exponent >= 13 || exponent <= -10,
+        value if value > 1 => exponent >= value || exponent <= -value,
+        value if value < -1 => {
+            let threshold = value.abs();
+            exponent >= threshold || exponent <= -threshold
+        }
+        _ => false,
+    }
+}
+
+struct SignificantDigits {
+    digits: String,
+    dropped_nonzero: bool,
+}
+
+fn rounded_significant_digits(
+    digits: &str,
+    mut exponent: i32,
+    precision_digits: usize,
+) -> (SignificantDigits, i32) {
+    let bytes = digits.as_bytes();
+    let keep = bytes.len().min(precision_digits);
+    let dropped_nonzero = bytes
+        .iter()
+        .skip(precision_digits)
+        .any(|digit| *digit != b'0');
+    let mut significant: Vec<u8> = bytes.iter().take(keep).map(|digit| digit - b'0').collect();
+
+    if bytes
+        .get(precision_digits)
+        .is_some_and(|digit| *digit >= b'5')
+    {
+        let mut carry = true;
+        for digit in significant.iter_mut().rev() {
+            if *digit == 9 {
+                *digit = 0;
+            } else {
+                *digit += 1;
+                carry = false;
+                break;
+            }
+        }
+        if carry {
+            significant.fill(0);
+            significant[0] = 1;
+            exponent += 1;
+        }
+    }
+
+    let digits = significant
+        .into_iter()
+        .map(|digit| char::from(b'0' + digit))
+        .collect();
+    (
+        SignificantDigits {
+            digits,
+            dropped_nonzero,
+        },
+        exponent,
+    )
+}
+
+fn qalc_mantissa_from_significant(
+    digits: &str,
+    digits_before_decimal: i32,
+    dropped_nonzero: bool,
+) -> String {
+    let digits_before_decimal = digits_before_decimal as isize;
+    let (integer, mut fraction) = if digits_before_decimal <= 0 {
+        (
+            "0".to_string(),
+            format!(
+                "{}{}",
+                "0".repeat(digits_before_decimal.unsigned_abs()),
+                digits
+            ),
+        )
+    } else if digits_before_decimal as usize >= digits.len() {
+        (
+            format!(
+                "{}{}",
+                digits,
+                "0".repeat(digits_before_decimal as usize - digits.len())
+            ),
+            String::new(),
+        )
+    } else {
+        let split = digits_before_decimal as usize;
+        (digits[..split].to_string(), digits[split..].to_string())
+    };
+
+    if fraction.chars().all(|ch| ch == '0') {
+        fraction.clear();
+    } else if !dropped_nonzero {
+        while fraction.ends_with('0') {
+            fraction.pop();
+        }
+    }
+
+    if fraction.is_empty() {
+        integer
+    } else {
+        format!("{integer}.{fraction}")
+    }
+}
+
+struct QalcDecimalComponents {
+    sign: &'static str,
+    integer: String,
+    fraction: String,
+}
+
+impl QalcDecimalComponents {
+    fn normalized_digits_and_exponent(&self) -> Option<(String, i32)> {
+        let combined = format!("{}{}", self.integer, self.fraction);
+        let first_nonzero = combined.bytes().position(|digit| digit != b'0')?;
+        let exponent = self.integer.len() as i32 - first_nonzero as i32 - 1;
+        Some((combined[first_nonzero..].to_string(), exponent))
+    }
+}
+
+fn qalc_decimal_components(output: &str) -> Option<QalcDecimalComponents> {
+    if output.contains(['E', 'e']) || output.contains('×') {
+        return None;
+    }
+
+    let (sign, unsigned) = if let Some(rest) = output.strip_prefix('-') {
+        ("-", rest)
+    } else if let Some(rest) = output.strip_prefix('+') {
+        ("+", rest)
+    } else {
+        ("", output)
+    };
+
+    let (integer, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if !integer.bytes().all(|digit| digit.is_ascii_digit())
+        || !fraction.bytes().all(|digit| digit.is_ascii_digit())
+        || (integer.is_empty() && fraction.is_empty())
+    {
+        return None;
+    }
+
+    Some(QalcDecimalComponents {
+        sign,
+        integer: if integer.is_empty() {
+            "0".to_string()
+        } else {
+            integer.to_string()
+        },
+        fraction: fraction.to_string(),
+    })
+}
+
+fn apply_qalc_decimal_limits(
+    output: &str,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> String {
+    let Some(mut decimal) = qalc_decimal_components(output) else {
+        return output.to_string();
+    };
+
+    let max_decimals = max_decimals.and_then(|value| (value >= 0).then_some(value as usize));
+    let min_decimals = min_decimals
+        .and_then(|value| (value >= 0).then_some(value as usize))
+        .unwrap_or(0);
+    let min_decimals = max_decimals.map_or(min_decimals, |max| min_decimals.min(max));
+
+    if let Some(max_decimals) = max_decimals {
+        round_qalc_decimal_parts(&mut decimal.integer, &mut decimal.fraction, max_decimals);
+    }
+
+    while decimal.fraction.len() < min_decimals {
+        decimal.fraction.push('0');
+    }
+
+    while decimal.fraction.len() > min_decimals && decimal.fraction.ends_with('0') {
+        decimal.fraction.pop();
+    }
+
+    if decimal.fraction.is_empty() {
+        format!("{}{}", decimal.sign, decimal.integer)
+    } else {
+        format!("{}{}.{}", decimal.sign, decimal.integer, decimal.fraction)
+    }
+}
+
+fn round_qalc_decimal_parts(integer: &mut String, fraction: &mut String, max_decimals: usize) {
+    if fraction.len() <= max_decimals {
+        return;
+    }
+
+    let round_up = fraction.as_bytes()[max_decimals] >= b'5';
+    fraction.truncate(max_decimals);
+    if !round_up {
+        return;
+    }
+
+    let mut carry = true;
+    let mut fraction_digits = fraction.as_bytes().to_vec();
+    for digit in fraction_digits.iter_mut().rev() {
+        if *digit == b'9' {
+            *digit = b'0';
+        } else {
+            *digit += 1;
+            carry = false;
+            break;
+        }
+    }
+    *fraction = String::from_utf8(fraction_digits).expect("decimal digits remain utf8");
+    if carry {
+        increment_ascii_decimal_integer(integer);
+    }
+}
+
+fn increment_ascii_decimal_integer(integer: &mut String) {
+    let mut carry = true;
+    let mut digits = integer.as_bytes().to_vec();
+    for digit in digits.iter_mut().rev() {
+        if *digit == b'9' {
+            *digit = b'0';
+        } else {
+            *digit += 1;
+            carry = false;
+            break;
+        }
+    }
+    if carry {
+        digits.insert(0, b'1');
+    }
+    *integer = String::from_utf8(digits).expect("integer digits remain utf8");
+}
+
+fn format_qalc_scientific_parts(
+    mantissa: &str,
+    exp: i32,
+    exp_display: Option<u8>,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> String {
+    let mantissa = apply_qalc_scientific_mantissa_limits(mantissa, min_decimals, max_decimals);
+    if exp_display == Some(2) {
+        return match mantissa.as_str() {
+            "1" => format!("10^{exp}"),
+            "-1" => format!("-10^{exp}"),
+            _ => format!("{mantissa}{}", qalc_exponent_suffix(exp, exp_display)),
+        };
+    }
+
+    format!("{mantissa}{}", qalc_exponent_suffix(exp, exp_display))
+}
+
+fn apply_qalc_scientific_mantissa_limits(
+    mantissa: &str,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
+) -> String {
+    if max_decimals.is_some() {
+        return apply_qalc_decimal_limits(mantissa, min_decimals, max_decimals);
+    }
+
+    let Some(min_decimals) = min_decimals.and_then(|value| (value >= 0).then_some(value as usize))
+    else {
+        return mantissa.to_string();
+    };
+
+    let Some(mut decimal) = qalc_decimal_components(mantissa) else {
+        return mantissa.to_string();
+    };
+
+    while decimal.fraction.len() < min_decimals {
+        decimal.fraction.push('0');
+    }
+
+    if decimal.fraction.is_empty() {
+        format!("{}{}", decimal.sign, decimal.integer)
+    } else {
+        format!("{}{}.{}", decimal.sign, decimal.integer, decimal.fraction)
+    }
+}
+
+fn qalc_exponent_suffix(exp: i32, exp_display: Option<u8>) -> String {
+    match exp_display {
+        Some(1) => format!("e{}", exp),
+        Some(2) => format!(" \u{00D7} 10^{}", exp),
+        _ => format!("E{}", exp),
+    }
 }
 
 fn format_qalc_uncertainty(

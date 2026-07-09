@@ -180,6 +180,51 @@ fn cli_applies_precision_setting_for_native_rational_output() {
 }
 
 #[test]
+fn cli_applies_print_option_settings_for_native_number_formatting() {
+    for (setting, expression, expected) in [
+        ("exp 0", "10000000000000", "10000000000000\n"),
+        ("exp -3", "10000", "10E3\n"),
+        ("edisp 2", "12345678901234", "1.234567890 × 10^13\n"),
+        ("edisp 2", "10000000000000", "10^13\n"),
+        ("max decimals 2", "2/3", "0.67\n"),
+        ("max decimals 2", "12345678901234", "1.23E13\n"),
+        ("min decimals 4", "1.2", "1.2000\n"),
+        ("min decimals 2", "10000000000000", "1.00E13\n"),
+    ] {
+        let invalid_defs = tempdir().expect("temp dir should be created");
+        let mut cmd = qalc_rs();
+        cmd.args(["-set", setting, "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_rejects_print_option_setting_for_unvetted_native_number_formatting() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs();
+    cmd.args(["-set", "exp 3", "--", "i"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ))
+        .stderr(predicate::str::contains(
+            "expression 'i' has no native Rust implementation",
+        ));
+}
+
+#[test]
 fn cli_applies_precision_setting_for_native_float_power() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();

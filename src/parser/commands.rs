@@ -57,6 +57,12 @@ pub enum SetSetting {
     Abbreviations(bool),
     /// Engineering display mode (edisp).
     EngineeringDisplay(u8),
+    /// Minimum exponent for scientific notation (exp).
+    MinExponent(i32),
+    /// Minimum decimal places (min decimals / mindeci).
+    MinDecimals(i32),
+    /// Maximum decimal places (max decimals / maxdeci).
+    MaxDecimals(i32),
 }
 
 /// Modes for approximation setting.
@@ -204,6 +210,28 @@ fn parse_set_setting(args: &str, span: Span) -> Result<SetSetting, ParseError> {
             .parse::<u8>()
             .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
         Ok(SetSetting::EngineeringDisplay(num))
+    } else if let Some(val) = strip_setting_prefix(&lower_args, &["exp"]) {
+        let v = match val {
+            "off" => 0,
+            "auto" => -1,
+            "pure" => 1,
+            "scientific" | "sci" | "on" => 3,
+            "engineering" | "eng" => -3,
+            other => other
+                .parse::<i32>()
+                .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?,
+        };
+        Ok(SetSetting::MinExponent(v))
+    } else if let Some(val) = strip_setting_prefix(&lower_args, &["min decimals", "mindeci"]) {
+        let num = val
+            .parse::<i32>()
+            .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
+        Ok(SetSetting::MinDecimals(num))
+    } else if let Some(val) = strip_setting_prefix(&lower_args, &["max decimals", "maxdeci"]) {
+        let num = val
+            .parse::<i32>()
+            .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
+        Ok(SetSetting::MaxDecimals(num))
     } else {
         Err(ParseError::new(ParseErrorKind::UnknownSetting, span))
     }
@@ -235,5 +263,37 @@ fn parse_assume_kind(args: &str, span: Span) -> Result<AssumeKind, ParseError> {
         "positive" => Ok(AssumeKind::Positive),
         "unknown" => Ok(AssumeKind::Unknown),
         _ => Err(ParseError::new(ParseErrorKind::InvalidSettingValue, span)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_command, SessionCommand, SetSetting};
+
+    fn parsed_setting(input: &str) -> SetSetting {
+        match parse_command(input).expect("command should parse") {
+            SessionCommand::Set(command) => command.setting,
+            SessionCommand::Assume(_) => panic!("expected set command"),
+        }
+    }
+
+    #[test]
+    fn parses_exponent_display_and_decimal_print_settings() {
+        assert_eq!(parsed_setting("set exp off"), SetSetting::MinExponent(0));
+        assert_eq!(parsed_setting("set exp auto"), SetSetting::MinExponent(-1));
+        assert_eq!(parsed_setting("set exp 3"), SetSetting::MinExponent(3));
+        assert_eq!(parsed_setting("set exp -3"), SetSetting::MinExponent(-3));
+        assert_eq!(
+            parsed_setting("set edisp 2"),
+            SetSetting::EngineeringDisplay(2)
+        );
+        assert_eq!(
+            parsed_setting("set min decimals 4"),
+            SetSetting::MinDecimals(4)
+        );
+        assert_eq!(
+            parsed_setting("set max decimals 2"),
+            SetSetting::MaxDecimals(2)
+        );
     }
 }
