@@ -877,6 +877,9 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
     }
 
     let evidence = native_numeric_evidence(expr)?;
+    if parsed_settings.has_print_format_settings() && !evidence.allows_print_format_settings() {
+        return None;
+    }
     if parsed_settings.has_precision() && !evidence.supports_precision() {
         return None;
     }
@@ -919,9 +922,13 @@ fn native_scaffold_output(profile: PrintProfile, expr: &str, settings: &[&str]) 
                     .to_qalc_string_preserving_float_uncertainty_precision(
                         parsed_settings.precision_digits(),
                     ),
-                PrintProfile::Qalc => {
-                    num.to_qalc_string_with_precision(parsed_settings.precision_digits())
-                }
+                PrintProfile::Qalc => num.to_qalc_string_with_settings(
+                    parsed_settings.precision_digits(),
+                    parsed_settings.min_exp(),
+                    parsed_settings.exp_display(),
+                    parsed_settings.min_decimals(),
+                    parsed_settings.max_decimals(),
+                ),
             };
             Some(match profile {
                 PrintProfile::Api => output,
@@ -1021,7 +1028,9 @@ fn native_boolean_evidence(
 #[derive(Clone, Copy)]
 enum NativeNumericEvidence {
     DefaultOnly,
+    PrintOptions,
     Precision,
+    PrecisionPrintOptions,
     PrecisionRequired,
     IntervalDisplay,
     IntervalArithmetic,
@@ -1032,11 +1041,18 @@ enum NativeNumericEvidence {
 
 impl NativeNumericEvidence {
     const fn supports_precision(self) -> bool {
-        matches!(self, Self::Precision | Self::PrecisionRequired)
+        matches!(
+            self,
+            Self::Precision | Self::PrecisionPrintOptions | Self::PrecisionRequired
+        )
     }
 
     const fn requires_precision(self) -> bool {
         matches!(self, Self::PrecisionRequired)
+    }
+
+    const fn allows_print_format_settings(self) -> bool {
+        matches!(self, Self::PrintOptions | Self::PrecisionPrintOptions)
     }
 
     const fn requires_interval_display(self) -> bool {
@@ -1071,7 +1087,8 @@ impl NativeNumericEvidence {
 }
 
 const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
-    ("1/3", NativeNumericEvidence::Precision),
+    ("1/3", NativeNumericEvidence::PrecisionPrintOptions),
+    ("2/3", NativeNumericEvidence::PrecisionPrintOptions),
     ("2 ^ 0.5", NativeNumericEvidence::Precision),
     (
         "(2 ^ 0.5) + (3 ^ 0.5)",
@@ -1227,6 +1244,7 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("-infinity / -2", NativeNumericEvidence::DefaultOnly),
     ("1 / -infinity", NativeNumericEvidence::DefaultOnly),
     ("0", NativeNumericEvidence::DefaultOnly),
+    ("1", NativeNumericEvidence::PrintOptions),
     ("-0", NativeNumericEvidence::DefaultOnly),
     ("123456789", NativeNumericEvidence::DefaultOnly),
     ("-123", NativeNumericEvidence::DefaultOnly),
@@ -1239,18 +1257,20 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("-.", NativeNumericEvidence::DefaultOnly),
     (".", NativeNumericEvidence::DefaultOnly),
     ("12345.67890", NativeNumericEvidence::DefaultOnly),
+    ("1.2", NativeNumericEvidence::PrintOptions),
     ("1e0", NativeNumericEvidence::DefaultOnly),
     ("-1e0", NativeNumericEvidence::DefaultOnly),
     ("1e3", NativeNumericEvidence::DefaultOnly),
     ("1E3", NativeNumericEvidence::DefaultOnly),
     ("1e-3", NativeNumericEvidence::DefaultOnly),
     ("1.23e-5", NativeNumericEvidence::DefaultOnly),
+    ("10000", NativeNumericEvidence::PrintOptions),
     ("1e10", NativeNumericEvidence::DefaultOnly),
-    ("1e303", NativeNumericEvidence::DefaultOnly),
+    ("1e303", NativeNumericEvidence::PrintOptions),
     ("1000000000000", NativeNumericEvidence::DefaultOnly),
-    ("10000000000000", NativeNumericEvidence::DefaultOnly),
+    ("10000000000000", NativeNumericEvidence::PrintOptions),
     ("12345000000000", NativeNumericEvidence::DefaultOnly),
-    ("12345678901234", NativeNumericEvidence::DefaultOnly),
+    ("12345678901234", NativeNumericEvidence::PrintOptions),
     ("99999999999999", NativeNumericEvidence::DefaultOnly),
     ("99999999994999", NativeNumericEvidence::DefaultOnly),
     ("12345678905000", NativeNumericEvidence::DefaultOnly),

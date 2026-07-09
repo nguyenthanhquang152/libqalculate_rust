@@ -16,6 +16,10 @@ pub(crate) struct NativeSessionSettings {
     concise_uncertainty: bool,
     approximation: Option<ApproximationMode>,
     fraction_format: Option<u32>,
+    min_exp: Option<i32>,
+    exp_display: Option<u8>,
+    min_decimals: Option<i32>,
+    max_decimals: Option<i32>,
 }
 
 impl NativeSessionSettings {
@@ -66,6 +70,18 @@ impl NativeSessionSettings {
                     SetSetting::FractionFormat(2) => {
                         state.fraction_format = Some(2);
                     }
+                    SetSetting::EngineeringDisplay(ed) if ed <= 2 => {
+                        state.exp_display = Some(ed);
+                    }
+                    SetSetting::MinExponent(v) => {
+                        state.min_exp = Some(v);
+                    }
+                    SetSetting::MinDecimals(v) => {
+                        state.min_decimals = Some(v);
+                    }
+                    SetSetting::MaxDecimals(v) => {
+                        state.max_decimals = Some(v);
+                    }
                     _ => return None,
                 },
                 SessionCommand::Assume(_) => {}
@@ -98,6 +114,10 @@ impl NativeSessionSettings {
             && !self.concise_uncertainty
             && self.approximation.is_none()
             && self.fraction_format.is_none()
+            && self.min_exp.is_none()
+            && self.exp_display.is_none()
+            && self.min_decimals.is_none()
+            && self.max_decimals.is_none()
     }
 
     /// Returns true when settings can be applied to the vetted numeric
@@ -140,6 +160,33 @@ impl NativeSessionSettings {
     #[allow(dead_code)]
     pub(crate) const fn has_fraction_format(self) -> bool {
         self.fraction_format.is_some()
+    }
+
+    pub(crate) const fn has_print_format_settings(self) -> bool {
+        self.min_exp.is_some()
+            || self.exp_display.is_some()
+            || self.min_decimals.is_some()
+            || self.max_decimals.is_some()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn min_exp(self) -> Option<i32> {
+        self.min_exp
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn exp_display(self) -> Option<u8> {
+        self.exp_display
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn min_decimals(self) -> Option<i32> {
+        self.min_decimals
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn max_decimals(self) -> Option<i32> {
+        self.max_decimals
     }
 }
 
@@ -235,6 +282,10 @@ mod tests {
                 concise_uncertainty: true,
                 approximation: None,
                 fraction_format: None,
+                min_exp: None,
+                exp_display: None,
+                min_decimals: None,
+                max_decimals: None,
             })
         );
         assert_eq!(
@@ -248,6 +299,32 @@ mod tests {
                 concise_uncertainty: false,
                 approximation: Some(ApproximationMode::Exact),
                 fraction_format: Some(2),
+                min_exp: None,
+                exp_display: None,
+                min_decimals: None,
+                max_decimals: None,
+            })
+        );
+        assert_eq!(
+            NativeSessionSettings::from_raw(&[
+                "set exp 3",
+                "set edisp 2",
+                "set min decimals 2",
+                "set max decimals 4",
+            ]),
+            Some(NativeSessionSettings {
+                input_base: None,
+                unicode: false,
+                precision_digits: None,
+                interval_display: None,
+                interval_calculation: None,
+                concise_uncertainty: false,
+                approximation: None,
+                fraction_format: None,
+                min_exp: Some(3),
+                exp_display: Some(2),
+                min_decimals: Some(2),
+                max_decimals: Some(4),
             })
         );
     }

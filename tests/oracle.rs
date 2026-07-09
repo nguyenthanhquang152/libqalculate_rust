@@ -125,6 +125,64 @@ const ISSUE55_ADDITIONAL_NUMBER_FORMATTING_CASES: &[(&str, &str, &[&str])] = &[
         "12345678905000",
         &[],
     ),
+    (
+        "issue55-exp-off-large-integer",
+        "10000000000000",
+        &["set exp 0"],
+    ),
+    (
+        "issue55-exp-off-large-integer-alias",
+        "12345678901234",
+        &["set exp off"],
+    ),
+    ("issue55-exp-scientific-threshold", "10000", &["set exp 3"]),
+    (
+        "issue55-exp-engineering-threshold",
+        "10000",
+        &["set exp -3"],
+    ),
+    ("issue55-edisp-lowercase", "1e303", &["set edisp 1"]),
+    (
+        "issue55-edisp-power-of-ten",
+        "12345678901234",
+        &["set edisp 2"],
+    ),
+    (
+        "issue55-edisp-power-of-ten-unit-mantissa",
+        "10000000000000",
+        &["set edisp 2"],
+    ),
+    (
+        "issue55-max-decimals-rounds-down",
+        "1/3",
+        &["set max decimals 2"],
+    ),
+    (
+        "issue55-max-decimals-rounds-up",
+        "2/3",
+        &["set max decimals 2"],
+    ),
+    (
+        "issue55-max-decimals-scientific-mantissa",
+        "12345678901234",
+        &["set max decimals 2"],
+    ),
+    ("issue55-min-decimals-integer", "1", &["set min decimals 2"]),
+    (
+        "issue55-min-decimals-decimal",
+        "1.2",
+        &["set min decimals 4"],
+    ),
+    (
+        "issue55-min-decimals-scientific-mantissa",
+        "10000000000000",
+        &["set min decimals 2"],
+    ),
+    (
+        "issue55-min-decimals-large-scientific-mantissa",
+        "1e303",
+        &["set min decimals 4"],
+    ),
 ];
 
 const ISSUE52_DATE_NATIVE_CASES: &[(&str, &str)] = &[
