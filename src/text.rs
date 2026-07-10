@@ -661,6 +661,29 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     }
 }
 
+pub(crate) fn format_qalc_equation(input: &str, output: &str) -> String {
+    let formatted_input = match crate::parser::operators::parse_expression(input) {
+        Ok(expression) => {
+            if let Expression::Conversion { target, .. } = &expression {
+                if let Expression::Symbolic(symbol) = target.as_ref() {
+                    if symbol.name().eq_ignore_ascii_case("latex")
+                        || symbol.name().eq_ignore_ascii_case("html")
+                    {
+                        return output.to_string();
+                    }
+                }
+            }
+            format_raw_expression(&expression)
+        }
+        Err(_) => input.trim().to_string(),
+    };
+
+    match output.rsplit_once('\n') {
+        Some((messages, result)) => format!("{messages}\n{formatted_input} = {result}"),
+        None => format!("{formatted_input} = {output}"),
+    }
+}
+
 pub(crate) fn unicode_len(text: &str) -> usize {
     text.chars().count()
 }
@@ -742,12 +765,25 @@ fn format_nary_raw(parent: &Expression, children: &NaryChildren, op: &str) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::{format_raw_expression, format_result_with_numbers};
+    use super::{format_qalc_equation, format_raw_expression, format_result_with_numbers};
     use crate::ast::{
         ComparisonOperator, Expression, FunctionRef, NaryChildren, PrefixRef, Symbol, UnitRef,
         VariableRef,
     };
     use crate::number::Number;
+
+    #[test]
+    fn qalc_equation_formats_input_and_preserves_message_lines() {
+        assert_eq!(format_qalc_equation("1+1", "2"), "1 + 1 = 2");
+        assert_eq!(
+            format_qalc_equation("warning(1)", "warning: first\n0"),
+            "warning: first\nwarning(1) = 0"
+        );
+        assert_eq!(
+            format_qalc_equation("1/2 to latex", "$\\displaystyle \\frac{1}{2}$"),
+            "$\\displaystyle \\frac{1}{2}$"
+        );
+    }
     use crate::parser::operators::parse_expression;
     use proptest::prelude::*;
 

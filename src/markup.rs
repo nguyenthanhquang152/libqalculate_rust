@@ -224,6 +224,29 @@ where
     })
 }
 
+pub(crate) fn format_markup_result_only<F>(
+    evaluated: &Expression,
+    mode: MarkupMode,
+    format_number: &F,
+) -> Option<String>
+where
+    F: Fn(&Number) -> String,
+{
+    let rhs = format_markup_result_expression(evaluated, mode, format_number)?;
+    let approximate = markup_result_is_approximate(evaluated);
+
+    Some(match mode {
+        MarkupMode::Latex => {
+            if approximate {
+                format!("$\\displaystyle \\num{{{}}}$", rhs)
+            } else {
+                format!("${}$", rhs)
+            }
+        }
+        MarkupMode::Html => rhs,
+    })
+}
+
 fn format_markup_result_expression<F>(
     expr: &Expression,
     mode: MarkupMode,

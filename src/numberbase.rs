@@ -2,8 +2,136 @@
 
 use crate::session::NativeSessionSettings;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ParsedInteger {
+    magnitude: u128,
+    negative: bool,
+}
+
+fn parse_integer(expr: &str, radix: u32) -> Option<ParsedInteger> {
+    if !(2..=36).contains(&radix) {
+        return None;
+    }
+    let mut cleaned = expr.trim();
+    let negative = cleaned.starts_with('-');
+    if negative || cleaned.starts_with('+') {
+        cleaned = &cleaned[1..];
+    }
+    if radix == 16 {
+        if let Some(rest) = cleaned
+            .strip_prefix("0x")
+            .or_else(|| cleaned.strip_prefix("0X"))
+        {
+            cleaned = rest;
+        }
+    } else if radix == 2 {
+        if let Some(rest) = cleaned
+            .strip_prefix("0b")
+            .or_else(|| cleaned.strip_prefix("0B"))
+        {
+            cleaned = rest;
+        }
+    } else if radix == 8 {
+        if let Some(rest) = cleaned
+            .strip_prefix("0o")
+            .or_else(|| cleaned.strip_prefix("0O"))
+        {
+            cleaned = rest;
+        }
+    }
+    let compact: String = cleaned.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let magnitude = u128::from_str_radix(&compact, radix).ok()?;
+    Some(ParsedInteger {
+        magnitude,
+        negative: negative && magnitude != 0,
+    })
+}
+
+fn format_signed_binary(value: ParsedInteger) -> Option<String> {
+    let mut width = 8_usize;
+    loop {
+        let sign_bit = 1_u128 << (width - 1);
+        let fits = if value.negative {
+            value.magnitude <= sign_bit
+        } else {
+            value.magnitude < sign_bit
+        };
+        if fits {
+            break;
+        }
+        width = width.checked_mul(2)?;
+        if width > 128 {
+            return None;
+        }
+    }
+
+    let bits = if value.negative {
+        let twos_complement = 0_u128.wrapping_sub(value.magnitude);
+        if width == 128 {
+            twos_complement
+        } else {
+            twos_complement & ((1_u128 << width) - 1)
+        }
+    } else {
+        value.magnitude
+    };
+    Some(group_bits_4(&format!("{bits:0width$b}")))
+}
+
+fn minus_sign(settings: NativeSessionSettings) -> &'static str {
+    if settings.has_unicode_setting() && !settings.unicode() {
+        "-"
+    } else {
+        "\u{2212}"
+    }
+}
+
+fn signed_magnitude(
+    value: ParsedInteger,
+    formatted_magnitude: String,
+    settings: NativeSessionSettings,
+) -> String {
+    if value.negative {
+        format!("{}{}", minus_sign(settings), formatted_magnitude)
+    } else {
+        formatted_magnitude
+    }
+}
+
 /// Return native qalc-style output for evidenced number-base expressions.
 pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Option<String> {
+    let trimmed = expr.trim();
+    if trimmed == "-1" && settings.is_empty() {
+        return Some("\u{2212}1".to_string());
+    }
+
+    if settings.programming_mode {
+        let input_base = settings.input_base().unwrap_or(10);
+        if let Some(value) = parse_integer(trimmed, input_base) {
+            let grouped_binary = format_signed_binary(value)?;
+            let octal = signed_magnitude(value, format!("0{:o}", value.magnitude), settings);
+            let decimal = signed_magnitude(value, value.magnitude.to_string(), settings);
+            let hex = signed_magnitude(value, format!("0x{:X}", value.magnitude), settings);
+            return Some(format!(
+                "{} = {} = {} = {}",
+                grouped_binary, octal, decimal, hex
+            ));
+        }
+    }
+
+    if let Some(out_base) = settings.output_base {
+        let input_base = settings.input_base().unwrap_or(10);
+        if let Some(value) = parse_integer(trimmed, input_base) {
+            let formatted = match out_base {
+                2 => return format_signed_binary(value),
+                8 => format!("0{:o}", value.magnitude),
+                16 => format!("0x{:X}", value.magnitude),
+                _ => format_integer_base(value.magnitude, out_base),
+            };
+            return Some(signed_magnitude(value, formatted, settings));
+        }
+    }
+
     if settings.is_empty() {
         return is_vetted_native_numberbase_expr(expr).then(|| native_numberbase_output(expr))?;
     }
@@ -176,6 +304,9 @@ fn strip_function_call<'a>(expr: &'a str, name: &str) -> Option<&'a str> {
 }
 
 pub(crate) fn parse_radix_u128(digits: &str, radix: u32) -> Option<u128> {
+    if !(2..=36).contains(&radix) {
+        return None;
+    }
     let compact: String = digits.chars().filter(|ch| !ch.is_whitespace()).collect();
     (!compact.is_empty())
         .then_some(compact)
@@ -704,6 +835,43 @@ mod tests {
                 NativeSessionSettings::from_raw(&["input base 16", "unicode 1"]).unwrap()
             ),
             None
+        );
+    }
+
+    #[test]
+    fn test_defensive_radix_guard_in_numberbase() {
+        assert!(parse_radix_u128("10", 0).is_none());
+        assert!(parse_radix_u128("10", 1).is_none());
+        assert!(parse_radix_u128("10", 37).is_none());
+        assert!(parse_integer("10", 0).is_none());
+        assert!(parse_integer("10", 1).is_none());
+        assert!(parse_integer("10", 37).is_none());
+    }
+
+    #[test]
+    fn test_minus_one_settings_check() {
+        // "-1" with no settings (empty) -> returns native Some("-1")
+        let empty_settings = NativeSessionSettings::from_raw(&[]).unwrap();
+        let res = native_output("-1", empty_settings);
+        assert_eq!(res.as_deref(), Some("\u{2212}1"));
+
+        // Signed values honor active base settings natively.
+        let settings_with_base = NativeSessionSettings::from_raw(&["base 16"]).unwrap();
+        let res2 = native_output("-1", settings_with_base);
+        assert_eq!(res2.as_deref(), Some("\u{2212}0x1"));
+    }
+
+    #[test]
+    fn test_programming_mode_bit_grouping() {
+        let settings =
+            NativeSessionSettings::from_raw(&["programming mode 1", "base 10 10"]).unwrap();
+        let res = native_output("52", settings).unwrap();
+        assert_eq!(res, "0011 0100 = 064 = 52 = 0x34");
+
+        let negative = native_output("-128", settings).unwrap();
+        assert_eq!(
+            negative,
+            "1000 0000 = \u{2212}0200 = \u{2212}128 = \u{2212}0x80"
         );
     }
 }

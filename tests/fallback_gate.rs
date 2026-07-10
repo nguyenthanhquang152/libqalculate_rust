@@ -41,6 +41,7 @@ fn run_qalc_rs_args_in_dir(
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
         .arg("--")
+        .arg("-t")
         .args(args)
         .env("LC_ALL", "C")
         .env("LANG", "C")

@@ -268,6 +268,23 @@ impl Calculator {
         self.calculate_with_profile_and_settings(PrintProfile::Qalc, expr, timeout_ms, settings)
     }
 
+    /// Evaluate an expression and format the parsed/result pair as a non-terse qalc equation.
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled.
+    pub fn calculate_and_print_qalc_equation_with_settings_and_fallback_state(
+        &mut self,
+        expr: &str,
+        settings: &[&str],
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        let mut result = self.calculate_and_print_qalc_with_settings_and_fallback_state(
+            expr, settings, timeout_ms,
+        )?;
+        result.output = crate::text::format_qalc_equation(expr, &result.output);
+        Ok(result)
+    }
+
     /// Evaluate an expression and format the parsed/result pair as LaTeX markup.
     ///
     /// # Errors
@@ -279,7 +296,7 @@ impl Calculator {
         settings: &[&str],
         _timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_markup_with_settings(crate::markup::MarkupMode::Latex, expr, settings)
+        self.calculate_markup_with_settings(crate::markup::MarkupMode::Latex, expr, settings, false)
     }
 
     /// Evaluate an expression and format the parsed/result pair as HTML markup.
@@ -293,7 +310,35 @@ impl Calculator {
         settings: &[&str],
         _timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_markup_with_settings(crate::markup::MarkupMode::Html, expr, settings)
+        self.calculate_markup_with_settings(crate::markup::MarkupMode::Html, expr, settings, false)
+    }
+
+    /// Evaluate an expression and format the parsed/result pair as LaTeX markup (terse/result-only).
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if the expression is outside the native
+    /// markup evidence slice or if evaluation fails.
+    pub fn calculate_and_print_qalc_latex_terse_with_settings_and_fallback_state(
+        &mut self,
+        expr: &str,
+        settings: &[&str],
+        _timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_markup_with_settings(crate::markup::MarkupMode::Latex, expr, settings, true)
+    }
+
+    /// Evaluate an expression and format the parsed/result pair as HTML markup (terse/result-only).
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if the expression is outside the native
+    /// markup evidence slice or if evaluation fails.
+    pub fn calculate_and_print_qalc_html_terse_with_settings_and_fallback_state(
+        &mut self,
+        expr: &str,
+        settings: &[&str],
+        _timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_markup_with_settings(crate::markup::MarkupMode::Html, expr, settings, true)
     }
 
     fn calculate_markup_with_settings(
@@ -301,9 +346,11 @@ impl Calculator {
         mode: crate::markup::MarkupMode,
         expr: &str,
         settings: &[&str],
+        terse: bool,
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
-        if let Some(output) = native_markup_output(mode, expr, settings, &mut self.native_context)?
+        if let Some(output) =
+            native_markup_output(mode, expr, settings, terse, &mut self.native_context)?
         {
             return Ok(CalculationOutput {
                 output,
@@ -443,25 +490,27 @@ fn native_markup_conversion_output(
         return Ok(None);
     };
 
-    native_markup_output_for_parsed(mode, &inner, settings, context)
+    native_markup_output_for_parsed(mode, &inner, settings, false, context)
 }
 
 fn native_markup_output(
     mode: crate::markup::MarkupMode,
     expr: &str,
     settings: &[&str],
+    terse: bool,
     context: &mut crate::context::CalculatorContext,
 ) -> Result<Option<String>, CalculatorError> {
     let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
         return Ok(None);
     };
-    native_markup_output_for_parsed(mode, &parsed, settings, context)
+    native_markup_output_for_parsed(mode, &parsed, settings, terse, context)
 }
 
 fn native_markup_output_for_parsed(
     mode: crate::markup::MarkupMode,
     parsed: &crate::ast::Expression,
     settings: &[&str],
+    terse: bool,
     context: &mut crate::context::CalculatorContext,
 ) -> Result<Option<String>, CalculatorError> {
     let Some(parsed_settings) = crate::session::NativeSessionSettings::from_raw(settings) else {
@@ -473,7 +522,7 @@ fn native_markup_output_for_parsed(
     let evaluated =
         crate::eval::evaluate_ast(parsed, &mut markup_context).unwrap_or_else(|_| parsed.clone());
     let precision_digits = parsed_settings.precision_digits();
-    let output = crate::markup::format_markup_equation(parsed, &evaluated, mode, &|num| {
+    let formatter = |num: &crate::number::Number| {
         num.to_qalc_string_with_settings(
             precision_digits,
             parsed_settings.min_exp(),
@@ -481,8 +530,13 @@ fn native_markup_output_for_parsed(
             parsed_settings.min_decimals(),
             parsed_settings.max_decimals(),
         )
-    })
-    .ok_or_else(|| {
+    };
+    let output = if terse {
+        crate::markup::format_markup_result_only(&evaluated, mode, &formatter)
+    } else {
+        crate::markup::format_markup_equation(parsed, &evaluated, mode, &formatter)
+    };
+    let output = output.ok_or_else(|| {
         CalculatorError::NativeEvaluation("failed to format native markup output".to_string())
     })?;
     Ok(Some(output))

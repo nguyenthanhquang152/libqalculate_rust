@@ -1,27 +1,25 @@
 use assert_cmd::Command;
+use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 use predicates::prelude::*;
 use std::path::Path;
 use tempfile::tempdir;
 
 #[test]
 fn cli_prints_version() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("upstream libqalculate 5.11.0"));
+        .stdout(format!("{UPSTREAM_LIBQALCULATE_VERSION}\n"));
 }
 
 #[test]
 fn cli_prints_help() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("--parse-batch <path>"))
-        .stdout(predicate::str::contains(
-            "Limited native-evidence qalc setting support",
-        ));
+        .stdout(format!("{}\n", include_str!("../src/cli/help.txt")));
 }
 
 #[test]
@@ -31,7 +29,7 @@ fn cli_self_check_finds_upstream_fixtures() {
         return;
     }
 
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.arg("--self-check")
         .assert()
         .success()
@@ -41,7 +39,7 @@ fn cli_self_check_finds_upstream_fixtures() {
 #[test]
 fn cli_self_check_uses_configured_upstream_dir() {
     let upstream = fake_upstream();
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.arg("--self-check")
         .env("LIBQALCULATE_UPSTREAM_DIR", upstream.path())
         .assert()
@@ -52,7 +50,7 @@ fn cli_self_check_uses_configured_upstream_dir() {
 #[test]
 fn cli_lists_only_batch_fixtures_from_configured_upstream_dir() {
     let upstream = fake_upstream();
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     let output = cmd
         .arg("--list-upstream-tests")
         .env("LIBQALCULATE_UPSTREAM_DIR", upstream.path())
@@ -68,7 +66,7 @@ fn cli_lists_only_batch_fixtures_from_configured_upstream_dir() {
 
 #[test]
 fn cli_parse_batch_reports_case_count() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.arg("--parse-batch")
         .arg("tests/fixtures/regression/basic_numbers.batch")
         .assert()
@@ -1228,16 +1226,13 @@ fn cli_rejects_unsupported_uncertainty_special_function_when_fallback_disabled()
 
 #[test]
 fn cli_rejects_unknown_arguments() {
-    let mut cmd = qalc_rs();
-    cmd.arg("--definitely-unknown")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("unknown argument"));
+    let mut cmd = qalc_rs_raw();
+    cmd.arg("--definitely-unknown").assert().failure();
 }
 
 #[test]
 fn cli_formats_native_latex_markup_with_fallback_disabled() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.args(["--latex", "-set", "precision 10", "--", "1/2 + sqrt(2)"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
@@ -1252,7 +1247,7 @@ fn cli_formats_native_latex_markup_with_fallback_disabled() {
 
 #[test]
 fn cli_formats_native_html_markup_with_fallback_disabled() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.args(["--html", "-set", "precision 10", "--", "1/2 + sqrt(2)"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
@@ -1267,7 +1262,7 @@ fn cli_formats_native_html_markup_with_fallback_disabled() {
 
 #[test]
 fn cli_formats_native_html_symbolic_comparison_markup() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.args(["--html", "-set", "assumptions unknown", "--", "x<y"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
@@ -1282,7 +1277,7 @@ fn cli_formats_native_html_symbolic_comparison_markup() {
 
 #[test]
 fn cli_supports_to_latex_conversion_markup_with_fallback_disabled() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.args(["-set", "precision 10", "--", "1/2 + sqrt(2) to latex"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
@@ -1297,7 +1292,7 @@ fn cli_supports_to_latex_conversion_markup_with_fallback_disabled() {
 
 #[test]
 fn cli_supports_to_html_conversion_markup_with_fallback_disabled() {
-    let mut cmd = qalc_rs();
+    let mut cmd = qalc_rs_raw();
     cmd.args(["-set", "assumptions unknown", "--", "(x<y) to html"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
@@ -1314,7 +1309,128 @@ fn qalc_rs() -> Command {
     let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
     cmd.env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");
+    cmd.arg("-t");
     cmd
+}
+
+fn qalc_rs_raw() -> Command {
+    let mut cmd = Command::cargo_bin("qalc-rs").expect("binary should build");
+    cmd.env_remove("QALCULATE_DISABLE_FALLBACK")
+        .env_remove("QALCULATE_REPORT_FALLBACK");
+    cmd
+}
+
+#[test]
+fn cli_help_and_version_aliases_match_upstream() {
+    let help = format!("{}\n", include_str!("../src/cli/help.txt"));
+    let version = format!("{UPSTREAM_LIBQALCULATE_VERSION}\n");
+    let cases = [
+        ("-h", help.clone()),
+        ("-help", help.clone()),
+        ("--help", help),
+        ("-v", version.clone()),
+        ("-version", version.clone()),
+        ("--version", version),
+    ];
+
+    for (alias, expected) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.arg(alias).assert().success().stdout(expected);
+    }
+}
+
+#[test]
+fn cli_default_and_terse_output_match_upstream() {
+    let cases = [("1 + 1", false, "1 + 1 = 2\n"), ("1 + 1", true, "2\n")];
+
+    for (expr, is_terse, expected) in cases {
+        let mut cmd = if is_terse { qalc_rs() } else { qalc_rs_raw() };
+        cmd.arg(expr)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .assert()
+            .success()
+            .stdout(expected);
+    }
+}
+
+#[test]
+fn cli_unknown_option_before_separator_matches_upstream() {
+    let cases = [
+        (
+            vec!["--definitely-unknown", "--", "1+1"],
+            "Unrecognized option: --definitely-unknown.\n1 + 1 = 2\n",
+        ),
+        (
+            vec!["-foo", "-bar", "--", "1+1"],
+            "Unrecognized option: -foo.\nUnrecognized option: -bar.\n1 + 1 = 2\n",
+        ),
+    ];
+
+    for (args, expected) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .assert()
+            .success()
+            .stdout(expected);
+    }
+
+    let mut version_after_diagnostic = qalc_rs_raw();
+    version_after_diagnostic
+        .args(["--definitely-unknown", "-v", "--", "1+1"])
+        .assert()
+        .success()
+        .stdout(format!(
+            "Unrecognized option: --definitely-unknown.\n{UPSTREAM_LIBQALCULATE_VERSION}\n"
+        ));
+}
+
+#[test]
+fn cli_evaluation_flag_matrix_matches_upstream() {
+    let cases = [
+        (vec!["-t", "-b", "16", "255"], "0xFF\n"),
+        (vec!["-t", "-s", "base 16", "255"], "0xFF\n"),
+        (
+            vec!["-t", "-p", "16", "255"],
+            "0000 0010 0101 0101 = 01125 = 597 = 0x255\n",
+        ),
+        (
+            vec!["-t", "-p", "10", "52"],
+            "0011 0100 = 064 = 52 = 0x34\n",
+        ),
+        (
+            vec!["-t", "-p", "10", "--", "-128"],
+            "1000 0000 = −0200 = −128 = −0x80\n",
+        ),
+        (vec!["-t", "-b", "2", "5"], "0000 0101\n"),
+        (vec!["-t", "-b", "2", "--", "-5"], "1111 1011\n"),
+        (vec!["-t", "-b", "8", "--", "-5"], "−05\n"),
+        (vec!["-t", "+u8", "-b", "8", "--", "-5"], "-05\n"),
+        (vec!["-t", "+p", "255"], "255\n"),
+        (
+            vec!["-t", "-p", "16", "+p", "255"],
+            "0000 0000 1111 1111 = 0377 = 255 = 0xFF\n",
+        ),
+        (vec!["-t", "-u8", "52.34 to sexa"], "52°20′24″\n"),
+        (vec!["-t", "+u8", "52.34 to sexa"], "52o20'24\"\n"),
+        (vec!["-t", "--latex", "1/2"], "$0.5$\n"),
+        (vec!["-t", "--html", "1/2"], "0.5\n"),
+        (vec!["-t", "--", "-1"], "−1\n"),
+    ];
+
+    for (args, expected) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
 }
 
 fn fake_upstream() -> tempfile::TempDir {
@@ -1329,4 +1445,298 @@ fn fake_upstream() -> tempfile::TempDir {
 
 fn definitions_dir() -> &'static str {
     "../libqalculate/data"
+}
+
+#[test]
+fn cli_definition_and_listing_flags_are_effective() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["--list-functions", "sinc"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("sinc (Cardinal Sine (Sinc Function))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut cmd2 = qalc_rs_raw();
+    cmd2.args(["--list-units", "mWC"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("mWC / mwg / mH\u{2082}O (Meter of Water)\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut cmd3 = qalc_rs_raw();
+    cmd3.args(["--list-variables", "Archimedes"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("pi / \u{03c0} (Archimedes' Constant (pi))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut cmd4 = qalc_rs_raw();
+    cmd4.args(["--list-prefixes", "mega"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("\t\tmega / M\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut cmd5 = qalc_rs_raw();
+    cmd5.args(["-nodatasets", "--list-functions", "atom"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("No matching item found.\n\n");
+}
+
+#[test]
+fn cli_usd_currency_searches() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["--list-units", "USD"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cent / ¢ (Cent (USD))"))
+        .stdout(predicate::str::contains("dollar"))
+        .stdout(predicate::str::contains("USD"));
+
+    let temp = tempdir().expect("temp dir should be created");
+    std::fs::copy(
+        Path::new(definitions_dir()).join("currencies.xml.in"),
+        temp.path().join("currencies.xml.in"),
+    )
+    .expect("currency fixture should be copied");
+    let mut cmd2 = qalc_rs_raw();
+    cmd2.args(["-nounits", "--list-units", "USD"])
+        .env("QALCULATE_DEFINITIONS_DIR", temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dollar"))
+        .stdout(predicate::str::contains("USD"));
+
+    let mut cmd3 = qalc_rs_raw();
+    cmd3.args(["-nocurrencies", "--list-units", "USD"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("No matching item found.\n\n");
+
+    let mut country = qalc_rs_raw();
+    country
+        .args(["-l", "United"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("United Arab Emirates Dirham"))
+        .stdout(predicate::str::contains("British Pound"))
+        .stdout(predicate::str::contains("U.S. Dollar"));
+}
+
+#[test]
+fn cli_unfiltered_prefix_list_uses_loaded_catalog() {
+    let mut cmd = qalc_rs_raw();
+    cmd.arg("--list-prefixes")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kilo / k"))
+        .stdout(predicate::str::contains(
+            "For more information about a specific function",
+        ));
+}
+
+#[test]
+fn cli_unfiltered_all_list_does_not_load_global_catalogs() {
+    let temp = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs_raw();
+    cmd.arg("--list")
+        .env("QALCULATE_DEFINITIONS_DIR", temp.path())
+        .assert()
+        .success()
+        .stdout("\nNo local variables, functions or units have been defined.\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+}
+
+#[test]
+fn cli_list_missing_file_fails() {
+    let temp = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["--list-prefixes", "mega"])
+        .env("QALCULATE_DEFINITIONS_DIR", temp.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to load"));
+}
+
+#[test]
+fn cli_list_disable_selection_does_not_load_file() {
+    let temp = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-nounits", "--list-prefixes", "mega"])
+        .env("QALCULATE_DEFINITIONS_DIR", temp.path())
+        .assert()
+        .success()
+        .stdout("No matching item found.\n\n");
+}
+
+#[test]
+fn cli_defaults_ignores_persistent_config_files() {
+    let temp_home = tempdir().expect("temporary home should be created");
+    let temp_xdg = tempdir().expect("temporary config root should be created");
+    let qalc_config_dir = temp_xdg.path().join("qalculate");
+    std::fs::create_dir_all(&qalc_config_dir).expect("config directory should be created");
+    std::fs::write(qalc_config_dir.join("qalc.cfg"), "base 16\n")
+        .expect("poison config should be written");
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["--defaults", "1+1"])
+        .env("HOME", temp_home.path())
+        .env("XDG_CONFIG_HOME", temp_xdg.path())
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("1 + 1 = 2\n");
+}
+
+#[test]
+fn cli_rates_success_and_failure() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-e"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("")
+        .stderr("");
+
+    let temp = tempdir().expect("temp dir should be created");
+    let mut cmd2 = qalc_rs_raw();
+    cmd2.args(["-e"])
+        .env("QALCULATE_DEFINITIONS_DIR", temp.path())
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("error: failed to load rates JSON"));
+}
+
+#[test]
+fn cli_color_on_off_cases() {
+    let mut cmd_off = qalc_rs_raw();
+    cmd_off
+        .args(["-c0", "1+1"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("1 + 1 = 2\n");
+
+    let mut cmd_on = qalc_rs_raw();
+    cmd_on
+        .args(["-c1", "1+1"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "forced coloring is not implemented (owner issue: #198)",
+        ));
+}
+
+#[test]
+fn cli_nodefs_flag_evaluation() {
+    let mut cmd = qalc_rs();
+    cmd.args(["-nodefs", r#"message("hello")"#])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("hello\n0\n");
+
+    let mut cmd_fail = qalc_rs_raw();
+    cmd_fail
+        .args(["-nodefs", "1+1"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("incompatible with fallback"));
+}
+
+#[test]
+fn cli_selective_definition_fallback_rejection() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-nofunctions", "1+1"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "selective definitions are incompatible with fallback",
+        ));
+
+    let mut cmd_disabled = qalc_rs();
+    cmd_disabled
+        .args(["-nofunctions", r#"message("hello")"#])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("hello\n0\n");
+}
+
+#[test]
+fn test_task5_handoff_contract() {
+    let cases: &[(&[&str], &str)] = &[
+        (
+            &["-i"],
+            "error: Interactive mode is not implemented (owner #61)\n",
+        ),
+        (
+            &["-interactive"],
+            "error: Interactive mode is not implemented (owner #61)\n",
+        ),
+        (
+            &["--interactive"],
+            "error: Interactive mode is not implemented (owner #61)\n",
+        ),
+        (
+            &["-f", "dummy_file.txt"],
+            "error: Command file execution is not implemented (owner #62)\n",
+        ),
+        (
+            &["-file", "dummy_file.txt"],
+            "error: Command file execution is not implemented (owner #62)\n",
+        ),
+        (
+            &["--file", "dummy_file.txt"],
+            "error: Command file execution is not implemented (owner #62)\n",
+        ),
+        (
+            &["--test-file", "dummy_test.batch"],
+            "error: Test file execution is not implemented (owner #63)\n",
+        ),
+        (
+            &["-i", "-f", "dummy.txt", "1+1"],
+            "error: Interactive mode is not implemented (owner #61)\n",
+        ),
+        (
+            &["-f", "dummy.txt", "1+1"],
+            "error: Command file execution is not implemented (owner #62)\n",
+        ),
+        (
+            &[
+                "--test-file",
+                "dummy_test.batch",
+                "-i",
+                "-v",
+                "--help",
+                "1+1",
+            ],
+            "error: Test file execution is not implemented (owner #63)\n",
+        ),
+        (
+            &["-defaults"],
+            "error: Interactive mode is not implemented (owner #61)\n",
+        ),
+    ];
+
+    for (args, expected_stderr) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(*args)
+            .assert()
+            .code(2)
+            .stdout("")
+            .stderr(*expected_stderr);
+    }
 }
