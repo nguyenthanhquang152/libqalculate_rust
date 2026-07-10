@@ -1385,6 +1385,20 @@ fn cli_nonterse_relation_matches_upstream_exactness() {
             .success()
             .stdout(expected);
     }
+
+    for unicode_args in [
+        vec!["+u8", "--", "1/3"],
+        vec!["-set", "unicode 0", "--", "1/3"],
+    ] {
+        let mut ascii = qalc_rs_raw();
+        ascii
+            .args(unicode_args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout("1 / 3 = approx. 0.3333333333\n");
+    }
 }
 
 #[test]
@@ -1457,6 +1471,37 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
             "0000 0001 = 01 = 1 = 0x1\n",
         ),
         (vec!["-t", "-s", "xor^ 1", "--", "2^3"], "1\n"),
+        (
+            vec![
+                "-t",
+                "-b",
+                "16",
+                "--",
+                "340282366920938463463374607431768211456",
+            ],
+            "0x100000000000000000000000000000000\n",
+        ),
+        (
+            vec!["-t", "-p", "16", "--", "A&F"],
+            "0000 1010 = 012 = 10 = 0xA\n",
+        ),
+        (
+            vec!["-t", "-p", "16", "--", "1<<8"],
+            "0000 0001 0000 0000 = 0400 = 256 = 0x100\n",
+        ),
+        (vec!["-t", "-set", "output base 32", "--", "52"], "1K\n"),
+        (
+            vec![
+                "-t",
+                "-set",
+                "input base 32",
+                "-set",
+                "output base 10",
+                "--",
+                "1K",
+            ],
+            "52\n",
+        ),
         (vec!["-t", "-b", "10", "--", "1/3"], "0.3333333333\n"),
         (vec!["-t", "-b", "10 10", "--", "1/3"], "0.3333333333\n"),
         (vec!["-t", "+p", "--", "1/3"], "0.3333333333\n"),
@@ -1708,6 +1753,29 @@ fn cli_definition_and_listing_flags_are_effective() {
         .assert()
         .success()
         .stdout("sinc (Cardinal Sine (Sinc Function))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    for args in [
+        vec![
+            "-f",
+            "/tmp/does-not-exist-pr200",
+            "--list-functions",
+            "sinc",
+        ],
+        vec![
+            "--list-functions",
+            "sinc",
+            "--test-file",
+            "/tmp/does-not-exist-pr200",
+        ],
+    ] {
+        let mut list_before_file_workflow = qalc_rs_raw();
+        list_before_file_workflow
+            .args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .assert()
+            .success()
+            .stdout("sinc (Cardinal Sine (Sinc Function))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+    }
 }
 
 #[test]
@@ -1876,14 +1944,13 @@ fn cli_nodefs_flag_evaluation() {
         .success()
         .stdout("hello\n0\n");
 
-    let mut cmd_fail = qalc_rs_raw();
-    cmd_fail
+    let mut definition_free = qalc_rs_raw();
+    definition_free
         .args(["-nodefs", "1+1"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .assert()
-        .failure()
-        .code(2)
-        .stderr(predicate::str::contains("incompatible with fallback"));
+        .success()
+        .stdout("1 + 1 = 2\n");
 
     let mut definition_backed = qalc_rs_raw();
     definition_backed
@@ -1901,16 +1968,6 @@ fn cli_nodefs_flag_evaluation() {
 
 #[test]
 fn cli_selective_definition_fallback_rejection() {
-    let mut cmd = qalc_rs_raw();
-    cmd.args(["-nofunctions", "1+1"])
-        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
-        .assert()
-        .failure()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "selective definitions are incompatible with fallback",
-        ));
-
     let mut cmd_disabled = qalc_rs_raw();
     cmd_disabled
         .args(["-nofunctions", r#"message("hello")"#])
@@ -1942,6 +1999,14 @@ fn cli_selective_definition_fallback_rejection() {
         "-novariables",
         "-nodatasets",
     ] {
+        let mut default_path = qalc_rs_raw();
+        default_path
+            .args([flag, "1+1"])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .assert()
+            .success()
+            .stdout("1 + 1 = 2\n");
+
         let mut definition_free = qalc_rs_raw();
         definition_free
             .args(["-t", flag, "--", "1+1"])

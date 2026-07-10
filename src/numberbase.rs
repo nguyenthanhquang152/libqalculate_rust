@@ -1,10 +1,11 @@
 //! Native number-base output helpers for the fallback-disabled oracle subset.
 
 use crate::session::NativeSessionSettings;
+use rug::Integer;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedInteger {
-    magnitude: u128,
+    magnitude: Integer,
     negative: bool,
 }
 
@@ -40,10 +41,10 @@ fn parse_integer(expr: &str, radix: u32) -> Option<ParsedInteger> {
         }
     }
     let compact: String = cleaned.chars().filter(|ch| !ch.is_whitespace()).collect();
-    let magnitude = u128::from_str_radix(&compact, radix).ok()?;
+    let magnitude = Integer::from_str_radix(&compact, i32::try_from(radix).ok()?).ok()?;
     Some(ParsedInteger {
-        magnitude,
         negative: negative && magnitude != 0,
+        magnitude,
     })
 }
 
@@ -73,8 +74,15 @@ fn parse_or_evaluate_integer(
         } else {
             crate::number::evaluate_expr(&decimal_expr).ok()?
         };
-        let integer = evaluated.to_integer()?;
-        parse_integer(&integer.to_string(), 10)
+        let mut magnitude = evaluated.to_integer()?;
+        let negative = magnitude < 0;
+        if negative {
+            magnitude = -magnitude;
+        }
+        Some(ParsedInteger {
+            magnitude,
+            negative,
+        })
     })
 }
 
@@ -156,9 +164,27 @@ fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
             if digits.is_empty() || !digits.chars().all(|ch| ch.is_digit(input_base)) {
                 return None;
             }
-            translated.push_str(&u128::from_str_radix(digits, input_base).ok()?.to_string());
+            translated.push_str(
+                &Integer::from_str_radix(digits, i32::try_from(input_base).ok()?)
+                    .ok()?
+                    .to_string(),
+            );
         } else if byte.is_ascii_whitespace()
-            || matches!(byte, b'+' | b'-' | b'*' | b'/' | b'^' | b'(' | b')')
+            || matches!(
+                byte,
+                b'+' | b'-'
+                    | b'*'
+                    | b'/'
+                    | b'^'
+                    | b'('
+                    | b')'
+                    | b'&'
+                    | b'|'
+                    | b'~'
+                    | b'<'
+                    | b'>'
+                    | b'%'
+            )
         {
             translated.push(char::from(byte));
             index += 1;
@@ -170,10 +196,10 @@ fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
     Some(translated)
 }
 
-fn format_signed_binary(value: ParsedInteger) -> Option<String> {
+fn format_signed_binary(value: &ParsedInteger) -> Option<String> {
     let mut width = 8_usize;
     loop {
-        let sign_bit = 1_u128 << (width - 1);
+        let sign_bit = Integer::from(1) << u32::try_from(width - 1).ok()?;
         let fits = if value.negative {
             value.magnitude <= sign_bit
         } else {
@@ -183,22 +209,15 @@ fn format_signed_binary(value: ParsedInteger) -> Option<String> {
             break;
         }
         width = width.checked_mul(2)?;
-        if width > 128 {
-            return None;
-        }
     }
 
     let bits = if value.negative {
-        let twos_complement = 0_u128.wrapping_sub(value.magnitude);
-        if width == 128 {
-            twos_complement
-        } else {
-            twos_complement & ((1_u128 << width) - 1)
-        }
+        (Integer::from(1) << u32::try_from(width).ok()?) - &value.magnitude
     } else {
-        value.magnitude
+        value.magnitude.clone()
     };
-    Some(group_bits_4(&format!("{bits:0width$b}")))
+    let binary = bits.to_string_radix(2);
+    Some(group_bits_4(&format!("{binary:0>width$}")))
 }
 
 fn minus_sign(settings: NativeSessionSettings) -> &'static str {
@@ -210,7 +229,7 @@ fn minus_sign(settings: NativeSessionSettings) -> &'static str {
 }
 
 fn signed_magnitude(
-    value: ParsedInteger,
+    value: &ParsedInteger,
     formatted_magnitude: String,
     settings: NativeSessionSettings,
 ) -> String {
@@ -236,10 +255,21 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
             settings.caret_is_xor(),
             settings.has_invalid_programming_base(),
         ) {
-            let grouped_binary = format_signed_binary(value)?;
-            let octal = signed_magnitude(value, format!("0{:o}", value.magnitude), settings);
-            let decimal = signed_magnitude(value, value.magnitude.to_string(), settings);
-            let hex = signed_magnitude(value, format!("0x{:X}", value.magnitude), settings);
+            let grouped_binary = format_signed_binary(&value)?;
+            let octal = signed_magnitude(
+                &value,
+                format!("0{}", value.magnitude.to_string_radix(8)),
+                settings,
+            );
+            let decimal = signed_magnitude(&value, value.magnitude.to_string(), settings);
+            let hex = signed_magnitude(
+                &value,
+                format!(
+                    "0x{}",
+                    value.magnitude.to_string_radix(16).to_ascii_uppercase()
+                ),
+                settings,
+            );
             return Some(format!(
                 "{} = {} = {} = {}",
                 grouped_binary, octal, decimal, hex
@@ -251,7 +281,7 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
         let input_base = settings.input_base().unwrap_or(10);
         if let Some(value) = parse_or_evaluate_integer(trimmed, input_base, true, false) {
             return Some(signed_magnitude(
-                value,
+                &value,
                 value.magnitude.to_string(),
                 settings,
             ));
@@ -267,12 +297,18 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
             settings.has_invalid_programming_base(),
         ) {
             let formatted = match out_base {
-                2 => return format_signed_binary(value),
-                8 => format!("0{:o}", value.magnitude),
-                16 => format!("0x{:X}", value.magnitude),
-                _ => format_integer_base(value.magnitude, out_base),
+                2 => return format_signed_binary(&value),
+                8 => format!("0{}", value.magnitude.to_string_radix(8)),
+                16 => format!(
+                    "0x{}",
+                    value.magnitude.to_string_radix(16).to_ascii_uppercase()
+                ),
+                _ => value
+                    .magnitude
+                    .to_string_radix(i32::try_from(out_base).ok()?)
+                    .to_ascii_uppercase(),
             };
-            return Some(signed_magnitude(value, formatted, settings));
+            return Some(signed_magnitude(&value, formatted, settings));
         }
     }
 

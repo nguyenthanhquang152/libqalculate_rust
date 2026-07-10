@@ -665,6 +665,7 @@ pub(crate) fn format_qalc_equation(
     input: &str,
     output: &str,
     approximate: bool,
+    unicode_enabled: bool,
     message_line_count: usize,
 ) -> String {
     let formatted_input = match crate::parser::operators::parse_expression(input) {
@@ -695,7 +696,13 @@ pub(crate) fn format_qalc_equation(
         Err(_) => input.trim().to_string(),
     };
 
-    let relation = if approximate { " ≈ " } else { " = " };
+    let relation = if approximate && unicode_enabled {
+        " ≈ "
+    } else if approximate {
+        " = approx. "
+    } else {
+        " = "
+    };
     if message_line_count == 0 {
         return format!("{formatted_input}{relation}{output}");
     }
@@ -803,18 +810,31 @@ mod tests {
 
     #[test]
     fn qalc_equation_formats_input_and_preserves_message_lines() {
-        assert_eq!(format_qalc_equation("1+1", "2", false, 0), "1 + 1 = 2");
         assert_eq!(
-            format_qalc_equation("warning(1)", "warning: first\n0", false, 1),
+            format_qalc_equation("1+1", "2", false, true, 0),
+            "1 + 1 = 2"
+        );
+        assert_eq!(
+            format_qalc_equation("warning(1)", "warning: first\n0", false, true, 1),
             "warning: first\nwarning(1) = 0"
         );
         assert_eq!(
-            format_qalc_equation("matrix()", "[1  2]\n[3  4]", false, 0),
+            format_qalc_equation("matrix()", "[1  2]\n[3  4]", false, true, 0),
             "matrix() = [1  2]\n[3  4]"
         );
         assert_eq!(
-            format_qalc_equation("1/2 to latex", "$\\displaystyle \\frac{1}{2}$", false, 0,),
+            format_qalc_equation(
+                "1/2 to latex",
+                "$\\displaystyle \\frac{1}{2}$",
+                false,
+                true,
+                0,
+            ),
             "$\\displaystyle \\frac{1}{2}$"
+        );
+        assert_eq!(
+            format_qalc_equation("1/3", "0.3333333333", true, false, 0),
+            "1 / 3 = approx. 0.3333333333"
         );
     }
     use crate::parser::operators::parse_expression;

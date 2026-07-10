@@ -85,10 +85,10 @@ impl NativeSessionSettings {
             let cmd = parse_command(&cmd_str).ok()?;
             match cmd {
                 SessionCommand::Set(c) => match c.setting {
-                    SetSetting::InputBase(b) if b == 10 || b == 16 => {
+                    SetSetting::InputBase(b) if (2..=36).contains(&b) => {
                         state.input_base = Some(b);
                     }
-                    SetSetting::OutputBase(b) if b == 2 || b == 8 || b == 10 || b == 16 => {
+                    SetSetting::OutputBase(b) if (2..=36).contains(&b) => {
                         state.output_base = Some(b);
                     }
                     SetSetting::Unicode(value) => {

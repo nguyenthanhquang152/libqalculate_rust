@@ -191,19 +191,16 @@ fn evaluate_expression(
     let defs = &invocation.definitions;
     let selective_definitions_disabled =
         !defs.units || !defs.currencies || !defs.functions || !defs.variables || !defs.datasets;
-    if selective_definitions_disabled {
+    if selective_definitions_disabled
+        && !libqalculate_rust::ffi::native_expression_is_definition_free(expression)
+    {
         if fallback_disabled {
-            if !libqalculate_rust::ffi::native_expression_is_definition_free(expression) {
-                return Err(
-                    "selective definitions are unsupported for native evaluation".to_string(),
-                );
-            }
+            return Err("selective definitions are unsupported for native evaluation".to_string());
         } else {
             return Err("selective definitions are incompatible with fallback".to_string());
         }
     }
-    if fallback_disabled
-        && !defs.global_defs
+    if !defs.global_defs
         && libqalculate_rust::ffi::native_expression_uses_global_definitions(expression)
     {
         return Err("global definitions are disabled for this native expression".to_string());
@@ -230,12 +227,6 @@ fn evaluate_expression(
     setting_refs.extend(invocation.settings.iter().map(String::as_str));
 
     let mut calc = Calculator::new();
-    if !invocation.definitions.global_defs && !fallback_disabled {
-        return Err(
-            "fallback evaluation requires global definitions; -nodefs is incompatible with fallback"
-                .to_owned(),
-        );
-    }
     if invocation.definitions.global_defs && !fallback_disabled && !calc.load_global_definitions() {
         return Err("failed to load global definitions".to_owned());
     }

@@ -321,10 +321,14 @@ impl Calculator {
         let mut result = self.calculate_and_print_qalc_with_settings_and_fallback_state(
             expr, settings, timeout_ms,
         )?;
+        let unicode_enabled = crate::session::NativeSessionSettings::from_raw(settings)
+            .map(|state| !state.has_unicode_setting() || state.unicode())
+            .unwrap_or(true);
         result.output = crate::text::format_qalc_equation(
             expr,
             &result.output,
             self.last_output_approximate,
+            unicode_enabled,
             self.last_output_message_lines,
         );
         Ok(result)
