@@ -2,6 +2,8 @@
 
 namespace {
 
+thread_local bool last_qalc_result_is_approximate = false;
+
 class CalculatorStateGuard {
 public:
     explicit CalculatorStateGuard(Calculator &calculator)
@@ -184,17 +186,23 @@ rust::String calculate_and_print_qalc(
         calc.useIntervalArithmetic(true);
         calc.setTemperatureCalculationMode(TEMPERATURE_CALCULATION_HYBRID);
 
-        return rust::String(calc.calculateAndPrint(
+        std::string output = calc.calculateAndPrint(
             expr_str,
             timeout_ms,
             eo,
             po,
             AUTOMATIC_FRACTION_OFF,
             AUTOMATIC_APPROXIMATION_OFF
-        ));
+        );
+        last_qalc_result_is_approximate = is_approximate;
+        return rust::String(output);
     } catch (const std::exception&) {
         throw;
     } catch (...) {
         throw std::runtime_error("unknown C++ exception in qalc-compatible calculateAndPrint");
     }
+}
+
+bool qalc_last_result_is_approximate() {
+    return last_qalc_result_is_approximate;
 }

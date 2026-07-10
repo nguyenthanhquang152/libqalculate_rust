@@ -321,8 +321,11 @@ pub(crate) fn render_list(
     if request.list_type == ListType::Units || list_all {
         if let Some(cat) = &prefix_unit_catalog {
             for unit in &cat.units().units {
-                if unit.active() && !unit.hidden() {
+                if unit.active() {
                     let is_currency = unit.category_path() == ["Currency"];
+                    if unit.hidden() && !is_currency {
+                        continue;
+                    }
                     let is_enabled = if is_currency {
                         currencies_enabled
                     } else {

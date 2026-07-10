@@ -1351,6 +1351,39 @@ fn cli_default_and_terse_output_match_upstream() {
             .success()
             .stdout(expected);
     }
+
+    let mut cpp_fallback = qalc_rs_raw();
+    cpp_fallback
+        .args(["--", "2^0.5"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("2^0.5 ≈ 1.414213562\n");
+}
+
+#[test]
+fn cli_nonterse_relation_matches_upstream_exactness() {
+    let mut exact = qalc_rs_raw();
+    exact
+        .arg("1/2")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("1 / 2 = 0.5\n");
+
+    for (expression, expected) in [
+        ("1/3", "1 / 3 ≈ 0.3333333333\n"),
+        ("sqrt(2)", "sqrt(2) ≈ 1.414213562\n"),
+    ] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-set", "precision 10", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected);
+    }
 }
 
 #[test]
@@ -1404,6 +1437,8 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         ),
         (vec!["-t", "-b", "2", "5"], "0000 0101\n"),
         (vec!["-t", "-b", "2", "--", "-5"], "1111 1011\n"),
+        (vec!["-t", "-b", "2", "2+3"], "0000 0101\n"),
+        (vec!["-t", "-p", "10", "2+3"], "0000 0101 = 05 = 5 = 0x5\n"),
         (vec!["-t", "-b", "8", "--", "-5"], "−05\n"),
         (vec!["-t", "+u8", "-b", "8", "--", "-5"], "-05\n"),
         (vec!["-t", "+p", "255"], "255\n"),
@@ -1526,6 +1561,14 @@ fn cli_usd_currency_searches() {
         .stdout(predicate::str::contains("United Arab Emirates Dirham"))
         .stdout(predicate::str::contains("British Pound"))
         .stdout(predicate::str::contains("U.S. Dollar"));
+
+    let mut obsolete = qalc_rs_raw();
+    obsolete
+        .args(["--list-units", "BEF"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("BEF (Belgian Franc (obsolete))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
 }
 
 #[test]
@@ -1665,14 +1708,39 @@ fn cli_selective_definition_fallback_rejection() {
             "selective definitions are incompatible with fallback",
         ));
 
-    let mut cmd_disabled = qalc_rs();
+    let mut cmd_disabled = qalc_rs_raw();
     cmd_disabled
         .args(["-nofunctions", r#"message("hello")"#])
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .env("QALCULATE_REPORT_FALLBACK", "1")
         .assert()
-        .success()
-        .stdout("hello\n0\n");
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "selective definitions are unsupported for native evaluation",
+        ));
+
+    let mut currency_disabled = qalc_rs_raw();
+    currency_disabled
+        .args(["-nocurrencies", "1 USD to EUR"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "selective definitions are unsupported for native evaluation",
+        ));
+}
+
+#[test]
+fn cli_test_file_without_path_reports_upstream_diagnostic_before_handoff() {
+    let mut cmd = qalc_rs_raw();
+    cmd.arg("--test-file")
+        .assert()
+        .code(2)
+        .stdout("No file specified.\n")
+        .stderr("error: Test file execution is not implemented (owner #63)\n");
 }
 
 #[test]

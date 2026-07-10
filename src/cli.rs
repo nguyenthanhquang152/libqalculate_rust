@@ -466,6 +466,9 @@ where
                     i += 1;
                     file_path = argv[i].trim().to_string();
                 }
+                if file_path.is_empty() {
+                    diagnostics.push("No file specified.".to_string());
+                }
                 defaults = true;
                 terse = true;
                 unicode = Some(false);

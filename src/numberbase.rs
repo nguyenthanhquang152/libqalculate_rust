@@ -47,6 +47,17 @@ fn parse_integer(expr: &str, radix: u32) -> Option<ParsedInteger> {
     })
 }
 
+fn parse_or_evaluate_integer(expr: &str, input_base: u32) -> Option<ParsedInteger> {
+    parse_integer(expr, input_base).or_else(|| {
+        if input_base != 10 {
+            return None;
+        }
+        let evaluated = crate::number::evaluate_expr(expr).ok()?;
+        let integer = evaluated.to_integer()?;
+        parse_integer(&integer.to_string(), 10)
+    })
+}
+
 fn format_signed_binary(value: ParsedInteger) -> Option<String> {
     let mut width = 8_usize;
     loop {
@@ -107,7 +118,7 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
 
     if settings.programming_mode {
         let input_base = settings.input_base().unwrap_or(10);
-        if let Some(value) = parse_integer(trimmed, input_base) {
+        if let Some(value) = parse_or_evaluate_integer(trimmed, input_base) {
             let grouped_binary = format_signed_binary(value)?;
             let octal = signed_magnitude(value, format!("0{:o}", value.magnitude), settings);
             let decimal = signed_magnitude(value, value.magnitude.to_string(), settings);
@@ -121,7 +132,7 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
 
     if let Some(out_base) = settings.output_base {
         let input_base = settings.input_base().unwrap_or(10);
-        if let Some(value) = parse_integer(trimmed, input_base) {
+        if let Some(value) = parse_or_evaluate_integer(trimmed, input_base) {
             let formatted = match out_base {
                 2 => return format_signed_binary(value),
                 8 => format!("0{:o}", value.magnitude),

@@ -44,6 +44,8 @@ pub(crate) mod sys {
             expr: &str,
             timeout_ms: i32,
         ) -> Result<String>;
+
+        fn qalc_last_result_is_approximate() -> bool;
     }
 }
 
@@ -52,6 +54,7 @@ pub struct Calculator {
     inner: UniquePtr<sys::Calculator>,
     native_context: crate::context::CalculatorContext,
     last_native_message_had_error: bool,
+    last_output_approximate: bool,
     _phantom: PhantomData<*mut ()>,
 }
 
@@ -135,6 +138,7 @@ impl Calculator {
             inner,
             native_context: crate::context::CalculatorContext::default(),
             last_native_message_had_error: false,
+            last_output_approximate: false,
             _phantom: PhantomData,
         }
     }
@@ -281,7 +285,8 @@ impl Calculator {
         let mut result = self.calculate_and_print_qalc_with_settings_and_fallback_state(
             expr, settings, timeout_ms,
         )?;
-        result.output = crate::text::format_qalc_equation(expr, &result.output);
+        result.output =
+            crate::text::format_qalc_equation(expr, &result.output, self.last_output_approximate);
         Ok(result)
     }
 
@@ -349,6 +354,7 @@ impl Calculator {
         terse: bool,
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
+        self.last_output_approximate = false;
         if let Some(output) =
             native_markup_output(mode, expr, settings, terse, &mut self.native_context)?
         {
@@ -384,6 +390,7 @@ impl Calculator {
         settings: &[&str],
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
+        self.last_output_approximate = false;
         assert!(
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
@@ -440,6 +447,7 @@ impl Calculator {
             }
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 self.last_native_message_had_error = output.has_error_message;
+                self.last_output_approximate = output.approximate;
                 return Ok(CalculationOutput {
                     output: output.output,
                     fallback_state: FallbackState::Native,
@@ -461,10 +469,16 @@ impl Calculator {
             let _guard = FFI_LOCK.lock().unwrap();
             let pin = self.inner.pin_mut();
             match profile {
-                PrintProfile::Api => sys::calculate_and_print(pin, expr, timeout_ms),
-                PrintProfile::Qalc => sys::calculate_and_print_qalc(pin, expr, timeout_ms),
+                PrintProfile::Api => {
+                    sys::calculate_and_print(pin, expr, timeout_ms).map_err(CalculatorError::Cxx)?
+                }
+                PrintProfile::Qalc => {
+                    let output = sys::calculate_and_print_qalc(pin, expr, timeout_ms)
+                        .map_err(CalculatorError::Cxx)?;
+                    self.last_output_approximate = sys::qalc_last_result_is_approximate();
+                    output
+                }
             }
-            .map_err(CalculatorError::Cxx)?
         };
 
         Ok(CalculationOutput {
@@ -889,6 +903,7 @@ fn native_unit_conversion_output(
 struct NativeOutput {
     output: String,
     has_error_message: bool,
+    approximate: bool,
 }
 
 impl NativeOutput {
@@ -896,6 +911,7 @@ impl NativeOutput {
         Self {
             output,
             has_error_message: false,
+            approximate: false,
         }
     }
 }
@@ -916,6 +932,7 @@ fn native_output_with_messages(
         return NativeOutput {
             output,
             has_error_message,
+            approximate: false,
         };
     }
 
@@ -924,6 +941,7 @@ fn native_output_with_messages(
         return NativeOutput {
             output,
             has_error_message,
+            approximate: false,
         };
     }
 
@@ -931,6 +949,7 @@ fn native_output_with_messages(
     NativeOutput {
         output: lines.join("\n"),
         has_error_message,
+        approximate: false,
     }
 }
 
@@ -1182,10 +1201,15 @@ fn native_scaffold_output(
                     parsed_settings.max_decimals(),
                 ),
             };
-            Some(NativeOutput::plain(match profile {
-                PrintProfile::Api => output,
-                PrintProfile::Qalc => output.replace('-', "−"),
-            }))
+            let approximate = num.qalc_relation_is_approximate();
+            Some(NativeOutput {
+                output: match profile {
+                    PrintProfile::Api => output,
+                    PrintProfile::Qalc => output.replace('-', "−"),
+                },
+                has_error_message: false,
+                approximate,
+            })
         }
         _ => None,
     }
@@ -1757,6 +1781,28 @@ mod tests {
             .unwrap();
         assert_eq!(result.output, "12");
         assert_eq!(result.fallback_state, FallbackState::CppFallbackEnabled);
+    }
+
+    #[test]
+    fn qalc_equation_approximation_state_resets_between_calls() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::set_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        let approximate = calc
+            .calculate_and_print_qalc_equation_with_settings_and_fallback_state(
+                "sqrt(2)",
+                &["precision 10"],
+                1000,
+            )
+            .unwrap();
+        assert_eq!(approximate.output, "sqrt(2) ≈ 1.414213562");
+
+        let exact = calc
+            .calculate_and_print_qalc_equation_with_settings_and_fallback_state("1/2", &[], 1000)
+            .unwrap();
+        assert_eq!(exact.output, "1 / 2 = 0.5");
     }
 
     #[test]

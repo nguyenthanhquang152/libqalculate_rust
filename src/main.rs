@@ -169,9 +169,11 @@ fn evaluate_expression(
     let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
     let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
 
-    if !fallback_disabled {
-        let defs = &invocation.definitions;
-        if !defs.units || !defs.currencies || !defs.functions || !defs.variables || !defs.datasets {
+    let defs = &invocation.definitions;
+    if !defs.units || !defs.currencies || !defs.functions || !defs.variables || !defs.datasets {
+        if fallback_disabled {
+            return Err("selective definitions are unsupported for native evaluation".to_string());
+        } else {
             return Err("selective definitions are incompatible with fallback".to_string());
         }
     }

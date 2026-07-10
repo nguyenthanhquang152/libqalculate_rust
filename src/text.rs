@@ -661,7 +661,7 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     }
 }
 
-pub(crate) fn format_qalc_equation(input: &str, output: &str) -> String {
+pub(crate) fn format_qalc_equation(input: &str, output: &str, approximate: bool) -> String {
     let formatted_input = match crate::parser::operators::parse_expression(input) {
         Ok(expression) => {
             if let Expression::Conversion { target, .. } = &expression {
@@ -673,14 +673,27 @@ pub(crate) fn format_qalc_equation(input: &str, output: &str) -> String {
                     }
                 }
             }
-            format_raw_expression(&expression)
+            if let Expression::Division {
+                numerator,
+                denominator,
+            } = &expression
+            {
+                format!(
+                    "{} / {}",
+                    format_raw_child(&expression, numerator, ChildPosition::Left),
+                    format_raw_child(&expression, denominator, ChildPosition::Right)
+                )
+            } else {
+                format_raw_expression(&expression)
+            }
         }
         Err(_) => input.trim().to_string(),
     };
 
+    let relation = if approximate { " ≈ " } else { " = " };
     match output.rsplit_once('\n') {
-        Some((messages, result)) => format!("{messages}\n{formatted_input} = {result}"),
-        None => format!("{formatted_input} = {output}"),
+        Some((messages, result)) => format!("{messages}\n{formatted_input}{relation}{result}"),
+        None => format!("{formatted_input}{relation}{output}"),
     }
 }
 
@@ -774,13 +787,13 @@ mod tests {
 
     #[test]
     fn qalc_equation_formats_input_and_preserves_message_lines() {
-        assert_eq!(format_qalc_equation("1+1", "2"), "1 + 1 = 2");
+        assert_eq!(format_qalc_equation("1+1", "2", false), "1 + 1 = 2");
         assert_eq!(
-            format_qalc_equation("warning(1)", "warning: first\n0"),
+            format_qalc_equation("warning(1)", "warning: first\n0", false),
             "warning: first\nwarning(1) = 0"
         );
         assert_eq!(
-            format_qalc_equation("1/2 to latex", "$\\displaystyle \\frac{1}{2}$"),
+            format_qalc_equation("1/2 to latex", "$\\displaystyle \\frac{1}{2}$", false),
             "$\\displaystyle \\frac{1}{2}$"
         );
     }
