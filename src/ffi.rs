@@ -396,6 +396,20 @@ impl Calculator {
             "BUG: Calculator inner pointer is null - possible use-after-move"
         );
 
+        // CLI/session settings are implemented by the native scaffold. Try that
+        // evidence-backed path even when the C++ fallback is available so normal
+        // CLI invocations do not reject supported settings before evaluation.
+        if !settings.is_empty() {
+            if let Some(output) = native_scaffold_output(profile, expr, settings) {
+                self.last_native_message_had_error = output.has_error_message;
+                self.last_output_approximate = output.approximate;
+                return Ok(CalculationOutput {
+                    output: output.output,
+                    fallback_state: FallbackState::Native,
+                });
+            }
+        }
+
         if fallback_disabled_by_env() {
             if let Some(output) =
                 native_markup_conversion_output(expr, settings, &mut self.native_context)?
@@ -1123,6 +1137,11 @@ fn native_scaffold_output(
     if !parsed_settings.has_interval_display() {
         if let Some(output) = crate::numberbase::native_output(expr, parsed_settings) {
             return Some(NativeOutput::plain(output));
+        }
+        if parsed_settings.output_base.is_some() {
+            // A requested output base is observable. Do not fall through to the
+            // generic decimal formatter when the number-base path cannot apply it.
+            return None;
         }
     }
 

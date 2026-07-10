@@ -49,13 +49,64 @@ fn parse_integer(expr: &str, radix: u32) -> Option<ParsedInteger> {
 
 fn parse_or_evaluate_integer(expr: &str, input_base: u32) -> Option<ParsedInteger> {
     parse_integer(expr, input_base).or_else(|| {
-        if input_base != 10 {
-            return None;
-        }
-        let evaluated = crate::number::evaluate_expr(expr).ok()?;
+        let decimal_expr = translate_integer_expression(expr, input_base)?;
+        let evaluated = crate::number::evaluate_expr(&decimal_expr).ok()?;
         let integer = evaluated.to_integer()?;
         parse_integer(&integer.to_string(), 10)
     })
+}
+
+fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
+    if !(2..=36).contains(&input_base) {
+        return None;
+    }
+    if input_base == 10 {
+        return Some(expr.to_string());
+    }
+
+    let bytes = expr.as_bytes();
+    let mut translated = String::with_capacity(expr.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte.is_ascii_alphanumeric() {
+            let start = index;
+            index += 1;
+            while index < bytes.len() && bytes[index].is_ascii_alphanumeric() {
+                index += 1;
+            }
+
+            let token = std::str::from_utf8(&bytes[start..index]).ok()?;
+            let digits = match input_base {
+                16 => token
+                    .strip_prefix("0x")
+                    .or_else(|| token.strip_prefix("0X"))
+                    .unwrap_or(token),
+                8 => token
+                    .strip_prefix("0o")
+                    .or_else(|| token.strip_prefix("0O"))
+                    .unwrap_or(token),
+                2 => token
+                    .strip_prefix("0b")
+                    .or_else(|| token.strip_prefix("0B"))
+                    .unwrap_or(token),
+                _ => token,
+            };
+            if digits.is_empty() || !digits.chars().all(|ch| ch.is_digit(input_base)) {
+                return None;
+            }
+            translated.push_str(&u128::from_str_radix(digits, input_base).ok()?.to_string());
+        } else if byte.is_ascii_whitespace()
+            || matches!(byte, b'+' | b'-' | b'*' | b'/' | b'^' | b'(' | b')')
+        {
+            translated.push(char::from(byte));
+            index += 1;
+        } else {
+            return None;
+        }
+    }
+
+    Some(translated)
 }
 
 fn format_signed_binary(value: ParsedInteger) -> Option<String> {
@@ -883,6 +934,26 @@ mod tests {
         assert_eq!(
             negative,
             "1000 0000 = \u{2212}0200 = \u{2212}128 = \u{2212}0x80"
+        );
+    }
+
+    #[test]
+    fn configured_input_base_is_applied_to_integer_expressions() {
+        assert_eq!(
+            translate_integer_expression("A + (2 * 3)", 16).as_deref(),
+            Some("10 + (2 * 3)")
+        );
+        assert_eq!(
+            translate_integer_expression("10 + 1", 2).as_deref(),
+            Some("2 + 1")
+        );
+        assert_eq!(translate_integer_expression("G + 1", 16), None);
+
+        let programming =
+            NativeSessionSettings::from_raw(&["programming mode 1", "base 16 16"]).unwrap();
+        assert_eq!(
+            native_output("A+1", programming).as_deref(),
+            Some("0000 1011 = 013 = 11 = 0xB")
         );
     }
 }

@@ -198,13 +198,6 @@ fn evaluate_expression(
     }
     setting_refs.extend(invocation.settings.iter().map(String::as_str));
 
-    if invocation.output_mode == cli::OutputMode::Text
-        && !fallback_disabled
-        && !setting_refs.is_empty()
-    {
-        return Err("session settings require QALCULATE_DISABLE_FALLBACK=1".to_owned());
-    }
-
     let mut calc = Calculator::new();
     if !invocation.definitions.global_defs && !fallback_disabled {
         return Err(

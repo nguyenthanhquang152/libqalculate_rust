@@ -1439,6 +1439,11 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         (vec!["-t", "-b", "2", "--", "-5"], "1111 1011\n"),
         (vec!["-t", "-b", "2", "2+3"], "0000 0101\n"),
         (vec!["-t", "-p", "10", "2+3"], "0000 0101 = 05 = 5 = 0x5\n"),
+        (
+            vec!["-t", "-p", "16", "--", "A+1"],
+            "0000 1011 = 013 = 11 = 0xB\n",
+        ),
+        (vec!["-t", "-b", "16 16", "--", "A+1"], "0xB\n"),
         (vec!["-t", "-b", "8", "--", "-5"], "−05\n"),
         (vec!["-t", "+u8", "-b", "8", "--", "-5"], "-05\n"),
         (vec!["-t", "+p", "255"], "255\n"),
@@ -1466,6 +1471,52 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
                 "[qalc-rs-metadata] fallback=native",
             ));
     }
+}
+
+#[test]
+fn cli_evaluation_settings_work_when_cpp_fallback_is_available() {
+    let cases = [
+        (vec!["-t", "-b", "16", "255"], "0xFF\n"),
+        (vec!["-t", "-s", "base 16", "255"], "0xFF\n"),
+        (
+            vec!["-t", "-p", "10", "52"],
+            "0011 0100 = 064 = 52 = 0x34\n",
+        ),
+        (vec!["-t", "+u8", "-b", "8", "--", "-5"], "-05\n"),
+    ];
+
+    for (args, expected) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env_remove("QALCULATE_DISABLE_FALLBACK")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
+fn cli_fails_closed_when_requested_output_base_cannot_be_formatted_natively() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-t", "-b", "16", "--", "1/3"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(
+            predicate::str::contains("[qalc-rs-metadata] fallback=disabled").and(
+                predicate::str::contains(
+                    "C++ FFI fallback is disabled, and expression '1/3' has no native Rust implementation",
+                ),
+            ),
+        );
 }
 
 fn fake_upstream() -> tempfile::TempDir {
