@@ -26,6 +26,8 @@ pub(crate) struct NativeSessionSettings {
     input_base: Option<u32>,
     pub(crate) output_base: Option<u32>,
     pub(crate) programming_mode: bool,
+    invalid_programming_base: bool,
+    xor_caret: bool,
     unicode: bool,
     unicode_setting_seen: bool,
     precision_digits: Option<usize>,
@@ -45,7 +47,10 @@ impl NativeSessionSettings {
         let mut state = Self::default();
         for setting in settings {
             let s_trimmed = setting.trim();
-            if let Some(stripped) = s_trimmed.strip_prefix("base ") {
+            if s_trimmed == "base -- --" {
+                state.invalid_programming_base = true;
+                continue;
+            } else if let Some(stripped) = s_trimmed.strip_prefix("base ") {
                 let parts: Vec<&str> = stripped.split_whitespace().collect();
                 if parts.len() == 1 {
                     state.output_base = Some(parse_standard_base(parts[0])?);
@@ -58,9 +63,11 @@ impl NativeSessionSettings {
                 continue;
             } else if let Some(stripped) = s_trimmed.strip_prefix("xor^ ") {
                 let val = stripped.trim();
-                if val != "0" && val != "1" {
-                    return None;
-                }
+                state.xor_caret = match val {
+                    "0" => false,
+                    "1" => true,
+                    _ => return None,
+                };
                 continue;
             } else if let Some(stripped) = s_trimmed.strip_prefix("programming mode ") {
                 let val = stripped.trim();
@@ -136,6 +143,14 @@ impl NativeSessionSettings {
         self.unicode
     }
 
+    pub(crate) const fn caret_is_xor(self) -> bool {
+        self.xor_caret
+    }
+
+    pub(crate) const fn has_invalid_programming_base(self) -> bool {
+        self.invalid_programming_base
+    }
+
     pub(crate) const fn has_unicode_setting(self) -> bool {
         self.unicode_setting_seen
     }
@@ -151,6 +166,8 @@ impl NativeSessionSettings {
         self.input_base.is_none()
             && self.output_base.is_none()
             && !self.programming_mode
+            && !self.invalid_programming_base
+            && !self.xor_caret
             && !self.unicode
             && !self.unicode_setting_seen
             && self.precision_digits.is_none()
@@ -276,7 +293,10 @@ pub(crate) fn apply_raw_settings_to_context(
             }
             continue;
         }
-        if trimmed.starts_with("xor^ ") || trimmed.starts_with("programming mode ") {
+        if trimmed == "base -- --"
+            || trimmed.starts_with("xor^ ")
+            || trimmed.starts_with("programming mode ")
+        {
             continue;
         }
         context
@@ -373,6 +393,8 @@ mod tests {
                 input_base: Some(10),
                 output_base: None,
                 programming_mode: false,
+                invalid_programming_base: false,
+                xor_caret: false,
                 unicode: true,
                 unicode_setting_seen: true,
                 precision_digits: Some(128),
@@ -393,6 +415,8 @@ mod tests {
                 input_base: None,
                 output_base: None,
                 programming_mode: false,
+                invalid_programming_base: false,
+                xor_caret: false,
                 unicode: false,
                 unicode_setting_seen: false,
                 precision_digits: None,
@@ -418,6 +442,8 @@ mod tests {
                 input_base: None,
                 output_base: None,
                 programming_mode: false,
+                invalid_programming_base: false,
+                xor_caret: false,
                 unicode: false,
                 unicode_setting_seen: false,
                 precision_digits: None,

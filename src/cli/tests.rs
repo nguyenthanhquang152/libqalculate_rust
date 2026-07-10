@@ -30,6 +30,13 @@ fn parses_upstream_alias_matrix() {
     );
     assert_eq!(invocation.expression, Some("1+1".to_string()));
 
+    let invocation = parse_args(vec!["qalc-rs", "--definitely-unknown"]);
+    assert!(invocation.diagnostics.is_empty());
+    assert_eq!(
+        invocation.expression,
+        Some("--definitely-unknown".to_string())
+    );
+
     let invocation = parse_args(vec!["qalc-rs", "1+1", "-v"]);
     assert!(invocation.immediate.is_none());
     assert_eq!(invocation.expression, Some("1+1 -v".to_string()));
@@ -115,6 +122,15 @@ fn test_programming_mode_without_a_base_preserves_upstream_setting_shape() {
     let inv = parse_args(vec!["qalc-rs", "-p"]);
     assert!(inv.programming_mode);
     assert_eq!(inv.settings, vec!["base ", "xor^ 1"]);
+}
+
+#[test]
+fn test_programming_mode_consumes_separator_but_keeps_default_base() {
+    let inv = parse_args(vec!["qalc-rs", "-p", "--", "52"]);
+    assert!(inv.programming_mode);
+    assert_eq!(inv.settings, vec!["base -- --", "xor^ 1"]);
+    assert_eq!(inv.diagnostics, vec!["Illegal base."]);
+    assert_eq!(inv.expression, Some("52".to_string()));
 }
 
 #[test]

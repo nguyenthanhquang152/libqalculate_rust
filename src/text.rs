@@ -661,7 +661,12 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     }
 }
 
-pub(crate) fn format_qalc_equation(input: &str, output: &str, approximate: bool) -> String {
+pub(crate) fn format_qalc_equation(
+    input: &str,
+    output: &str,
+    approximate: bool,
+    message_line_count: usize,
+) -> String {
     let formatted_input = match crate::parser::operators::parse_expression(input) {
         Ok(expression) => {
             if let Expression::Conversion { target, .. } = &expression {
@@ -691,8 +696,19 @@ pub(crate) fn format_qalc_equation(input: &str, output: &str, approximate: bool)
     };
 
     let relation = if approximate { " ≈ " } else { " = " };
-    match output.rsplit_once('\n') {
-        Some((messages, result)) => format!("{messages}\n{formatted_input}{relation}{result}"),
+    if message_line_count == 0 {
+        return format!("{formatted_input}{relation}{output}");
+    }
+
+    match output
+        .match_indices('\n')
+        .nth(message_line_count.saturating_sub(1))
+    {
+        Some((split_at, _)) => format!(
+            "{}\n{formatted_input}{relation}{}",
+            &output[..split_at],
+            &output[split_at + 1..]
+        ),
         None => format!("{formatted_input}{relation}{output}"),
     }
 }
@@ -787,13 +803,17 @@ mod tests {
 
     #[test]
     fn qalc_equation_formats_input_and_preserves_message_lines() {
-        assert_eq!(format_qalc_equation("1+1", "2", false), "1 + 1 = 2");
+        assert_eq!(format_qalc_equation("1+1", "2", false, 0), "1 + 1 = 2");
         assert_eq!(
-            format_qalc_equation("warning(1)", "warning: first\n0", false),
+            format_qalc_equation("warning(1)", "warning: first\n0", false, 1),
             "warning: first\nwarning(1) = 0"
         );
         assert_eq!(
-            format_qalc_equation("1/2 to latex", "$\\displaystyle \\frac{1}{2}$", false),
+            format_qalc_equation("matrix()", "[1  2]\n[3  4]", false, 0),
+            "matrix() = [1  2]\n[3  4]"
+        );
+        assert_eq!(
+            format_qalc_equation("1/2 to latex", "$\\displaystyle \\frac{1}{2}$", false, 0,),
             "$\\displaystyle \\frac{1}{2}$"
         );
     }

@@ -1448,6 +1448,15 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
             vec!["-t", "-p", "bin", "--", "10"],
             "0000 0010 = 02 = 2 = 0x2\n",
         ),
+        (
+            vec!["-t", "-p", "--", "52"],
+            "Illegal base.\n0000 0010 = 02 = 2 = 0x2\n",
+        ),
+        (
+            vec!["-t", "-p", "10", "--", "2^3"],
+            "0000 0001 = 01 = 1 = 0x1\n",
+        ),
+        (vec!["-t", "-s", "xor^ 1", "--", "2^3"], "1\n"),
         (vec!["-t", "-b", "10", "--", "1/3"], "0.3333333333\n"),
         (vec!["-t", "-b", "10 10", "--", "1/3"], "0.3333333333\n"),
         (vec!["-t", "+p", "--", "1/3"], "0.3333333333\n"),
@@ -1588,6 +1597,17 @@ fn cli_applies_fraction_format_before_returning_native_output() {
             cmd.env_remove("QALCULATE_DISABLE_FALLBACK");
         }
         cmd.assert().success().stdout("1/3\n");
+
+        let mut equation = qalc_rs_raw();
+        equation
+            .args(["-set", "fr 2", "--", "1/3"])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir());
+        if fallback_disabled {
+            equation.env("QALCULATE_DISABLE_FALLBACK", "1");
+        } else {
+            equation.env_remove("QALCULATE_DISABLE_FALLBACK");
+        }
+        equation.assert().success().stdout("1 / 3 = 1/3\n");
     }
 }
 
@@ -1672,6 +1692,22 @@ fn cli_definition_and_listing_flags_are_effective() {
         .assert()
         .success()
         .stdout("pi / \u{03c0} (Archimedes' Constant (pi))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut slash_unicode_setting_off = qalc_rs_raw();
+    slash_unicode_setting_off
+        .args(["-s", "/set unicode 0", "--list-variables", "Archimedes"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("pi (Archimedes' Constant (pi))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut interactive_list = qalc_rs_raw();
+    interactive_list
+        .args(["-i", "--list-functions", "sinc"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("sinc (Cardinal Sine (Sinc Function))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
 }
 
 #[test]

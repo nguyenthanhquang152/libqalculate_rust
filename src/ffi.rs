@@ -55,6 +55,7 @@ pub struct Calculator {
     native_context: crate::context::CalculatorContext,
     last_native_message_had_error: bool,
     last_output_approximate: bool,
+    last_output_message_lines: usize,
     _phantom: PhantomData<*mut ()>,
 }
 
@@ -173,6 +174,7 @@ impl Calculator {
             native_context: crate::context::CalculatorContext::default(),
             last_native_message_had_error: false,
             last_output_approximate: false,
+            last_output_message_lines: 0,
             _phantom: PhantomData,
         }
     }
@@ -319,8 +321,12 @@ impl Calculator {
         let mut result = self.calculate_and_print_qalc_with_settings_and_fallback_state(
             expr, settings, timeout_ms,
         )?;
-        result.output =
-            crate::text::format_qalc_equation(expr, &result.output, self.last_output_approximate);
+        result.output = crate::text::format_qalc_equation(
+            expr,
+            &result.output,
+            self.last_output_approximate,
+            self.last_output_message_lines,
+        );
         Ok(result)
     }
 
@@ -389,6 +395,7 @@ impl Calculator {
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
         self.last_output_approximate = false;
+        self.last_output_message_lines = 0;
         if let Some(output) =
             native_markup_output(mode, expr, settings, terse, &mut self.native_context)?
         {
@@ -425,6 +432,7 @@ impl Calculator {
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
         self.last_output_approximate = false;
+        self.last_output_message_lines = 0;
         assert!(
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
@@ -437,6 +445,7 @@ impl Calculator {
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 self.last_native_message_had_error = output.has_error_message;
                 self.last_output_approximate = output.approximate;
+                self.last_output_message_lines = output.message_line_count;
                 return Ok(CalculationOutput {
                     output: output.output,
                     fallback_state: FallbackState::Native,
@@ -496,6 +505,7 @@ impl Calculator {
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 self.last_native_message_had_error = output.has_error_message;
                 self.last_output_approximate = output.approximate;
+                self.last_output_message_lines = output.message_line_count;
                 return Ok(CalculationOutput {
                     output: output.output,
                     fallback_state: FallbackState::Native,
@@ -964,6 +974,7 @@ struct NativeOutput {
     output: String,
     has_error_message: bool,
     approximate: bool,
+    message_line_count: usize,
 }
 
 impl NativeOutput {
@@ -972,6 +983,7 @@ impl NativeOutput {
             output,
             has_error_message: false,
             approximate: false,
+            message_line_count: 0,
         }
     }
 }
@@ -993,6 +1005,7 @@ fn native_output_with_messages(
             output,
             has_error_message,
             approximate: false,
+            message_line_count: 0,
         };
     }
 
@@ -1002,14 +1015,17 @@ fn native_output_with_messages(
             output,
             has_error_message,
             approximate: false,
+            message_line_count: 0,
         };
     }
 
+    let message_line_count = lines.len();
     lines.push(output);
     NativeOutput {
         output: lines.join("\n"),
         has_error_message,
         approximate: false,
+        message_line_count,
     }
 }
 
@@ -1280,7 +1296,8 @@ fn native_scaffold_output(
                     }
                 }
             };
-            let approximate = num.qalc_relation_is_approximate();
+            let approximate = parsed_settings.number_fraction_format().is_none()
+                && num.qalc_relation_is_approximate();
             Some(NativeOutput {
                 output: match profile {
                     PrintProfile::Api => output,
@@ -1293,6 +1310,7 @@ fn native_scaffold_output(
                 },
                 has_error_message: false,
                 approximate,
+                message_line_count: 0,
             })
         }
         _ => None,

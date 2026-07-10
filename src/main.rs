@@ -88,19 +88,6 @@ fn main() {
         }
     }
 
-    if invocation.interactive {
-        exit_with_error("Interactive mode is not implemented (owner #61)");
-    }
-    if let Some(ref file) = invocation.command_file {
-        match file.mode {
-            cli::CommandFileMode::Commands => {
-                exit_with_error("Command file execution is not implemented (owner #62)");
-            }
-            cli::CommandFileMode::Test => {
-                exit_with_error("Test file execution is not implemented (owner #63)");
-            }
-        }
-    }
     if let Some(ref list_req) = invocation.list {
         let data_dir = libqalculate_rust::rates::definitions_dir();
         let unicode_enabled = cli_unicode_enabled(&invocation);
@@ -118,6 +105,19 @@ fn main() {
             }
         }
         return;
+    }
+    if invocation.interactive {
+        exit_with_error("Interactive mode is not implemented (owner #61)");
+    }
+    if let Some(ref file) = invocation.command_file {
+        match file.mode {
+            cli::CommandFileMode::Commands => {
+                exit_with_error("Command file execution is not implemented (owner #62)");
+            }
+            cli::CommandFileMode::Test => {
+                exit_with_error("Test file execution is not implemented (owner #63)");
+            }
+        }
     }
 
     let Some(expression) = invocation.expression.as_deref() else {
@@ -144,7 +144,12 @@ fn self_check() -> Result<(), String> {
 fn cli_unicode_enabled(invocation: &cli::CliInvocation) -> bool {
     let mut enabled = invocation.unicode.unwrap_or(true);
     for setting in &invocation.settings {
-        let command = format!("set {setting}");
+        let trimmed = setting.trim_start();
+        let command = if trimmed.starts_with("set ") || trimmed.starts_with("/set ") {
+            setting.clone()
+        } else {
+            format!("set {setting}")
+        };
         if let Ok(SessionCommand::Set(command)) = parse_command(&command) {
             if let SetSetting::Unicode(value) = command.setting {
                 enabled = value;

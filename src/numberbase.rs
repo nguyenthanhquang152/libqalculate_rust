@@ -47,13 +47,74 @@ fn parse_integer(expr: &str, radix: u32) -> Option<ParsedInteger> {
     })
 }
 
-fn parse_or_evaluate_integer(expr: &str, input_base: u32) -> Option<ParsedInteger> {
-    parse_integer(expr, input_base).or_else(|| {
-        let decimal_expr = translate_integer_expression(expr, input_base)?;
-        let evaluated = crate::number::evaluate_expr(&decimal_expr).ok()?;
+fn parse_or_evaluate_integer(
+    expr: &str,
+    input_base: u32,
+    caret_is_xor: bool,
+    invalid_programming_base: bool,
+) -> Option<ParsedInteger> {
+    let normalized_expr = if invalid_programming_base {
+        legacy_invalid_base_expression(expr)
+    } else {
+        expr.to_string()
+    };
+    parse_integer(&normalized_expr, input_base).or_else(|| {
+        let decimal_expr = translate_integer_expression(&normalized_expr, input_base)?;
+        let evaluated = if caret_is_xor {
+            let xor_expr = apply_caret_xor_mode(&decimal_expr);
+            let parsed = crate::parser::operators::parse_expression(&xor_expr).ok()?;
+            let mut context = crate::context::CalculatorContext::default();
+            let crate::ast::Expression::Number(number) =
+                crate::eval::evaluate_ast(&parsed, &mut context).ok()?
+            else {
+                return None;
+            };
+            number
+        } else {
+            crate::number::evaluate_expr(&decimal_expr).ok()?
+        };
         let integer = evaluated.to_integer()?;
         parse_integer(&integer.to_string(), 10)
     })
+}
+
+// Upstream 5.11.0 consumes `--` as the optional `-p` base, reports an illegal
+// base, and then evaluates only the final digit of each numeric token. Preserve
+// that observable quirk without weakening validation for ordinary base values.
+fn legacy_invalid_base_expression(expr: &str) -> String {
+    let mut output = String::with_capacity(expr.len());
+    let mut token = String::new();
+    for ch in expr.chars() {
+        if ch.is_ascii_alphanumeric() {
+            token.push(ch);
+        } else {
+            if let Some(last) = token.chars().last() {
+                output.push(last);
+            }
+            token.clear();
+            output.push(ch);
+        }
+    }
+    if let Some(last) = token.chars().last() {
+        output.push(last);
+    }
+    output
+}
+
+fn apply_caret_xor_mode(expr: &str) -> String {
+    let mut output = String::with_capacity(expr.len());
+    let mut chars = expr.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '^' && chars.peek() != Some(&'^') {
+            output.push_str(" xor ");
+        } else {
+            output.push(ch);
+            if ch == '^' && chars.peek() == Some(&'^') {
+                output.push(chars.next().expect("peeked caret remains available"));
+            }
+        }
+    }
+    output
 }
 
 fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
@@ -169,7 +230,12 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
 
     if settings.programming_mode {
         let input_base = settings.input_base().unwrap_or(10);
-        if let Some(value) = parse_or_evaluate_integer(trimmed, input_base) {
+        if let Some(value) = parse_or_evaluate_integer(
+            trimmed,
+            input_base,
+            settings.caret_is_xor(),
+            settings.has_invalid_programming_base(),
+        ) {
             let grouped_binary = format_signed_binary(value)?;
             let octal = signed_magnitude(value, format!("0{:o}", value.magnitude), settings);
             let decimal = signed_magnitude(value, value.magnitude.to_string(), settings);
@@ -181,9 +247,25 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
         }
     }
 
+    if settings.caret_is_xor() && settings.output_base.is_none() {
+        let input_base = settings.input_base().unwrap_or(10);
+        if let Some(value) = parse_or_evaluate_integer(trimmed, input_base, true, false) {
+            return Some(signed_magnitude(
+                value,
+                value.magnitude.to_string(),
+                settings,
+            ));
+        }
+    }
+
     if let Some(out_base) = settings.output_base {
         let input_base = settings.input_base().unwrap_or(10);
-        if let Some(value) = parse_or_evaluate_integer(trimmed, input_base) {
+        if let Some(value) = parse_or_evaluate_integer(
+            trimmed,
+            input_base,
+            settings.caret_is_xor(),
+            settings.has_invalid_programming_base(),
+        ) {
             let formatted = match out_base {
                 2 => return format_signed_binary(value),
                 8 => format!("0{:o}", value.magnitude),

@@ -356,7 +356,12 @@ where
                     format!("base {0} {0}", svalue)
                 } else if i + 1 < argc {
                     i += 1;
-                    format!("base {0} {0}", argv[i])
+                    if argv[i] == "--" {
+                        diagnostics.push("Illegal base.".to_string());
+                        "base -- --".to_string()
+                    } else {
+                        format!("base {0} {0}", argv[i])
+                    }
                 } else {
                     "base ".to_string()
                 };
