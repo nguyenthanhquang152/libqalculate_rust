@@ -6,6 +6,21 @@ const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
 // request MPFR allocation through the fallback-disabled scaffold.
 const MAX_NATIVE_PRECISION_DIGITS: usize = 4096;
 
+fn parse_standard_base(value: &str) -> Option<u32> {
+    let base = if value.eq_ignore_ascii_case("bin") || value.eq_ignore_ascii_case("binary") {
+        2
+    } else if value.eq_ignore_ascii_case("oct") || value.eq_ignore_ascii_case("octal") {
+        8
+    } else if value.eq_ignore_ascii_case("dec") || value.eq_ignore_ascii_case("decimal") {
+        10
+    } else if value.eq_ignore_ascii_case("hex") || value.eq_ignore_ascii_case("hexadecimal") {
+        16
+    } else {
+        value.parse::<u32>().ok()?
+    };
+    (2..=36).contains(&base).then_some(base)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct NativeSessionSettings {
     input_base: Option<u32>,
@@ -33,28 +48,10 @@ impl NativeSessionSettings {
             if let Some(stripped) = s_trimmed.strip_prefix("base ") {
                 let parts: Vec<&str> = stripped.split_whitespace().collect();
                 if parts.len() == 1 {
-                    if let Ok(b) = parts[0].parse::<u32>() {
-                        if (2..=36).contains(&b) {
-                            state.output_base = Some(b);
-                        } else {
-                            return None;
-                        }
-                    } else {
-                        return None;
-                    }
+                    state.output_base = Some(parse_standard_base(parts[0])?);
                 } else if parts.len() == 2 {
-                    if let (Ok(in_b), Ok(out_b)) =
-                        (parts[0].parse::<u32>(), parts[1].parse::<u32>())
-                    {
-                        if (2..=36).contains(&in_b) && (2..=36).contains(&out_b) {
-                            state.input_base = Some(in_b);
-                            state.output_base = Some(out_b);
-                        } else {
-                            return None;
-                        }
-                    } else {
-                        return None;
-                    }
+                    state.input_base = Some(parse_standard_base(parts[0])?);
+                    state.output_base = Some(parse_standard_base(parts[1])?);
                 } else {
                     return None;
                 }
@@ -263,13 +260,13 @@ pub(crate) fn apply_raw_settings_to_context(
             let parts = base.split_whitespace().collect::<Vec<_>>();
             match parts.as_slice() {
                 [output] => {
-                    let output = output.parse::<u32>().ok()?;
+                    let output = parse_standard_base(output)?;
                     context.output_base = output;
                     context.print_options.base = i32::try_from(output).ok()?;
                 }
                 [input, output] => {
-                    let input = input.parse::<u32>().ok()?;
-                    let output = output.parse::<u32>().ok()?;
+                    let input = parse_standard_base(input)?;
+                    let output = parse_standard_base(output)?;
                     context.input_base = input;
                     context.parse_options.base = i32::try_from(input).ok()?;
                     context.output_base = output;
@@ -490,6 +487,25 @@ mod tests {
 
         let prog_10_16 = NativeSessionSettings::from_raw(&["base 10 16"]).unwrap();
         assert_eq!(prog_10_16.input_base(), Some(10));
+
+        for (name, expected) in [
+            ("bin", 2),
+            ("binary", 2),
+            ("oct", 8),
+            ("octal", 8),
+            ("dec", 10),
+            ("decimal", 10),
+            ("hex", 16),
+            ("hexadecimal", 16),
+        ] {
+            let output = NativeSessionSettings::from_raw(&[&format!("base {name}")]).unwrap();
+            assert_eq!(output.output_base, Some(expected));
+
+            let programming =
+                NativeSessionSettings::from_raw(&[&format!("base {name} {name}")]).unwrap();
+            assert_eq!(programming.input_base(), Some(expected));
+            assert_eq!(programming.output_base, Some(expected));
+        }
 
         // Unsupported/invalid/malformed bases (must reject / return None, not panic)
         assert!(NativeSessionSettings::from_raw(&["base 0"]).is_none());

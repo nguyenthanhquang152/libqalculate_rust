@@ -235,6 +235,13 @@ fn test_raw_vs_normalized_exactness() {
     assert_eq!(inv.timeout_ms, 100);
     let inv = parse_args(vec!["qalc-rs", "-m=100"]);
     assert_eq!(inv.timeout_ms, 100);
+    for variant in ["--list=", "-b="] {
+        let inv = parse_args(vec!["qalc-rs", variant]);
+        assert_eq!(inv.expression, Some(variant.to_string()));
+        assert!(inv.list.is_none());
+        assert!(inv.settings.is_empty());
+        assert!(inv.diagnostics.is_empty());
+    }
     for variant in ["-b.16", "-m:5"] {
         let inv = parse_args(vec!["qalc-rs", variant, "--", "1+1"]);
         assert_eq!(

@@ -1440,6 +1440,14 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         (vec!["-t", "-b", "2", "--", "-5"], "1111 1011\n"),
         (vec!["-t", "-b", "2", "2+3"], "0000 0101\n"),
         (vec!["-t", "-p", "10", "2+3"], "0000 0101 = 05 = 5 = 0x5\n"),
+        (vec!["-t", "-b", "bin", "--", "10"], "0000 1010\n"),
+        (vec!["-t", "-b", "oct", "--", "10"], "012\n"),
+        (vec!["-t", "-b", "dec", "--", "10"], "10\n"),
+        (vec!["-t", "-b", "hex", "--", "10"], "0xA\n"),
+        (
+            vec!["-t", "-p", "bin", "--", "10"],
+            "0000 0010 = 02 = 2 = 0x2\n",
+        ),
         (vec!["-t", "-b", "10", "--", "1/3"], "0.3333333333\n"),
         (vec!["-t", "-b", "10 10", "--", "1/3"], "0.3333333333\n"),
         (vec!["-t", "+p", "--", "1/3"], "0.3333333333\n"),
@@ -1495,11 +1503,13 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
 fn cli_evaluation_settings_work_when_cpp_fallback_is_available() {
     let cases = [
         (vec!["-t", "-b", "16", "255"], "0xFF\n"),
+        (vec!["-t", "-b", "hex", "255"], "0xFF\n"),
         (vec!["-t", "-s", "base 16", "255"], "0xFF\n"),
         (
             vec!["-t", "-p", "10", "52"],
             "0011 0100 = 064 = 52 = 0x34\n",
         ),
+        (vec!["-t", "-p", "bin", "10"], "0000 0010 = 02 = 2 = 0x2\n"),
         (vec!["-t", "+u8", "-b", "8", "--", "-5"], "-05\n"),
     ];
 
@@ -1646,6 +1656,22 @@ fn cli_definition_and_listing_flags_are_effective() {
         .assert()
         .success()
         .stdout("No matching item found.\n\n");
+
+    let mut unicode_setting_off = qalc_rs_raw();
+    unicode_setting_off
+        .args(["-s", "unicode 0", "-u8", "--list-variables", "Archimedes"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("pi (Archimedes' Constant (pi))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
+
+    let mut unicode_setting_on = qalc_rs_raw();
+    unicode_setting_on
+        .args(["-s", "unicode 1", "+u8", "--list-variables", "Archimedes"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("pi / \u{03c0} (Archimedes' Constant (pi))\t\n\nFor more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).\n\n");
 }
 
 #[test]

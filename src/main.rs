@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use libqalculate_rust::batch::read_batch_cases;
 use libqalculate_rust::ffi::Calculator;
+use libqalculate_rust::parser::commands::{parse_command, SessionCommand, SetSetting};
 use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 
 enum EvaluationOutcome {
@@ -102,7 +103,7 @@ fn main() {
     }
     if let Some(ref list_req) = invocation.list {
         let data_dir = libqalculate_rust::rates::definitions_dir();
-        let unicode_enabled = invocation.unicode.unwrap_or(true);
+        let unicode_enabled = cli_unicode_enabled(&invocation);
         match listing::render_list(
             &data_dir,
             list_req,
@@ -138,6 +139,19 @@ fn self_check() -> Result<(), String> {
     println!("upstream_version={UPSTREAM_LIBQALCULATE_VERSION}");
     println!("upstream_batch_files={}", tests.len());
     Ok(())
+}
+
+fn cli_unicode_enabled(invocation: &cli::CliInvocation) -> bool {
+    let mut enabled = invocation.unicode.unwrap_or(true);
+    for setting in &invocation.settings {
+        let command = format!("set {setting}");
+        if let Ok(SessionCommand::Set(command)) = parse_command(&command) {
+            if let SetSetting::Unicode(value) = command.setting {
+                enabled = value;
+            }
+        }
+    }
+    enabled
 }
 
 fn list_upstream_tests() -> Result<(), String> {
