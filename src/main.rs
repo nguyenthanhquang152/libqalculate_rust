@@ -192,7 +192,14 @@ fn evaluate_expression(
     let selective_definitions_disabled =
         !defs.units || !defs.currencies || !defs.functions || !defs.variables || !defs.datasets;
     if selective_definitions_disabled
-        && !libqalculate_rust::ffi::native_expression_is_definition_free(expression)
+        && libqalculate_rust::ffi::native_expression_uses_disabled_definition_family(
+            expression,
+            defs.units,
+            defs.currencies,
+            defs.functions,
+            defs.variables,
+            defs.datasets,
+        )
     {
         if fallback_disabled {
             return Err("selective definitions are unsupported for native evaluation".to_string());
@@ -286,12 +293,12 @@ fn evaluate_expression(
 
     match result {
         Ok(result) => {
-            let native_message_had_error = calc.last_native_message_had_error();
+            let message_had_error = calc.last_native_message_had_error();
             if report_fallback {
                 eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());
             }
             println!("{}", result.output);
-            if native_message_had_error {
+            if message_had_error {
                 Ok(EvaluationOutcome::MessageError)
             } else {
                 Ok(EvaluationOutcome::Success)

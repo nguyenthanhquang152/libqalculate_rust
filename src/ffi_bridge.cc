@@ -1,8 +1,41 @@
 #include "ffi_bridge.h"
 
+#include <algorithm>
+
 namespace {
 
 thread_local bool last_qalc_result_is_approximate = false;
+thread_local std::string last_qalc_messages_text;
+thread_local std::size_t last_qalc_messages_line_count = 0;
+thread_local bool last_qalc_message_had_error = false;
+
+void capture_qalc_messages(Calculator &calc) {
+    last_qalc_messages_text.clear();
+    last_qalc_messages_line_count = 0;
+    last_qalc_message_had_error = false;
+
+    CalculatorMessage *message = calc.message();
+    while(message) {
+        const std::string message_text = message->message();
+        if(message_text.empty()) {
+            message = calc.nextMessage();
+            continue;
+        }
+        std::string rendered;
+        if(message->type() == MESSAGE_ERROR) {
+            rendered = "error: ";
+            last_qalc_message_had_error = true;
+        } else if(message->type() == MESSAGE_WARNING) {
+            rendered = "warning: ";
+        }
+        rendered += message_text;
+        if(!last_qalc_messages_text.empty()) last_qalc_messages_text += '\n';
+        last_qalc_messages_text += rendered;
+        last_qalc_messages_line_count +=
+            static_cast<std::size_t>(std::count(rendered.begin(), rendered.end(), '\n')) + 1;
+        message = calc.nextMessage();
+    }
+}
 
 class CalculatorStateGuard {
 public:
@@ -114,6 +147,10 @@ rust::String calculate_and_print_qalc(
     rust::Str expr,
     int32_t timeout_ms
 ) {
+    last_qalc_result_is_approximate = false;
+    last_qalc_messages_text.clear();
+    last_qalc_messages_line_count = 0;
+    last_qalc_message_had_error = false;
     try {
         CalculatorFfiGuard ffi_guard(calc);
         std::string expr_str(expr.data(), expr.size());
@@ -195,6 +232,7 @@ rust::String calculate_and_print_qalc(
             AUTOMATIC_APPROXIMATION_OFF
         );
         last_qalc_result_is_approximate = is_approximate;
+        capture_qalc_messages(calc);
         return rust::String(output);
     } catch (const std::exception&) {
         throw;
@@ -205,4 +243,16 @@ rust::String calculate_and_print_qalc(
 
 bool qalc_last_result_is_approximate() {
     return last_qalc_result_is_approximate;
+}
+
+rust::String qalc_last_messages() {
+    return rust::String(last_qalc_messages_text);
+}
+
+std::size_t qalc_last_message_line_count() {
+    return last_qalc_messages_line_count;
+}
+
+bool qalc_last_message_had_error() {
+    return last_qalc_message_had_error;
 }

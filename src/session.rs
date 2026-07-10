@@ -218,8 +218,8 @@ impl NativeSessionSettings {
         }
     }
 
-    pub(crate) const fn has_approximation(self) -> bool {
-        self.approximation.is_some()
+    pub(crate) const fn has_non_default_approximation(self) -> bool {
+        !matches!(self.approximation, None | Some(ApproximationMode::TryExact))
     }
 
     pub(crate) const fn has_print_format_settings(self) -> bool {
@@ -542,5 +542,7 @@ mod tests {
         assert!(NativeSessionSettings::from_raw(&["base 16 99"]).is_none());
         assert!(NativeSessionSettings::from_raw(&["base 1 16"]).is_none());
         assert!(NativeSessionSettings::from_raw(&["base 10 37"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["set base 16"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["/set base 16"]).is_none());
     }
 }

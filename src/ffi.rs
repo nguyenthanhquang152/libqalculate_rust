@@ -46,6 +46,9 @@ pub(crate) mod sys {
         ) -> Result<String>;
 
         fn qalc_last_result_is_approximate() -> bool;
+        fn qalc_last_messages() -> String;
+        fn qalc_last_message_line_count() -> usize;
+        fn qalc_last_message_had_error() -> bool;
     }
 }
 
@@ -125,9 +128,133 @@ pub fn native_expression_uses_global_definitions(expr: &str) -> bool {
         return false;
     };
 
-    crate::rates::match_currency_conversion(&parsed).is_some()
-        || crate::unit_conversion::may_contain_unit_candidate(&parsed)
-        || is_dataset_definition_expression(&parsed)
+    let usage = native_definition_usage(&parsed);
+    usage.currencies || usage.units || usage.datasets
+}
+
+/// Return whether an expression uses any selectively disabled definition family.
+///
+/// Each boolean reports whether the corresponding unit, currency, function,
+/// variable, or dataset family is enabled for this invocation.
+pub fn native_expression_uses_disabled_definition_family(
+    expr: &str,
+    units_enabled: bool,
+    currencies_enabled: bool,
+    functions_enabled: bool,
+    variables_enabled: bool,
+    datasets_enabled: bool,
+) -> bool {
+    let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
+        return true;
+    };
+    let usage = native_definition_usage(&parsed);
+    let uses_disabled_function_or_variable =
+        uses_disabled_function_or_variable_definition(&usage, functions_enabled, variables_enabled);
+    (!units_enabled && usage.units)
+        || (!currencies_enabled && usage.currencies)
+        || (!datasets_enabled && usage.datasets)
+        || uses_disabled_function_or_variable
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct NativeDefinitionUsage {
+    units: bool,
+    currencies: bool,
+    datasets: bool,
+    function_names: Vec<String>,
+    variable_names: Vec<String>,
+}
+
+fn uses_disabled_function_or_variable_definition(
+    usage: &NativeDefinitionUsage,
+    functions_enabled: bool,
+    variables_enabled: bool,
+) -> bool {
+    let functions_need_lookup = !functions_enabled && !usage.function_names.is_empty();
+    let variables_need_lookup = !variables_enabled && !usage.variable_names.is_empty();
+    if !functions_need_lookup && !variables_need_lookup {
+        return false;
+    }
+
+    let Ok(catalog) = crate::definitions_catalog::load_function_variable_catalog_from_dir(
+        crate::rates::definitions_dir(),
+    ) else {
+        return true;
+    };
+
+    let uses_disabled_function = functions_need_lookup
+        && usage.function_names.iter().any(|name| {
+            catalog
+                .functions()
+                .find_by_name(name)
+                .is_some_and(|definition| {
+                    definition.kind() == crate::definitions_catalog::FunctionKind::User
+                })
+        });
+    let uses_disabled_variable = variables_need_lookup
+        && usage.variable_names.iter().any(|name| {
+            catalog
+                .variables()
+                .find_by_name(name)
+                .is_some_and(|definition| {
+                    definition.kind() != crate::definitions_catalog::VariableKind::Builtin
+                })
+        });
+    uses_disabled_function || uses_disabled_variable
+}
+
+fn push_definition_name(names: &mut Vec<String>, name: &str) {
+    if !names.iter().any(|candidate| candidate == name) {
+        names.push(name.to_string());
+    }
+}
+
+fn native_definition_usage(expr: &crate::ast::Expression) -> NativeDefinitionUsage {
+    let mut usage = NativeDefinitionUsage::default();
+    collect_native_definition_usage(expr, false, &mut usage);
+    usage
+}
+
+fn collect_native_definition_usage(
+    expr: &crate::ast::Expression,
+    dataset_argument: bool,
+    usage: &mut NativeDefinitionUsage,
+) {
+    use crate::ast::Expression;
+
+    if crate::rates::match_currency_conversion(expr).is_some() {
+        usage.currencies = true;
+        return;
+    }
+
+    match expr {
+        Expression::FunctionCall { function, args } => {
+            push_definition_name(&mut usage.function_names, function.id());
+            let is_dataset = crate::datasets::is_dataset_function_name(function.id());
+            usage.datasets |= is_dataset;
+            for arg in args {
+                collect_native_definition_usage(arg, dataset_argument || is_dataset, usage);
+            }
+        }
+        Expression::Unit { .. } => usage.units = true,
+        Expression::Variable(variable) => {
+            push_definition_name(&mut usage.variable_names, variable.id());
+        }
+        Expression::Symbolic(symbol) => {
+            if crate::unit_conversion::may_contain_unit_candidate(expr) {
+                usage.units = true;
+            } else if !dataset_argument {
+                push_definition_name(&mut usage.variable_names, symbol.name());
+            }
+        }
+        _ => {
+            for index in 0..expr.child_count() {
+                if let Some(child) = expr.child(index) {
+                    collect_native_definition_usage(child, dataset_argument, usage);
+                }
+            }
+        }
+    }
 }
 
 /// Return whether an expression is composed entirely of native literals and
@@ -179,7 +306,7 @@ impl Calculator {
         }
     }
 
-    /// Whether the last native evaluation emitted an error-severity message.
+    /// Whether the last evaluation emitted an error-severity message.
     pub fn last_native_message_had_error(&self) -> bool {
         self.last_native_message_had_error
     }
@@ -535,9 +662,19 @@ impl Calculator {
                     sys::calculate_and_print(pin, expr, timeout_ms).map_err(CalculatorError::Cxx)?
                 }
                 PrintProfile::Qalc => {
-                    let output = sys::calculate_and_print_qalc(pin, expr, timeout_ms)
+                    let mut output = sys::calculate_and_print_qalc(pin, expr, timeout_ms)
                         .map_err(CalculatorError::Cxx)?;
                     self.last_output_approximate = sys::qalc_last_result_is_approximate();
+                    self.last_output_message_lines = sys::qalc_last_message_line_count();
+                    self.last_native_message_had_error = sys::qalc_last_message_had_error();
+                    let messages = sys::qalc_last_messages();
+                    if !messages.is_empty() {
+                        output = if output.is_empty() {
+                            messages
+                        } else {
+                            format!("{messages}\n{output}")
+                        };
+                    }
                     output
                 }
             }
@@ -768,16 +905,6 @@ fn is_dataset_native_expression(expr: &crate::ast::Expression) -> bool {
             return false;
         };
         crate::datasets::is_dataset_function_name(function.id())
-    })
-}
-
-fn is_dataset_definition_expression(expr: &crate::ast::Expression) -> bool {
-    expression_contains(expr, &|expr| {
-        matches!(
-            expr,
-            crate::ast::Expression::FunctionCall { function, .. }
-                if matches!(function.id(), "atom" | "planet")
-        )
     })
 }
 
@@ -1039,7 +1166,7 @@ fn native_scaffold_output(
     settings: &[&str],
 ) -> Option<NativeOutput> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
-    if parsed_settings.has_approximation() {
+    if parsed_settings.has_non_default_approximation() {
         return None;
     }
     if parsed_settings.programming_mode
@@ -1891,6 +2018,81 @@ mod tests {
         assert!(native_expression_is_definition_free("[1, 2, 3]"));
         assert!(!native_expression_is_definition_free("sqrt(2)"));
         assert!(!native_expression_is_definition_free("1 USD to EUR"));
+
+        let parsed_unit = crate::ast::Expression::Unit {
+            unit: crate::ast::UnitRef::new("m"),
+            prefix: None,
+            plural: false,
+        };
+        assert!(crate::unit_conversion::may_contain_unit_candidate(
+            &parsed_unit
+        ));
+
+        assert!(!native_expression_uses_disabled_definition_family(
+            r#"message("hello")"#,
+            false,
+            true,
+            true,
+            true,
+            true,
+        ));
+        assert!(!native_expression_uses_disabled_definition_family(
+            r#"message("hello")"#,
+            true,
+            true,
+            false,
+            true,
+            true,
+        ));
+        assert!(native_expression_uses_disabled_definition_family(
+            "cross([1, 0, 0]; [0, 1, 0])",
+            true,
+            true,
+            false,
+            true,
+            true,
+        ));
+        assert!(!native_expression_uses_disabled_definition_family(
+            "1 m to cm",
+            true,
+            true,
+            false,
+            true,
+            true,
+        ));
+        assert!(native_expression_uses_disabled_definition_family(
+            "1 m to cm",
+            false,
+            true,
+            true,
+            true,
+            true,
+        ));
+        assert!(native_expression_uses_disabled_definition_family(
+            "1 USD to EUR",
+            true,
+            false,
+            true,
+            true,
+            true,
+        ));
+        assert!(native_expression_uses_disabled_definition_family(
+            "atom(H; mass)",
+            true,
+            true,
+            true,
+            true,
+            false,
+        ));
+        assert!(!native_expression_uses_disabled_definition_family(
+            "sqrt(2)", true, true, true, false, true,
+        ));
+        assert!(!native_expression_uses_disabled_definition_family(
+            "e", true, true, true, false, true,
+        ));
+        assert!(native_expression_uses_disabled_definition_family(
+            "c", true, true, true, false, true,
+        ));
     }
 
     #[test]

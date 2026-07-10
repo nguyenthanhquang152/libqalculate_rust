@@ -239,9 +239,9 @@ pub(crate) fn may_contain_unit_candidate(expr: &Expression) -> bool {
             args.iter().any(may_contain_unit_candidate)
         }
         Expression::Assignment { value, .. } => may_contain_unit_candidate(value),
+        Expression::Unit { .. } => true,
         Expression::Number(_)
         | Expression::Text(_)
-        | Expression::Unit { .. }
         | Expression::Variable(_)
         | Expression::Undefined
         | Expression::Aborted

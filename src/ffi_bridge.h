@@ -1,6 +1,7 @@
 #pragma once
 #include "Calculator.h"
 #include "rust/cxx.h"
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -26,3 +27,6 @@ rust::String calculate_and_print_qalc(
 );
 
 bool qalc_last_result_is_approximate();
+rust::String qalc_last_messages();
+std::size_t qalc_last_message_line_count();
+bool qalc_last_message_had_error();

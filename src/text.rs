@@ -487,7 +487,7 @@ where
 pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     match expr {
         Expression::Number(num) => num.to_string(),
-        Expression::Text(text) => text.clone(),
+        Expression::Text(text) => quote_text_for_qalc(text),
         Expression::Symbolic(symbol) => symbol.name().to_string(),
         Expression::Variable(variable) => variable.id().to_string(),
         Expression::Unit { unit, prefix, .. } => {

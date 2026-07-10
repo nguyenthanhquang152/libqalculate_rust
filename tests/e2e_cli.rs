@@ -126,6 +126,21 @@ fn cli_formats_native_message_functions_with_fallback_disabled() {
 }
 
 #[test]
+fn cli_formats_cpp_fallback_messages_before_non_terse_equation() {
+    let mut warning = qalc_rs_raw();
+    warning
+        .args(["--", r#"warning("first")"#])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("warning: first\nwarning(\"first\") = 0\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
+}
+
+#[test]
 fn cli_evaluates_negative_expression_after_separator() {
     let mut cmd = qalc_rs();
     cmd.args(["--", "-0"])
@@ -1583,6 +1598,25 @@ fn cli_evaluation_settings_work_when_cpp_fallback_is_available() {
 }
 
 #[test]
+fn cli_treats_try_exact_as_the_default_approximation_mode() {
+    for fallback_disabled in [false, true] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-t", "-set", "approximation try exact", "--", "1+1"])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_REPORT_FALLBACK", "1");
+        if fallback_disabled {
+            cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
+        }
+        cmd.assert()
+            .success()
+            .stdout("2\n")
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
 fn cli_fails_closed_when_requested_output_base_cannot_be_formatted_natively() {
     let mut cmd = qalc_rs_raw();
     cmd.args(["-t", "-b", "16", "--", "1/3"])
@@ -1949,8 +1983,9 @@ fn cli_nodefs_flag_evaluation() {
         .args(["-nodefs", "1+1"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .assert()
-        .success()
-        .stdout("1 + 1 = 2\n");
+        .failure()
+        .code(1)
+        .stdout("error: Radians unit is missing. Creating one for this session.\n1 + 1 = 2\n");
 
     let mut definition_backed = qalc_rs_raw();
     definition_backed
@@ -1968,29 +2003,46 @@ fn cli_nodefs_flag_evaluation() {
 
 #[test]
 fn cli_selective_definition_fallback_rejection() {
-    let mut cmd_disabled = qalc_rs_raw();
-    cmd_disabled
-        .args(["-nofunctions", r#"message("hello")"#])
-        .env("QALCULATE_DISABLE_FALLBACK", "1")
-        .env("QALCULATE_REPORT_FALLBACK", "1")
-        .assert()
-        .failure()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "selective definitions are unsupported for native evaluation",
-        ));
+    for (flag, expression) in [
+        ("-nounits", "1 m to cm"),
+        ("-nocurrencies", "1 USD to EUR"),
+        ("-nofunctions", "cross([1, 0, 0]; [0, 1, 0])"),
+        ("-novariables", "c"),
+        ("-nodatasets", "atom(H; mass)"),
+    ] {
+        let mut disabled_family = qalc_rs_raw();
+        disabled_family
+            .args([flag, "-t", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains(
+                "selective definitions are unsupported for native evaluation",
+            ));
+    }
 
-    let mut currency_disabled = qalc_rs_raw();
-    currency_disabled
-        .args(["-nocurrencies", "1 USD to EUR"])
-        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
-        .env("QALCULATE_DISABLE_FALLBACK", "1")
-        .assert()
-        .failure()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "selective definitions are unsupported for native evaluation",
-        ));
+    for (flag, expression, expected) in [
+        ("-nounits", r#"message("hello")"#, "hello\n0\n"),
+        ("-nocurrencies", "1 m to cm", "100 cm\n"),
+        ("-nofunctions", "1 m to cm", "100 cm\n"),
+        ("-novariables", "sqrt(4)", "2\n"),
+        ("-nodatasets", "sqrt(4)", "2\n"),
+    ] {
+        let mut unrelated_family = qalc_rs_raw();
+        unrelated_family
+            .args([flag, "-t", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
 
     for flag in [
         "-nounits",
