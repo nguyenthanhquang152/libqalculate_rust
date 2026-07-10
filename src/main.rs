@@ -213,9 +213,9 @@ fn evaluate_expression(
         return Err("global definitions are disabled for this native expression".to_string());
     }
 
-    let unicode_setting = invocation
-        .unicode
-        .map(|enabled| format!("unicode {}", i32::from(enabled)));
+    let unicode_setting = invocation.unicode.and_then(|enabled| {
+        (!enabled || fallback_disabled).then(|| format!("unicode {}", i32::from(enabled)))
+    });
     let programming_setting = invocation
         .programming_mode
         .then(|| "programming mode 1".to_string());
@@ -234,7 +234,16 @@ fn evaluate_expression(
     setting_refs.extend(invocation.settings.iter().map(String::as_str));
 
     let mut calc = Calculator::new();
-    if invocation.definitions.global_defs && !fallback_disabled && !calc.load_global_definitions() {
+    if invocation.definitions.global_defs
+        && !fallback_disabled
+        && !calc.load_global_definitions_selected(
+            defs.units,
+            defs.currencies,
+            defs.functions,
+            defs.variables,
+            defs.datasets,
+        )
+    {
         return Err("failed to load global definitions".to_owned());
     }
 

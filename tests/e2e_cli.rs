@@ -216,6 +216,30 @@ fn cli_applies_limited_set_for_native_numberbase_evidence() {
 }
 
 #[test]
+fn cli_applies_input_base_only_to_integer_and_word_operator_expressions() {
+    for (expression, expected) in [
+        ("10+1", "17\n"),
+        ("A xor B", "1\n"),
+        ("A and B", "1\n"),
+        ("A or B", "1\n"),
+        ("A mod 3", "1\n"),
+        ("A div 3", "3\n"),
+        ("A rem 3", "1\n"),
+    ] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-t", "-set", "input base 16", "--", expression])
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
+}
+
+#[test]
 fn cli_applies_unicode_on_setting_for_native_sexagesimal_output() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
@@ -1598,6 +1622,20 @@ fn cli_evaluation_settings_work_when_cpp_fallback_is_available() {
 }
 
 #[test]
+fn cli_explicit_unicode_on_keeps_cpp_fallback_available() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-t", "-u8", "--", "cross([1,0,0];[0,1,0])"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("[0  0  1]\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
+}
+
+#[test]
 fn cli_treats_try_exact_as_the_default_approximation_mode() {
     for fallback_disabled in [false, true] {
         let mut cmd = qalc_rs_raw();
@@ -2070,6 +2108,51 @@ fn cli_selective_definition_fallback_rejection() {
             .stderr(predicate::str::contains(
                 "[qalc-rs-metadata] fallback=native",
             ));
+    }
+}
+
+#[test]
+fn cli_selective_loading_skips_disabled_xml_catalogs() {
+    let definitions = tempdir().expect("temporary definitions directory");
+    for file in [
+        "prefixes.xml",
+        "currencies.xml",
+        "units.xml",
+        "datasets.xml",
+        "variables.xml",
+    ] {
+        std::fs::copy(
+            Path::new(definitions_dir()).join(file),
+            definitions.path().join(file),
+        )
+        .unwrap_or_else(|error| panic!("failed to copy {file}: {error}"));
+    }
+
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-nofunctions", "-t", "--", "1+1"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions.path())
+        .assert()
+        .success()
+        .stdout("2\n");
+}
+
+#[test]
+fn cli_disabled_unit_gate_uses_full_catalog_aliases() {
+    for fallback_disabled in [false, true] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-nounits", "-t", "--", "1 acre to hectare"])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir());
+        if fallback_disabled {
+            cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
+        }
+        cmd.assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains(if fallback_disabled {
+                "selective definitions are unsupported for native evaluation"
+            } else {
+                "selective definitions are incompatible with fallback"
+            }));
     }
 }
 

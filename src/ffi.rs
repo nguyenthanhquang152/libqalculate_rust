@@ -28,6 +28,16 @@ pub(crate) mod sys {
         /// Load global definitions.
         fn load_global_definitions(calc: Pin<&mut Calculator>) -> bool;
 
+        /// Load selected global definition families using qalc's startup order.
+        fn load_global_definitions_selected(
+            calc: Pin<&mut Calculator>,
+            units: bool,
+            currencies: bool,
+            functions: bool,
+            variables: bool,
+            datasets: bool,
+        ) -> bool;
+
         /// Load local definitions.
         fn load_local_definitions(calc: Pin<&mut Calculator>) -> bool;
 
@@ -129,7 +139,7 @@ pub fn native_expression_uses_global_definitions(expr: &str) -> bool {
     };
 
     let usage = native_definition_usage(&parsed);
-    usage.currencies || usage.units || usage.datasets
+    usage.currencies || usage_uses_unit_definition(&usage) || usage.datasets
 }
 
 /// Return whether an expression uses any selectively disabled definition family.
@@ -150,7 +160,7 @@ pub fn native_expression_uses_disabled_definition_family(
     let usage = native_definition_usage(&parsed);
     let uses_disabled_function_or_variable =
         uses_disabled_function_or_variable_definition(&usage, functions_enabled, variables_enabled);
-    (!units_enabled && usage.units)
+    (!units_enabled && usage_uses_unit_definition(&usage))
         || (!currencies_enabled && usage.currencies)
         || (!datasets_enabled && usage.datasets)
         || uses_disabled_function_or_variable
@@ -163,6 +173,25 @@ struct NativeDefinitionUsage {
     datasets: bool,
     function_names: Vec<String>,
     variable_names: Vec<String>,
+}
+
+fn usage_uses_unit_definition(usage: &NativeDefinitionUsage) -> bool {
+    if usage.units {
+        return true;
+    }
+    if usage.variable_names.is_empty() {
+        return false;
+    }
+
+    let Ok(catalog) =
+        crate::units::load_prefix_unit_catalog_from_dir(crate::rates::definitions_dir())
+    else {
+        return true;
+    };
+    usage
+        .variable_names
+        .iter()
+        .any(|name| catalog.unit_by_name(name).is_some())
 }
 
 fn uses_disabled_function_or_variable_definition(
@@ -335,6 +364,29 @@ impl Calculator {
         // SAFETY: Passing a pinned mutable reference of the Calculator to the FFI function.
         // The pinned reference ensures the C++ object is not moved and is valid.
         sys::load_global_definitions(pin)
+    }
+
+    /// Load selected standard global definition families.
+    ///
+    /// This follows qalc's startup ordering, including its behavior of loading
+    /// currencies together with units.
+    /// Returns `true` when every requested family loaded successfully.
+    pub fn load_global_definitions_selected(
+        &mut self,
+        units: bool,
+        currencies: bool,
+        functions: bool,
+        variables: bool,
+        datasets: bool,
+    ) -> bool {
+        let _guard = FFI_LOCK.lock().unwrap();
+        if self.inner.is_null() {
+            return false;
+        }
+        let pin = self.inner.pin_mut();
+        sys::load_global_definitions_selected(
+            pin, units, currencies, functions, variables, datasets,
+        )
     }
 
     /// Load user-specific local definitions.
@@ -1171,6 +1223,8 @@ fn native_scaffold_output(
     }
     if parsed_settings.programming_mode
         || parsed_settings.output_base.is_some_and(|base| base != 10)
+        || (!parsed_settings.has_interval_display()
+            && parsed_settings.input_base().is_some_and(|base| base != 10))
     {
         return crate::numberbase::native_output(expr, parsed_settings).map(NativeOutput::plain);
     }

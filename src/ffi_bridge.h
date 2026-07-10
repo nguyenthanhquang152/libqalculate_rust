@@ -11,6 +11,14 @@ std::unique_ptr<Calculator> new_calculator();
 // Wrapper methods for loading definitions
 bool load_exchange_rates(Calculator &calc);
 bool load_global_definitions(Calculator &calc);
+bool load_global_definitions_selected(
+    Calculator &calc,
+    bool units,
+    bool currencies,
+    bool functions,
+    bool variables,
+    bool datasets
+);
 bool load_local_definitions(Calculator &calc);
 
 // Wrapper method for calculation

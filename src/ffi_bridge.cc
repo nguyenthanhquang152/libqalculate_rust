@@ -113,6 +113,36 @@ bool load_global_definitions(Calculator &calc) {
     }
 }
 
+bool load_global_definitions_selected(
+    Calculator &calc,
+    bool units,
+    bool currencies,
+    bool functions,
+    bool variables,
+    bool datasets
+) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        bool loaded = true;
+        if(units && !calc.loadGlobalPrefixes()) loaded = false;
+        if(units && !calc.loadGlobalUnits()) loaded = false;
+        else if(!units && currencies && !calc.loadGlobalCurrencies()) loaded = false;
+        if(!units) {
+            calc.beginTemporaryStopMessages();
+            calc.getGraUnit();
+            calc.getRadUnit();
+            calc.getDegUnit();
+            calc.endTemporaryStopMessages();
+        }
+        if(functions && !calc.loadGlobalFunctions()) loaded = false;
+        if(datasets && !calc.loadGlobalDataSets()) loaded = false;
+        if(variables && !calc.loadGlobalVariables()) loaded = false;
+        return loaded;
+    } catch (...) {
+        return false;
+    }
+}
+
 bool load_local_definitions(Calculator &calc) {
     try {
         CalculatorFfiGuard ffi_guard(calc);

@@ -61,19 +61,23 @@ fn parse_or_evaluate_integer(
     };
     parse_integer(&normalized_expr, input_base).or_else(|| {
         let decimal_expr = translate_integer_expression(&normalized_expr, input_base)?;
-        let evaluated = if caret_is_xor {
-            let xor_expr = apply_caret_xor_mode(&decimal_expr);
-            let parsed = crate::parser::operators::parse_expression(&xor_expr).ok()?;
-            let mut context = crate::context::CalculatorContext::default();
-            let crate::ast::Expression::Number(number) =
-                crate::eval::evaluate_ast(&parsed, &mut context).ok()?
-            else {
-                return None;
-            };
-            number
+        let evaluator_expr = if caret_is_xor {
+            apply_caret_xor_mode(&decimal_expr)
         } else {
-            crate::number::evaluate_expr(&decimal_expr).ok()?
+            decimal_expr
         };
+        let evaluated = crate::number::evaluate_expr(&evaluator_expr)
+            .ok()
+            .or_else(|| {
+                let parsed = crate::parser::operators::parse_expression(&evaluator_expr).ok()?;
+                let mut context = crate::context::CalculatorContext::default();
+                let crate::ast::Expression::Number(number) =
+                    crate::eval::evaluate_ast(&parsed, &mut context).ok()?
+                else {
+                    return None;
+                };
+                Some(number)
+            })?;
         let mut magnitude = evaluated.to_integer()?;
         let negative = magnitude < 0;
         if negative {
@@ -146,6 +150,10 @@ fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
             }
 
             let token = std::str::from_utf8(&bytes[start..index]).ok()?;
+            if is_integer_word_operator(token) {
+                translated.push_str(token);
+                continue;
+            }
             let digits = match input_base {
                 16 => token
                     .strip_prefix("0x")
@@ -194,6 +202,13 @@ fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
     }
 
     Some(translated)
+}
+
+fn is_integer_word_operator(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "xor" | "and" | "or" | "mod" | "div" | "rem"
+    )
 }
 
 fn format_signed_binary(value: &ParsedInteger) -> Option<String> {
@@ -309,6 +324,21 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
                     .to_ascii_uppercase(),
             };
             return Some(signed_magnitude(&value, formatted, settings));
+        }
+    }
+
+    if let Some(input_base) = settings.input_base() {
+        if let Some(value) = parse_or_evaluate_integer(
+            trimmed,
+            input_base,
+            settings.caret_is_xor(),
+            settings.has_invalid_programming_base(),
+        ) {
+            return Some(signed_magnitude(
+                &value,
+                value.magnitude.to_string(),
+                settings,
+            ));
         }
     }
 
@@ -431,11 +461,11 @@ fn native_numberbase_output(expr: &str) -> Option<String> {
     let trimmed = expr.trim();
 
     if let Some(hex_digits) = trimmed.strip_prefix("0x") {
-        return parse_radix_u128(hex_digits, 16).map(|value| value.to_string());
+        return parse_radix_integer(hex_digits, 16).map(|value| value.to_string());
     }
 
     if let Some(inner) = strip_function_call(trimmed, "hex") {
-        return parse_radix_u128(inner, 16).map(|value| value.to_string());
+        return parse_radix_integer(inner, 16).map(|value| value.to_string());
     }
 
     if let Some(inner) = strip_function_call(trimmed, "float") {
@@ -491,6 +521,16 @@ pub(crate) fn parse_radix_u128(digits: &str, radix: u32) -> Option<u128> {
     (!compact.is_empty())
         .then_some(compact)
         .and_then(|value| u128::from_str_radix(&value, radix).ok())
+}
+
+fn parse_radix_integer(digits: &str, radix: u32) -> Option<Integer> {
+    if !(2..=36).contains(&radix) {
+        return None;
+    }
+    let compact: String = digits.chars().filter(|ch| !ch.is_whitespace()).collect();
+    (!compact.is_empty())
+        .then_some(compact)
+        .and_then(|value| Integer::from_str_radix(&value, i32::try_from(radix).ok()?).ok())
 }
 
 pub(crate) fn parse_bit_string_u32(bits: &str) -> Option<u32> {
@@ -851,20 +891,29 @@ pub(crate) fn number_to_u128(num: &crate::number::Number) -> Option<u128> {
     u128::try_from(int).ok()
 }
 
+fn number_to_nonnegative_integer_string(num: &crate::number::Number) -> Option<String> {
+    use crate::number::NumberValue;
+    let (real, _) = num.to_canonical_ref();
+    let NumberValue::Rational(rational) = &*real else {
+        return None;
+    };
+    (rational.value.denom() == &1 && rational.value.numer() >= &0)
+        .then(|| rational.value.numer().to_string())
+}
+
 /// Interpret hex digits in an Expression and return a decimal Number Expression.
 pub(crate) fn builtin_hex(arg: &crate::ast::Expression) -> Option<crate::ast::Expression> {
     let hex_str = match arg {
-        crate::ast::Expression::Number(num) => number_to_u128(num).map(|val| val.to_string()),
+        crate::ast::Expression::Number(num) => number_to_nonnegative_integer_string(num),
         crate::ast::Expression::Symbolic(sym) => Some(sym.name().to_string()),
         _ => None,
     };
     if let Some(hex_digits) = hex_str {
-        if let Some(parsed) = parse_radix_u128(&hex_digits, 16) {
+        if let Some(parsed) = parse_radix_integer(&hex_digits, 16) {
             return Some(crate::ast::Expression::Number(
-                crate::number::Number::from_rational(crate::number::Rational::new(
-                    parsed as i128,
-                    1,
-                )),
+                crate::number::Number::from_rational(crate::number::Rational {
+                    value: rug::Rational::from(parsed),
+                }),
             ));
         }
     }
@@ -1067,11 +1116,45 @@ mod tests {
         );
         assert_eq!(translate_integer_expression("G + 1", 16), None);
 
+        let input_only = NativeSessionSettings::from_raw(&["input base 16"]).unwrap();
+        assert_eq!(native_output("10+1", input_only).as_deref(), Some("17"));
+        assert_eq!(native_output("A xor B", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A and B", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A or B", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A mod 3", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A div 3", input_only).as_deref(), Some("3"));
+        assert_eq!(native_output("A rem 3", input_only).as_deref(), Some("1"));
+
         let programming =
             NativeSessionSettings::from_raw(&["programming mode 1", "base 16 16"]).unwrap();
         assert_eq!(
             native_output("A+1", programming).as_deref(),
             Some("0000 1011 = 013 = 11 = 0xB")
         );
+    }
+
+    #[test]
+    fn builtin_hex_preserves_arbitrary_precision_unsigned_values() {
+        let decimal_digits = "80000000000000000000000000000000";
+        let decimal_argument = crate::ast::Expression::Number(
+            crate::number::Number::from_rational(crate::number::Rational {
+                value: rug::Rational::from(Integer::from_str_radix(decimal_digits, 10).unwrap()),
+            }),
+        );
+        let symbolic_argument = crate::ast::Expression::Symbolic(crate::ast::Symbol::new(
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        ));
+
+        for (argument, expected) in [
+            (decimal_argument, "170141183460469231731687303715884105728"),
+            (symbolic_argument, "340282366920938463463374607431768211455"),
+        ] {
+            let crate::ast::Expression::Number(number) =
+                builtin_hex(&argument).expect("hex input should remain exact")
+            else {
+                panic!("hex should return a number")
+            };
+            assert_eq!(number.to_string(), expected);
+        }
     }
 }
