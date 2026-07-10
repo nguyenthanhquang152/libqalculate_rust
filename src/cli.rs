@@ -241,7 +241,7 @@ where
                 immediate = Some(ImmediateAction::Help);
                 true
             }
-            "-version" | "--version" | "-v" => {
+            "-version" | "--version" | "-v" | "-V" => {
                 immediate = Some(ImmediateAction::Version);
                 true
             }

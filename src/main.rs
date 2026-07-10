@@ -177,6 +177,12 @@ fn evaluate_expression(
             return Err("selective definitions are incompatible with fallback".to_string());
         }
     }
+    if fallback_disabled
+        && !defs.global_defs
+        && libqalculate_rust::ffi::native_expression_uses_global_definitions(expression)
+    {
+        return Err("global definitions are disabled for this native expression".to_string());
+    }
 
     let unicode_setting = invocation
         .unicode

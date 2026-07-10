@@ -114,6 +114,21 @@ pub struct CalculationOutput {
     pub fallback_state: FallbackState,
 }
 
+/// Return whether a native expression would consult global definition-backed
+/// catalogs such as currencies, units, or datasets.
+///
+/// The CLI uses this conservative classifier to enforce `-nodefs` while still
+/// allowing definition-independent native arithmetic and session commands.
+pub fn native_expression_uses_global_definitions(expr: &str) -> bool {
+    let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
+        return false;
+    };
+
+    crate::rates::match_currency_conversion(&parsed).is_some()
+        || crate::unit_conversion::may_contain_unit_candidate(&parsed)
+        || is_dataset_definition_expression(&parsed)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrintProfile {
     Api,
@@ -721,6 +736,16 @@ fn is_dataset_native_expression(expr: &crate::ast::Expression) -> bool {
     })
 }
 
+fn is_dataset_definition_expression(expr: &crate::ast::Expression) -> bool {
+    expression_contains(expr, &|expr| {
+        matches!(
+            expr,
+            crate::ast::Expression::FunctionCall { function, .. }
+                if matches!(function.id(), "atom" | "planet")
+        )
+    })
+}
+
 fn evaluate_general_expression_natively(
     profile: PrintProfile,
     parsed: &crate::ast::Expression,
@@ -1138,7 +1163,10 @@ fn native_scaffold_output(
         if let Some(output) = crate::numberbase::native_output(expr, parsed_settings) {
             return Some(NativeOutput::plain(output));
         }
-        if parsed_settings.output_base.is_some() {
+        if parsed_settings
+            .output_base
+            .is_some_and(|base| base != 10 || parsed_settings.programming_mode)
+        {
             // A requested output base is observable. Do not fall through to the
             // generic decimal formatter when the number-base path cannot apply it.
             return None;
@@ -1785,6 +1813,20 @@ mod tests {
 
     fn configure_definitions_dir() {
         std::env::set_var(DEFINITIONS_DIR_ENV, definitions_dir());
+    }
+
+    #[test]
+    fn global_definition_classifier_is_conservative_without_loading_catalogs() {
+        assert!(native_expression_uses_global_definitions("1 USD to EUR"));
+        assert!(native_expression_uses_global_definitions("1 m to cm"));
+        assert!(native_expression_uses_global_definitions("atom(H; mass)"));
+        assert!(native_expression_uses_global_definitions(
+            "planet(Earth; radius)"
+        ));
+        assert!(!native_expression_uses_global_definitions("1+1"));
+        assert!(!native_expression_uses_global_definitions(
+            r#"message("hello")"#
+        ));
     }
 
     #[test]

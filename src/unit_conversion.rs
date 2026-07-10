@@ -195,7 +195,7 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
     }
 }
 
-fn may_contain_unit_candidate(expr: &Expression) -> bool {
+pub(crate) fn may_contain_unit_candidate(expr: &Expression) -> bool {
     match expr {
         Expression::Symbolic(symbol) => symbol_looks_like_unit(symbol.name()),
         Expression::Multiplication(children)

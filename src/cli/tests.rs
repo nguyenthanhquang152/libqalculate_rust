@@ -494,7 +494,7 @@ proptest! {
         }
         let families = [
             AliasFamily { canonical: "--help", aliases: &["-h", "-help", "--help"], extra_args: &[] },
-            AliasFamily { canonical: "--version", aliases: &["-v", "-version", "--version"], extra_args: &[] },
+            AliasFamily { canonical: "--version", aliases: &["-v", "-V", "-version", "--version"], extra_args: &[] },
             AliasFamily { canonical: "--terse", aliases: &["-t", "-terse", "--terse"], extra_args: &[] },
             AliasFamily { canonical: "--base", aliases: &["-b", "-base", "--base"], extra_args: &["16"] },
             AliasFamily { canonical: "--color", aliases: &["-c", "-color", "--color"], extra_args: &[] },

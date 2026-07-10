@@ -1329,6 +1329,7 @@ fn cli_help_and_version_aliases_match_upstream() {
         ("-help", help.clone()),
         ("--help", help),
         ("-v", version.clone()),
+        ("-V", version.clone()),
         ("-version", version.clone()),
         ("--version", version),
     ];
@@ -1439,6 +1440,11 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         (vec!["-t", "-b", "2", "--", "-5"], "1111 1011\n"),
         (vec!["-t", "-b", "2", "2+3"], "0000 0101\n"),
         (vec!["-t", "-p", "10", "2+3"], "0000 0101 = 05 = 5 = 0x5\n"),
+        (vec!["-t", "-b", "10", "--", "1/3"], "0.3333333333\n"),
+        (
+            vec!["-t", "-b", "10", "-set", "precision 10", "--", "sqrt(2)"],
+            "1.414213562\n",
+        ),
         (
             vec!["-t", "-p", "16", "--", "A+1"],
             "0000 1011 = 013 = 11 = 0xB\n",
@@ -1453,6 +1459,14 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         ),
         (vec!["-t", "-u8", "52.34 to sexa"], "52°20′24″\n"),
         (vec!["-t", "+u8", "52.34 to sexa"], "52o20'24\"\n"),
+        (
+            vec!["-t", "-s", "unicode 1", "+u8", "--", "52.34 to sexa"],
+            "52°20′24″\n",
+        ),
+        (
+            vec!["-t", "+u8", "-s", "unicode 1", "--", "52.34 to sexa"],
+            "52°20′24″\n",
+        ),
         (vec!["-t", "--latex", "1/2"], "$0.5$\n"),
         (vec!["-t", "--html", "1/2"], "0.5\n"),
         (vec!["-t", "--", "-1"], "−1\n"),
@@ -1517,6 +1531,31 @@ fn cli_fails_closed_when_requested_output_base_cannot_be_formatted_natively() {
                 ),
             ),
         );
+}
+
+#[test]
+fn cli_fails_closed_instead_of_ignoring_settings_on_cpp_fallback() {
+    let cases = [
+        (
+            vec!["-t", "-set", "angle unit deg", "--", "sin(90)"],
+            "angle unit deg",
+        ),
+        (vec!["-t", "-b", "16", "--", "1/3"], "base 16"),
+    ];
+
+    for (args, setting) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env_remove("QALCULATE_DISABLE_FALLBACK")
+            .assert()
+            .failure()
+            .code(2)
+            .stdout("")
+            .stderr(predicate::str::contains(format!(
+                "session settings are not supported by the C++ FFI fallback path: {setting}"
+            )));
+    }
 }
 
 fn fake_upstream() -> tempfile::TempDir {
@@ -1745,6 +1784,19 @@ fn cli_nodefs_flag_evaluation() {
         .failure()
         .code(2)
         .stderr(predicate::str::contains("incompatible with fallback"));
+
+    let mut definition_backed = qalc_rs_raw();
+    definition_backed
+        .args(["-nodefs", "-t", "--", "1 USD to EUR"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .failure()
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::contains(
+            "global definitions are disabled for this native expression",
+        ));
 }
 
 #[test]
