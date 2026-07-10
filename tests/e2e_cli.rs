@@ -1540,6 +1540,10 @@ fn cli_fails_closed_instead_of_ignoring_settings_on_cpp_fallback() {
             vec!["-t", "-set", "angle unit deg", "--", "sin(90)"],
             "angle unit deg",
         ),
+        (
+            vec!["-t", "-set", "approximation exact", "--", "sqrt(2)"],
+            "approximation exact",
+        ),
         (vec!["-t", "-b", "16", "--", "1/3"], "base 16"),
     ];
 
@@ -1555,6 +1559,36 @@ fn cli_fails_closed_instead_of_ignoring_settings_on_cpp_fallback() {
             .stderr(predicate::str::contains(format!(
                 "session settings are not supported by the C++ FFI fallback path: {setting}"
             )));
+    }
+}
+
+#[test]
+fn cli_applies_fraction_format_before_returning_native_output() {
+    for fallback_disabled in [false, true] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-t", "-set", "fr 2", "--", "1/3"])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir());
+        if fallback_disabled {
+            cmd.env("QALCULATE_DISABLE_FALLBACK", "1");
+        } else {
+            cmd.env_remove("QALCULATE_DISABLE_FALLBACK");
+        }
+        cmd.assert().success().stdout("1/3\n");
+    }
+}
+
+#[test]
+fn cli_rejects_unevaluated_terse_markup_results() {
+    for output_flag in ["--latex", "--html"] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-t", output_flag, "--", "sqrt(1;2)"])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .assert()
+            .failure()
+            .code(2)
+            .stdout("")
+            .stderr(predicate::str::contains("Expected 1 argument(s), got 2"));
     }
 }
 

@@ -561,9 +561,11 @@ fn native_markup_output_for_parsed(
     };
 
     let mut markup_context = context.clone();
+    crate::session::apply_raw_settings_to_context(&mut markup_context, settings)
+        .ok_or_else(|| CalculatorError::NativeEvaluation("invalid native setting".to_string()))?;
     markup_context.precision_digits = parsed_settings.precision_digits();
-    let evaluated =
-        crate::eval::evaluate_ast(parsed, &mut markup_context).unwrap_or_else(|_| parsed.clone());
+    let evaluated = crate::eval::evaluate_ast(parsed, &mut markup_context)
+        .map_err(CalculatorError::NativeEvaluation)?;
     let precision_digits = parsed_settings.precision_digits();
     let formatter = |num: &crate::number::Number| {
         num.to_qalc_string_with_settings(
@@ -998,6 +1000,14 @@ fn native_scaffold_output(
     settings: &[&str],
 ) -> Option<NativeOutput> {
     let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
+    if parsed_settings.has_approximation() {
+        return None;
+    }
+    if parsed_settings.programming_mode
+        || parsed_settings.output_base.is_some_and(|base| base != 10)
+    {
+        return crate::numberbase::native_output(expr, parsed_settings).map(NativeOutput::plain);
+    }
 
     if let Some(output) = crate::matrix::promoted_top_level_list_literal_output(expr) {
         if !settings.is_empty() {
@@ -1011,9 +1021,7 @@ fn native_scaffold_output(
 
     if let Some(collection) = crate::matrix::parse_collection_literal(expr) {
         let mut context = crate::context::CalculatorContext::default();
-        for cmd in settings {
-            let _ = context.apply_command(cmd);
-        }
+        crate::session::apply_raw_settings_to_context(&mut context, settings)?;
         if let Some(output) = evaluate_general_expression_natively(
             profile,
             &collection,
@@ -1106,9 +1114,7 @@ fn native_scaffold_output(
 
     if let Some(collection_result) = crate::matrix::evaluate_collection_function(expr) {
         let mut context = crate::context::CalculatorContext::default();
-        for cmd in settings {
-            let _ = context.apply_command(cmd);
-        }
+        crate::session::apply_raw_settings_to_context(&mut context, settings)?;
         if let Some(output) = evaluate_general_expression_natively(
             profile,
             &collection_result,
@@ -1121,9 +1127,7 @@ fn native_scaffold_output(
 
     if let Some(collection_result) = crate::matrix::evaluate_collection_arithmetic(expr) {
         let mut context = crate::context::CalculatorContext::default();
-        for cmd in settings {
-            let _ = context.apply_command(cmd);
-        }
+        crate::session::apply_raw_settings_to_context(&mut context, settings)?;
         if let Some(output) = evaluate_general_expression_natively(
             profile,
             &collection_result,
@@ -1145,9 +1149,7 @@ fn native_scaffold_output(
             // Build a context from session settings so native evaluation
             // respects user configuration (precision, base, etc.).
             let mut context = crate::context::CalculatorContext::default();
-            for cmd in settings {
-                let _ = context.apply_command(cmd);
-            }
+            crate::session::apply_raw_settings_to_context(&mut context, settings)?;
             if let Some(output) = evaluate_general_expression_natively(
                 profile,
                 ast,
@@ -1240,13 +1242,24 @@ fn native_scaffold_output(
                     .to_qalc_string_preserving_float_uncertainty_precision(
                         parsed_settings.precision_digits(),
                     ),
-                PrintProfile::Qalc => num.to_qalc_string_with_settings(
-                    parsed_settings.precision_digits(),
-                    parsed_settings.min_exp(),
-                    parsed_settings.exp_display(),
-                    parsed_settings.min_decimals(),
-                    parsed_settings.max_decimals(),
-                ),
+                PrintProfile::Qalc => {
+                    if let Some(format) = parsed_settings.number_fraction_format() {
+                        num.to_string_with_options(
+                            parsed_settings.precision_digits(),
+                            format,
+                            crate::options::ApproximationMode::TryExact,
+                        )
+                        .replace(" / ", "/")
+                    } else {
+                        num.to_qalc_string_with_settings(
+                            parsed_settings.precision_digits(),
+                            parsed_settings.min_exp(),
+                            parsed_settings.exp_display(),
+                            parsed_settings.min_decimals(),
+                            parsed_settings.max_decimals(),
+                        )
+                    }
+                }
             };
             let approximate = num.qalc_relation_is_approximate();
             Some(NativeOutput {

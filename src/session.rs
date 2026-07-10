@@ -77,21 +77,7 @@ impl NativeSessionSettings {
                 continue;
             }
 
-            let cmd_str = if setting.trim_start().starts_with("assumptions ") {
-                let rest = setting.trim_start().strip_prefix("assumptions ").unwrap();
-                format!("assume {}", rest)
-            } else if setting.trim_start().starts_with("/assumptions ") {
-                let rest = setting.trim_start().strip_prefix("/assumptions ").unwrap();
-                format!("assume {}", rest)
-            } else if setting.trim_start().starts_with("set ")
-                || setting.trim_start().starts_with("/set ")
-                || setting.trim_start().starts_with("assume ")
-                || setting.trim_start().starts_with("/assume ")
-            {
-                setting.to_string()
-            } else {
-                format!("set {}", setting)
-            };
+            let cmd_str = normalized_context_command(setting);
             let cmd = parse_command(&cmd_str).ok()?;
             match cmd {
                 SessionCommand::Set(c) => match c.setting {
@@ -209,19 +195,17 @@ impl NativeSessionSettings {
         self.approximation
     }
 
-    #[allow(dead_code)]
-    pub(crate) const fn fraction_format(self) -> Option<u32> {
-        self.fraction_format
+    pub(crate) const fn number_fraction_format(
+        self,
+    ) -> Option<crate::options::NumberFractionFormat> {
+        match self.fraction_format {
+            Some(2) => Some(crate::options::NumberFractionFormat::Fractional),
+            _ => None,
+        }
     }
 
-    #[allow(dead_code)]
     pub(crate) const fn has_approximation(self) -> bool {
         self.approximation.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) const fn has_fraction_format(self) -> bool {
-        self.fraction_format.is_some()
     }
 
     pub(crate) const fn has_print_format_settings(self) -> bool {
@@ -250,6 +234,59 @@ impl NativeSessionSettings {
     pub(crate) const fn max_decimals(self) -> Option<i32> {
         self.max_decimals
     }
+}
+
+fn normalized_context_command(setting: &str) -> String {
+    let trimmed = setting.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("assumptions ") {
+        format!("assume {rest}")
+    } else if let Some(rest) = trimmed.strip_prefix("/assumptions ") {
+        format!("assume {rest}")
+    } else if trimmed.starts_with("set ")
+        || trimmed.starts_with("/set ")
+        || trimmed.starts_with("assume ")
+        || trimmed.starts_with("/assume ")
+    {
+        setting.to_string()
+    } else {
+        format!("set {setting}")
+    }
+}
+
+pub(crate) fn apply_raw_settings_to_context(
+    context: &mut crate::context::CalculatorContext,
+    settings: &[&str],
+) -> Option<()> {
+    for setting in settings {
+        let trimmed = setting.trim();
+        if let Some(base) = trimmed.strip_prefix("base ") {
+            let parts = base.split_whitespace().collect::<Vec<_>>();
+            match parts.as_slice() {
+                [output] => {
+                    let output = output.parse::<u32>().ok()?;
+                    context.output_base = output;
+                    context.print_options.base = i32::try_from(output).ok()?;
+                }
+                [input, output] => {
+                    let input = input.parse::<u32>().ok()?;
+                    let output = output.parse::<u32>().ok()?;
+                    context.input_base = input;
+                    context.parse_options.base = i32::try_from(input).ok()?;
+                    context.output_base = output;
+                    context.print_options.base = i32::try_from(output).ok()?;
+                }
+                _ => return None,
+            }
+            continue;
+        }
+        if trimmed.starts_with("xor^ ") || trimmed.starts_with("programming mode ") {
+            continue;
+        }
+        context
+            .apply_command(&normalized_context_command(setting))
+            .ok()?;
+    }
+    Some(())
 }
 
 pub(crate) fn native_output(
