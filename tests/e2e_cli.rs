@@ -1441,6 +1441,8 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         (vec!["-t", "-b", "2", "2+3"], "0000 0101\n"),
         (vec!["-t", "-p", "10", "2+3"], "0000 0101 = 05 = 5 = 0x5\n"),
         (vec!["-t", "-b", "10", "--", "1/3"], "0.3333333333\n"),
+        (vec!["-t", "-b", "10 10", "--", "1/3"], "0.3333333333\n"),
+        (vec!["-t", "+p", "--", "1/3"], "0.3333333333\n"),
         (
             vec!["-t", "-b", "10", "-set", "precision 10", "--", "sqrt(2)"],
             "1.414213562\n",
@@ -1459,6 +1461,8 @@ fn cli_evaluation_flag_matrix_matches_upstream() {
         ),
         (vec!["-t", "-u8", "52.34 to sexa"], "52°20′24″\n"),
         (vec!["-t", "+u8", "52.34 to sexa"], "52o20'24\"\n"),
+        (vec!["-t", "-u8", "--", "1+1"], "2\n"),
+        (vec!["-t", "+u8", "--", "-123"], "-123\n"),
         (
             vec!["-t", "-s", "unicode 1", "+u8", "--", "52.34 to sexa"],
             "52°20′24″\n",
@@ -1868,6 +1872,26 @@ fn cli_selective_definition_fallback_rejection() {
         .stderr(predicate::str::contains(
             "selective definitions are unsupported for native evaluation",
         ));
+
+    for flag in [
+        "-nounits",
+        "-nocurrencies",
+        "-nofunctions",
+        "-novariables",
+        "-nodatasets",
+    ] {
+        let mut definition_free = qalc_rs_raw();
+        definition_free
+            .args(["-t", flag, "--", "1+1"])
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout("2\n")
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=native",
+            ));
+    }
 }
 
 #[test]

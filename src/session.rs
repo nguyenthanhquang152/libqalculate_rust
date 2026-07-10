@@ -171,7 +171,7 @@ impl NativeSessionSettings {
     /// Returns true when settings can be applied to the vetted numeric
     /// scaffold path without invoking numberbase-specific interpretation.
     pub(crate) const fn is_numeric_scaffold_compatible(self) -> bool {
-        self.input_base.is_none() && !self.unicode
+        matches!(self.input_base, None | Some(10))
     }
 
     pub(crate) const fn has_precision(self) -> bool {

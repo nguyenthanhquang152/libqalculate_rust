@@ -129,6 +129,25 @@ pub fn native_expression_uses_global_definitions(expr: &str) -> bool {
         || is_dataset_definition_expression(&parsed)
 }
 
+/// Return whether an expression is composed entirely of native literals and
+/// operators, without functions, variables, units, or definition symbols.
+pub fn native_expression_is_definition_free(expr: &str) -> bool {
+    let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
+        return false;
+    };
+
+    !expression_contains(&parsed, &|expr| {
+        matches!(
+            expr,
+            crate::ast::Expression::FunctionCall { .. }
+                | crate::ast::Expression::Symbolic(_)
+                | crate::ast::Expression::Variable(_)
+                | crate::ast::Expression::Unit { .. }
+                | crate::ast::Expression::Assignment { .. }
+        )
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrintProfile {
     Api,
@@ -1265,6 +1284,11 @@ fn native_scaffold_output(
             Some(NativeOutput {
                 output: match profile {
                     PrintProfile::Api => output,
+                    PrintProfile::Qalc
+                        if parsed_settings.has_unicode_setting() && !parsed_settings.unicode() =>
+                    {
+                        output
+                    }
                     PrintProfile::Qalc => output.replace('-', "−"),
                 },
                 has_error_message: false,
@@ -1625,6 +1649,7 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("(1/2) ^ -3", NativeNumericEvidence::DefaultOnly),
     ("5 ** 3", NativeNumericEvidence::DefaultOnly),
     ("4 ** 3 ** 2", NativeNumericEvidence::DefaultOnly),
+    ("1+1", NativeNumericEvidence::DefaultOnly),
     ("1 + 1", NativeNumericEvidence::DefaultOnly),
     ("1 + 2", NativeNumericEvidence::DefaultOnly),
     ("5--2", NativeNumericEvidence::DefaultOnly),
@@ -1840,6 +1865,10 @@ mod tests {
         assert!(!native_expression_uses_global_definitions(
             r#"message("hello")"#
         ));
+        assert!(native_expression_is_definition_free("1+1"));
+        assert!(native_expression_is_definition_free("[1, 2, 3]"));
+        assert!(!native_expression_is_definition_free("sqrt(2)"));
+        assert!(!native_expression_is_definition_free("1 USD to EUR"));
     }
 
     #[test]
