@@ -1624,15 +1624,254 @@ fn cli_evaluation_settings_work_when_cpp_fallback_is_available() {
 #[test]
 fn cli_explicit_unicode_on_keeps_cpp_fallback_available() {
     let mut cmd = qalc_rs_raw();
-    cmd.args(["-t", "-u8", "--", "cross([1,0,0];[0,1,0])"])
+    cmd.args(["-t", "-u8", "--", "cross([1,0,0];[0,1 m^2,0])"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_REPORT_FALLBACK", "1")
         .assert()
         .success()
-        .stdout("[0  0  1]\n")
+        .stdout("[(0 m²)  0  (1 m²)]\n")
         .stderr(predicate::str::contains(
             "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
         ));
+}
+
+#[test]
+fn cli_explicit_ascii_keeps_cpp_fallback_available() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-t", "+u8", "--", "cross([1,0,0];[0,1 m^2,0])"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("[(0 m^2)  0  (1 m^2)]\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
+}
+
+#[test]
+fn cli_markup_modes_use_cpp_fallback_for_unsupported_native_expressions() {
+    let expression = "cross([1,0,0];[0,1,0])";
+    let cases = [
+        (
+            vec!["-t", "--latex", "--", expression],
+            "$\\displaystyle \\begin{bmatrix}0 & 0 & 1\\end{bmatrix}$\n",
+        ),
+        (
+            vec!["--latex", "--", expression],
+            "$\\displaystyle \\operatorname{cross}(\\begin{bmatrix}1 & 0 & 0\\end{bmatrix}, \\begin{bmatrix}0 & 1 & 0\\end{bmatrix}) = \\begin{bmatrix}0 & 0 & 1\\end{bmatrix}$\n",
+        ),
+        (
+            vec!["-t", "--html", "--", expression],
+            "[0&nbsp; 0&nbsp; 1]\n",
+        ),
+        (
+            vec!["--html", "--", expression],
+            "cross([1&nbsp; 0&nbsp; 0], [0&nbsp; 1&nbsp; 0]) = [0&nbsp; 0&nbsp; 1]\n",
+        ),
+        (
+            vec!["--latex", "--", "Ei(3)"],
+            "$\\displaystyle \\operatorname{Ei}(3) \\approx \\num{9.933832571}$\n",
+        ),
+        (vec!["--html", "--", "Ei(3)"], "Ei(3) ≈ 9.933832571\n"),
+        (
+            vec!["-t", "--latex", "--", "1 m + 1 cm"],
+            "$\\displaystyle \\qty{1.01}{m}$\n",
+        ),
+        (
+            vec!["--latex", "--", "1 m + 1 cm"],
+            "$\\displaystyle \\qty{1}{m} + \\qty{1}{cm} = \\qty{1.01}{m}$\n",
+        ),
+        (vec!["-t", "--html", "--", "1 m + 1 cm"], "1.01 m\n"),
+        (
+            vec!["--html", "--", "1 m + 1 cm"],
+            "1 m + 1 cm = 1.01 m\n",
+        ),
+        (
+            vec!["--latex", "--", "Ei(3) meter"],
+            "$\\displaystyle \\qty[parse-numbers=false]{\\operatorname{Ei}(3)}{m} \\approx \\qty{9.933832571}{m}$\n",
+        ),
+        (
+            vec!["--html", "--", "Ei(3) meter"],
+            "Ei(3) × m ≈ 9.933832571 m\n",
+        ),
+        (
+            vec!["+u8", "--html", "--", "Ei(3)"],
+            "Ei(3) = approx. 9.933832571\n",
+        ),
+        (
+            vec!["-t", "--html", "--", "Ei(3)*x"],
+            "9.933832571<i>x</i>\n",
+        ),
+        (
+            vec!["-t", "--html", "--", "Ei(3)*'foo'"],
+            "9.933832571 <i>\"foo\"</i>\n",
+        ),
+        (
+            vec!["--html", "--", "Ei(3)*x"],
+            "Ei(3) × <i>x</i> ≈ 9.933832571<i>x</i>\n",
+        ),
+        (
+            vec!["--latex", "--", "sum(1/x; 1; 3; x)"],
+            "$\\displaystyle \\sum_{x=1}^{3}\\left(\\frac{1}{x}\\right) = \\frac{11}{6} = 1 + \\frac{5}{6} \\approx \\num{1.833333333}$\n",
+        ),
+        (
+            vec!["-t", "--latex", "--", "sum(1/x; 1; 3; x)"],
+            "$\\displaystyle \\num{1.833333333}$\n",
+        ),
+        (
+            vec!["+u8", "--latex", "--", "sum(1/x; 1; 3; x)"],
+            "$\\displaystyle \\sum_{x=1}^{3}\\left(\\frac{1}{x}\\right) = \\frac{11}{6} = 1 + \\frac{5}{6} \\approx \\num{1.833333333}$\n",
+        ),
+        (
+            vec!["--latex", "--", "Ei(3;4)"],
+            "$\\displaystyle \\operatorname{Ei}(\\begin{bmatrix}3 & 4\\end{bmatrix}) = \\begin{bmatrix}\\operatorname{Ei}(3) & \\operatorname{Ei}(4)\\end{bmatrix} \\approx \\begin{bmatrix}\\num[parse-numbers=true]{9.933832571} & \\num[parse-numbers=true]{19.63087447}\\end{bmatrix}$\n",
+        ),
+        (
+            vec![
+                "--latex",
+                "--",
+                "cross([1,0,0];[0,1,0])=[0,0,1]",
+            ],
+            "$\\displaystyle \\left(\\operatorname{cross}(\\begin{bmatrix}1 & 0 & 0\\end{bmatrix}, \\begin{bmatrix}0 & 1 & 0\\end{bmatrix}) = \\begin{bmatrix}0 & 0 & 1\\end{bmatrix}\\right) = true$\n",
+        ),
+        (
+            vec!["--latex", "--", "Ei(x) where x=3"],
+            "$\\displaystyle \\operatorname{Ei}(x) = \\operatorname{Ei}(3) \\approx \\num{9.933832571}$\n",
+        ),
+        (
+            vec!["--html", "--", "Ei(x) where x=3"],
+            "Ei(x) = Ei(3) ≈ 9.933832571\n",
+        ),
+        (
+            vec!["--latex", "--", "Ei(3) meter to cm"],
+            "$\\displaystyle \\qty[parse-numbers=false]{\\operatorname{Ei}(3)}{m} \\approx \\qty{993.3832571}{cm}$\n",
+        ),
+        (vec!["--latex", "--", "# comment"], "$0 = 0$\n"),
+        (vec!["-t", "--html", "--", "# comment"], "0\n"),
+        (
+            vec!["--latex", "--", "Ei(3) to fraction"],
+            "$\\displaystyle \\operatorname{Ei}(3) \\approx \\num{9.933832571}$\n",
+        ),
+        (
+            vec!["--html", "--", "Ei(30) to sci"],
+            "Ei(30) ≈ 3.689732094<small>E</small>11\n",
+        ),
+        (
+            vec!["-t", "--html", "--", "cross([1,0,0];[0,1,0]) to hex"],
+            "[0x0&nbsp; 0x0&nbsp; 0x1]\n",
+        ),
+        (
+            vec!["--latex", "--", "Ei(3) to bases"],
+            "$\\displaystyle \\operatorname{Ei}(3) \\approx \\text{1001.11101111000011111010011011000} = \\text{011.736076466} = \\num{9.933832571} = \\text{0x9.EF0FA6C}$\n",
+        ),
+        (
+            vec!["--html", "--", "factorial(20) to factors"],
+            "factorial(20) = 2432902008176640000 = 2<sup>18</sup> × 3<sup>8</sup> × 5<sup>4</sup> × 7<sup>2</sup> × 11 × 13 × 17 × 19\n",
+        ),
+        (
+            vec!["--html", "--", "1/(x^2-1) to partial fraction"],
+            "1 / (<i>x</i><sup>2</sup> − 1) = 1 / (2<i>x</i> − 2) − 1 / (2<i>x</i> + 2)\n",
+        ),
+        (vec!["--html", "--", "10 to base 3"], "10 = 101\n"),
+    ];
+
+    for (args, expected) in cases {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+            ));
+    }
+}
+
+#[test]
+fn cli_markup_fallback_preserves_qalc_terse_message_suppression() {
+    let errors = concat!(
+        "error: Argument 1, Vector 1, in cross() must be a vector that fulfills the condition: ",
+        "\"dimension(Vector 1)==3\".\n",
+        "error: Argument 2, Vector 2, in cross() must be a vector that fulfills the condition: ",
+        "\"dimension(Vector 2)==3\".\n",
+    );
+
+    let mut terse = qalc_rs_raw();
+    terse
+        .args(["-t", "--html", "--", "cross(1;2)"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .code(1)
+        .stdout("cross(1, 2)\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
+
+    let mut equation = qalc_rs_raw();
+    equation
+        .args(["--html", "--", "cross(1;2)"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(format!("{errors}cross(1, 2) = cross(1, 2)\n"))
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
+}
+
+#[test]
+fn cli_markup_special_calendar_conversion_uses_complete_cpp_output() {
+    let mut command = qalc_rs_raw();
+    command
+        .args(["-t", "--html", "--", "today to calendars"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with(
+            "Calendar\t\t\t\tDay, Month, Year\nGregorian:",
+        ))
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
+}
+
+#[test]
+fn cli_unsupported_markup_expression_fails_closed_without_cpp_fallback() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-t", "--latex", "--", "cross([1,0,0];[0,1,0])"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .failure()
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=disabled",
+        ));
+}
+
+#[test]
+fn cli_programming_flag_wins_over_programming_mode_set_replay() {
+    for args in [
+        ["-t", "-s", "programming mode 0", "-p", "16", "255"],
+        ["-t", "-p", "16", "-s", "programming mode 0", "255"],
+    ] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .assert()
+            .success()
+            .stdout("Unrecognized option.\n\n0000 0010 0101 0101 = 01125 = 597 = 0x255\n");
+    }
 }
 
 #[test]
@@ -2013,8 +2252,29 @@ fn cli_nodefs_flag_evaluation() {
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .env("QALCULATE_REPORT_FALLBACK", "1")
         .assert()
-        .success()
+        .code(1)
         .stdout("hello\n0\n");
+
+    for args in [
+        vec!["-nodefs", "-t", "--", "1+1"],
+        vec!["-nodefs", "-t", "--html", "--", "1+1"],
+    ] {
+        let mut terse = qalc_rs_raw();
+        terse
+            .args(args)
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .assert()
+            .code(1)
+            .stdout("2\n");
+    }
+
+    let mut markup_equation = qalc_rs_raw();
+    markup_equation
+        .args(["-nodefs", "--html", "--", "1+1"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .code(1)
+        .stdout("error: Radians unit is missing. Creating one for this session.\n1 + 1 = 2\n");
 
     let mut definition_free = qalc_rs_raw();
     definition_free
@@ -2037,6 +2297,28 @@ fn cli_nodefs_flag_evaluation() {
         .stderr(predicate::str::contains(
             "global definitions are disabled for this native expression",
         ));
+}
+
+#[test]
+fn cli_cpp_fallback_initializes_exchange_rates_before_currency_definitions() {
+    for (expression, expected) in [
+        ("1 USD", "€0.8585164835\n"),
+        ("1 EUR to USD", "$1.164800000\n"),
+    ] {
+        let home = tempdir().expect("isolated qalc home should be created");
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-t", "--", expression])
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_REPORT_FALLBACK", "1")
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr(predicate::str::contains(
+                "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+            ));
+    }
 }
 
 #[test]

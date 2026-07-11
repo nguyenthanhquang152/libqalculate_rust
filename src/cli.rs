@@ -441,7 +441,22 @@ where
                 }
                 if !val_str.is_empty() {
                     for part in val_str.split_terminator(';') {
-                        settings.push(part.to_string());
+                        let normalized = part
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                            .to_ascii_lowercase();
+                        let normalized = normalized
+                            .strip_prefix("/set ")
+                            .or_else(|| normalized.strip_prefix("set "))
+                            .unwrap_or(&normalized);
+                        if normalized.starts_with("programming mode ") {
+                            // qalc's programming mode is a dedicated `-p`
+                            // flag, not a user-settable session option.
+                            diagnostics.push("Unrecognized option.\n".to_string());
+                        } else {
+                            settings.push(part.to_string());
+                        }
                     }
                 } else {
                     diagnostics.push("No option and value specified for set command.".to_string());

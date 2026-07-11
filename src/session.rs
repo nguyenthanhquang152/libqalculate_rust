@@ -155,6 +155,26 @@ impl NativeSessionSettings {
         self.unicode_setting_seen
     }
 
+    /// Parse a non-empty setting list that contains only Unicode toggles.
+    ///
+    /// This validates every raw command so no-op settings such as
+    /// `programming mode 0` cannot disappear into the final state and cross
+    /// the C++ fallback boundary unnoticed.
+    pub(crate) fn unicode_only_from_raw(settings: &[&str]) -> Option<bool> {
+        let mut unicode = None;
+        for setting in settings {
+            let command = parse_command(&normalized_context_command(setting)).ok()?;
+            match command {
+                SessionCommand::Set(command) => match command.setting {
+                    SetSetting::Unicode(value) => unicode = Some(value),
+                    _ => return None,
+                },
+                SessionCommand::Assume(_) => return None,
+            }
+        }
+        unicode
+    }
+
     pub(crate) const fn precision_digits(self) -> usize {
         match self.precision_digits {
             Some(precision) => precision,
@@ -475,6 +495,26 @@ mod tests {
         );
         assert_eq!(
             NativeSessionSettings::from_raw(&["angle unit radians"]),
+            None
+        );
+    }
+
+    #[test]
+    fn accepts_only_unicode_toggles_at_the_cpp_fallback_boundary() {
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0"]),
+            Some(false)
+        );
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "unicode 1"]),
+            Some(true)
+        );
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "precision 10"]),
+            None
+        );
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "programming mode 0"]),
             None
         );
     }

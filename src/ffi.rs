@@ -53,10 +53,16 @@ pub(crate) mod sys {
             calc: Pin<&mut Calculator>,
             expr: &str,
             timeout_ms: i32,
+            unicode_enabled: bool,
+            markup: bool,
+            latex: bool,
+            terse: bool,
         ) -> Result<String>;
 
         fn qalc_last_result_is_approximate() -> bool;
+        fn qalc_last_markup_output_is_complete() -> bool;
         fn qalc_last_messages() -> String;
+        fn qalc_last_parsed_expression() -> String;
         fn qalc_last_message_line_count() -> usize;
         fn qalc_last_message_had_error() -> bool;
     }
@@ -484,7 +490,33 @@ impl Calculator {
         settings: &[&str],
         timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_with_profile_and_settings(PrintProfile::Qalc, expr, timeout_ms, settings)
+        self.calculate_with_profile_and_settings(
+            PrintProfile::Qalc,
+            expr,
+            timeout_ms,
+            settings,
+            true,
+        )
+    }
+
+    /// Evaluate a terse qalc expression while retaining C++ message metadata
+    /// without prepending those messages to result-only output.
+    ///
+    /// # Errors
+    /// Returns a `CalculatorError` if evaluation fails or fallback is disabled.
+    pub fn calculate_and_print_qalc_terse_with_settings_and_fallback_state(
+        &mut self,
+        expr: &str,
+        settings: &[&str],
+        timeout_ms: i32,
+    ) -> Result<CalculationOutput, CalculatorError> {
+        self.calculate_with_profile_and_settings(
+            PrintProfile::Qalc,
+            expr,
+            timeout_ms,
+            settings,
+            false,
+        )
     }
 
     /// Evaluate an expression and format the parsed/result pair as a non-terse qalc equation.
@@ -522,9 +554,15 @@ impl Calculator {
         &mut self,
         expr: &str,
         settings: &[&str],
-        _timeout_ms: i32,
+        timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_markup_with_settings(crate::markup::MarkupMode::Latex, expr, settings, false)
+        self.calculate_markup_with_settings(
+            crate::markup::MarkupMode::Latex,
+            expr,
+            settings,
+            timeout_ms,
+            false,
+        )
     }
 
     /// Evaluate an expression and format the parsed/result pair as HTML markup.
@@ -536,9 +574,15 @@ impl Calculator {
         &mut self,
         expr: &str,
         settings: &[&str],
-        _timeout_ms: i32,
+        timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_markup_with_settings(crate::markup::MarkupMode::Html, expr, settings, false)
+        self.calculate_markup_with_settings(
+            crate::markup::MarkupMode::Html,
+            expr,
+            settings,
+            timeout_ms,
+            false,
+        )
     }
 
     /// Evaluate an expression and format the parsed/result pair as LaTeX markup (terse/result-only).
@@ -550,9 +594,15 @@ impl Calculator {
         &mut self,
         expr: &str,
         settings: &[&str],
-        _timeout_ms: i32,
+        timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_markup_with_settings(crate::markup::MarkupMode::Latex, expr, settings, true)
+        self.calculate_markup_with_settings(
+            crate::markup::MarkupMode::Latex,
+            expr,
+            settings,
+            timeout_ms,
+            true,
+        )
     }
 
     /// Evaluate an expression and format the parsed/result pair as HTML markup (terse/result-only).
@@ -564,9 +614,15 @@ impl Calculator {
         &mut self,
         expr: &str,
         settings: &[&str],
-        _timeout_ms: i32,
+        timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_markup_with_settings(crate::markup::MarkupMode::Html, expr, settings, true)
+        self.calculate_markup_with_settings(
+            crate::markup::MarkupMode::Html,
+            expr,
+            settings,
+            timeout_ms,
+            true,
+        )
     }
 
     fn calculate_markup_with_settings(
@@ -574,27 +630,89 @@ impl Calculator {
         mode: crate::markup::MarkupMode,
         expr: &str,
         settings: &[&str],
+        timeout_ms: i32,
         terse: bool,
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
         self.last_output_approximate = false;
         self.last_output_message_lines = 0;
-        if let Some(output) =
-            native_markup_output(mode, expr, settings, terse, &mut self.native_context)?
-        {
-            return Ok(CalculationOutput {
-                output,
-                fallback_state: FallbackState::Native,
-            });
+        let fallback_disabled = fallback_disabled_by_env();
+        match native_markup_output(
+            mode,
+            expr,
+            settings,
+            terse,
+            !fallback_disabled,
+            &mut self.native_context,
+        ) {
+            Ok(Some(output)) => {
+                return Ok(CalculationOutput {
+                    output,
+                    fallback_state: FallbackState::Native,
+                });
+            }
+            Ok(None) => {}
+            Err(error) if fallback_disabled => return Err(error),
+            Err(_) => {}
         }
 
-        if fallback_disabled_by_env() {
-            Err(CalculatorError::FallbackDisabled(expr.to_string()))
-        } else {
-            Err(CalculatorError::NativeEvaluation(format!(
-                "markup output for expression '{expr}' is not available in the native Rust slice"
-            )))
+        if fallback_disabled {
+            return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
+
+        let unicode_enabled = cpp_fallback_unicode(settings)?;
+        assert!(
+            !self.inner.is_null(),
+            "BUG: Calculator inner pointer is null - possible use-after-move"
+        );
+        let (mut output, messages) = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            let pin = self.inner.pin_mut();
+            let output = sys::calculate_and_print_qalc(
+                pin,
+                expr,
+                timeout_ms,
+                unicode_enabled,
+                true,
+                mode == crate::markup::MarkupMode::Latex,
+                terse,
+            )
+            .map_err(CalculatorError::Cxx)?;
+            self.last_output_approximate = sys::qalc_last_result_is_approximate();
+            self.last_output_message_lines = sys::qalc_last_message_line_count();
+            self.last_native_message_had_error = sys::qalc_last_message_had_error();
+            let parsed_expression = sys::qalc_last_parsed_expression();
+            let messages = if terse {
+                String::new()
+            } else {
+                sys::qalc_last_messages()
+            };
+            let output = if sys::qalc_last_markup_output_is_complete() {
+                output
+            } else {
+                format_cpp_markup_output(
+                    mode,
+                    &parsed_expression,
+                    &output,
+                    terse,
+                    self.last_output_approximate,
+                    unicode_enabled,
+                )
+            };
+            (output, messages)
+        };
+        if !messages.is_empty() {
+            output = if output.is_empty() {
+                messages
+            } else {
+                format!("{messages}\n{output}")
+            };
+        }
+
+        Ok(CalculationOutput {
+            output,
+            fallback_state: FallbackState::CppFallbackEnabled,
+        })
     }
 
     fn calculate_with_profile(
@@ -603,7 +721,7 @@ impl Calculator {
         expr: &str,
         timeout_ms: i32,
     ) -> Result<CalculationOutput, CalculatorError> {
-        self.calculate_with_profile_and_settings(profile, expr, timeout_ms, &[])
+        self.calculate_with_profile_and_settings(profile, expr, timeout_ms, &[], true)
     }
 
     fn calculate_with_profile_and_settings(
@@ -612,6 +730,7 @@ impl Calculator {
         expr: &str,
         timeout_ms: i32,
         settings: &[&str],
+        include_cpp_messages: bool,
     ) -> Result<CalculationOutput, CalculatorError> {
         self.last_native_message_had_error = false;
         self.last_output_approximate = false;
@@ -697,14 +816,7 @@ impl Calculator {
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        if !settings.is_empty() {
-            return Err(CalculatorError::UnsupportedSessionSettings(
-                settings
-                    .iter()
-                    .map(|setting| (*setting).to_string())
-                    .collect(),
-            ));
-        }
+        let unicode_enabled = cpp_fallback_unicode(settings)?;
 
         let output = {
             let _guard = FFI_LOCK.lock().unwrap();
@@ -714,13 +826,21 @@ impl Calculator {
                     sys::calculate_and_print(pin, expr, timeout_ms).map_err(CalculatorError::Cxx)?
                 }
                 PrintProfile::Qalc => {
-                    let mut output = sys::calculate_and_print_qalc(pin, expr, timeout_ms)
-                        .map_err(CalculatorError::Cxx)?;
+                    let mut output = sys::calculate_and_print_qalc(
+                        pin,
+                        expr,
+                        timeout_ms,
+                        unicode_enabled,
+                        false,
+                        false,
+                        false,
+                    )
+                    .map_err(CalculatorError::Cxx)?;
                     self.last_output_approximate = sys::qalc_last_result_is_approximate();
                     self.last_output_message_lines = sys::qalc_last_message_line_count();
                     self.last_native_message_had_error = sys::qalc_last_message_had_error();
                     let messages = sys::qalc_last_messages();
-                    if !messages.is_empty() {
+                    if include_cpp_messages && !messages.is_empty() {
                         output = if output.is_empty() {
                             messages
                         } else {
@@ -743,6 +863,58 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
+fn cpp_fallback_unicode(settings: &[&str]) -> Result<bool, CalculatorError> {
+    if settings.is_empty() {
+        return Ok(true);
+    }
+    if let Some(unicode) = crate::session::NativeSessionSettings::unicode_only_from_raw(settings) {
+        return Ok(unicode);
+    }
+    Err(CalculatorError::UnsupportedSessionSettings(
+        settings
+            .iter()
+            .map(|setting| (*setting).to_string())
+            .collect(),
+    ))
+}
+
+fn format_cpp_markup_output(
+    mode: crate::markup::MarkupMode,
+    parsed: &str,
+    result: &str,
+    terse: bool,
+    approximate: bool,
+    unicode_enabled: bool,
+) -> String {
+    let body = if terse || parsed.is_empty() {
+        result.to_string()
+    } else {
+        match mode {
+            crate::markup::MarkupMode::Latex => {
+                let relation = if approximate { "\\approx" } else { "=" };
+                format!("{parsed} {relation} {result}")
+            }
+            crate::markup::MarkupMode::Html => {
+                let relation = if !approximate {
+                    "="
+                } else if unicode_enabled {
+                    "≈"
+                } else {
+                    "= approx."
+                };
+                format!("{parsed} {relation} {result}")
+            }
+        }
+    };
+    match mode {
+        crate::markup::MarkupMode::Latex if body.contains('\\') => {
+            format!("$\\displaystyle {body}$")
+        }
+        crate::markup::MarkupMode::Latex => format!("${body}$"),
+        crate::markup::MarkupMode::Html => body,
+    }
+}
+
 fn native_markup_conversion_output(
     expr: &str,
     settings: &[&str],
@@ -755,7 +927,7 @@ fn native_markup_conversion_output(
         return Ok(None);
     };
 
-    native_markup_output_for_parsed(mode, &inner, settings, false, context)
+    native_markup_output_for_parsed(mode, &inner, settings, false, false, context)
 }
 
 fn native_markup_output(
@@ -763,12 +935,20 @@ fn native_markup_output(
     expr: &str,
     settings: &[&str],
     terse: bool,
+    prefer_cpp_definitions: bool,
     context: &mut crate::context::CalculatorContext,
 ) -> Result<Option<String>, CalculatorError> {
     let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
         return Ok(None);
     };
-    native_markup_output_for_parsed(mode, &parsed, settings, terse, context)
+    native_markup_output_for_parsed(
+        mode,
+        &parsed,
+        settings,
+        terse,
+        prefer_cpp_definitions,
+        context,
+    )
 }
 
 fn native_markup_output_for_parsed(
@@ -776,8 +956,42 @@ fn native_markup_output_for_parsed(
     parsed: &crate::ast::Expression,
     settings: &[&str],
     terse: bool,
+    prefer_cpp_definitions: bool,
     context: &mut crate::context::CalculatorContext,
 ) -> Result<Option<String>, CalculatorError> {
+    if prefer_cpp_definitions
+        && expression_contains(parsed, &|expr| {
+            matches!(expr, crate::ast::Expression::Conversion { .. })
+                && markup_conversion_request(expr).is_none()
+        })
+    {
+        return Ok(None);
+    }
+    if expression_contains(parsed, &|expr| {
+        let crate::ast::Expression::Conversion { target, .. } = expr else {
+            return false;
+        };
+        let crate::ast::Expression::Symbolic(target) = target.as_ref() else {
+            return false;
+        };
+        is_qalc_print_conversion(target.name())
+    }) {
+        return Ok(None);
+    }
+    let definition_usage = native_definition_usage(parsed);
+    if prefer_cpp_definitions
+        && (definition_usage.currencies || usage_uses_unit_definition(&definition_usage))
+    {
+        return Ok(None);
+    }
+    if expression_contains(parsed, &|expr| {
+        let crate::ast::Expression::FunctionCall { function, .. } = expr else {
+            return false;
+        };
+        !native_markup_function_is_supported(function.id())
+    }) {
+        return Ok(None);
+    }
     let Some(parsed_settings) = crate::session::NativeSessionSettings::from_raw(settings) else {
         return Ok(None);
     };
@@ -807,6 +1021,73 @@ fn native_markup_output_for_parsed(
         CalculatorError::NativeEvaluation("failed to format native markup output".to_string())
     })?;
     Ok(Some(output))
+}
+
+fn is_qalc_print_conversion(target: &str) -> bool {
+    let target = target.to_ascii_lowercase();
+    matches!(
+        target.as_str(),
+        "hex"
+            | "hexadecimal"
+            | "bin"
+            | "binary"
+            | "dec"
+            | "decimal"
+            | "oct"
+            | "octal"
+            | "duo"
+            | "duodecimal"
+            | "doz"
+            | "dozenal"
+            | "roman"
+            | "bijective"
+            | "bcd"
+            | "sexa"
+            | "sexagesimal"
+            | "longitude"
+            | "latitude"
+            | "float"
+            | "double"
+            | "time"
+            | "unicode"
+            | "sci"
+            | "scientific"
+            | "eng"
+            | "engineering"
+            | "simple"
+            | "utc"
+            | "gmt"
+            | "cet"
+            | "rectangular"
+            | "cartesian"
+            | "exponential"
+            | "polar"
+            | "angle"
+            | "phasor"
+            | "cis"
+            | "factors"
+            | "factor"
+            | "partial fraction"
+            | "bases"
+            | "calendars"
+            | "optimal"
+            | "prefix"
+            | "base"
+            | "mixed"
+            | "decimals"
+            | "fraction"
+            | "frac"
+    ) || target.starts_with("fp")
+        || target.starts_with("binary")
+}
+
+fn native_markup_function_is_supported(name: &str) -> bool {
+    crate::functions::builtin_info(name).is_some()
+        || crate::datasets::is_dataset_function_name(name)
+        || matches!(
+            name,
+            "hex" | "float" | "floatError" | "lxor" | "if" | "shift"
+        )
 }
 
 fn markup_conversion_request(
@@ -2068,6 +2349,7 @@ mod tests {
         assert!(!native_expression_uses_global_definitions(
             r#"message("hello")"#
         ));
+        assert!(!native_expression_uses_global_definitions("sqrt(4)"));
         assert!(native_expression_is_definition_free("1+1"));
         assert!(native_expression_is_definition_free("[1, 2, 3]"));
         assert!(!native_expression_is_definition_free("sqrt(2)"));

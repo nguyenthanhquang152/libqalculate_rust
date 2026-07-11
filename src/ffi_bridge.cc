@@ -1,13 +1,68 @@
 #include "ffi_bridge.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace {
 
 thread_local bool last_qalc_result_is_approximate = false;
+thread_local bool last_qalc_markup_output_complete = false;
 thread_local std::string last_qalc_messages_text;
+thread_local std::string last_qalc_parsed_expression;
 thread_local std::size_t last_qalc_messages_line_count = 0;
 thread_local bool last_qalc_message_had_error = false;
+
+void replace_all(std::string &text, const std::string &from, const std::string &to) {
+    std::size_t offset = 0;
+    while((offset = text.find(from, offset)) != std::string::npos) {
+        text.replace(offset, from.size(), to);
+        offset += to.size();
+    }
+}
+
+std::size_t utf8_length(const std::string &text) {
+    return static_cast<std::size_t>(std::count_if(
+        text.begin(),
+        text.end(),
+        [](unsigned char byte) { return (byte & 0xC0) != 0x80; }
+    ));
+}
+
+std::string qalc_table_tabs(const std::string &label) {
+    const std::size_t length = utf8_length(label);
+    const std::size_t count = length >= 32 ? 1
+        : length >= 24            ? 2
+        : length >= 16            ? 3
+        : length >= 8             ? 4
+                                  : 5;
+    return std::string(count, '\t');
+}
+
+std::string format_qalc_calendar_table(const std::string &calendar_lines) {
+    std::string output = "Calendar" + qalc_table_tabs("Calendar") +
+        "Day, Month, Year\n";
+    std::size_t offset = 0;
+    while(offset < calendar_lines.size()) {
+        const std::size_t end = calendar_lines.find('\n', offset);
+        const std::string line = calendar_lines.substr(offset, end - offset);
+        if(!line.empty()) {
+            const std::size_t separator = line.find(": ");
+            if(separator == std::string::npos) {
+                output += line;
+            } else {
+                const std::string label = line.substr(0, separator + 1);
+                output += label;
+                output += qalc_table_tabs(label);
+                output += line.substr(separator + 2);
+            }
+            output += '\n';
+        }
+        if(end == std::string::npos) break;
+        offset = end + 1;
+    }
+    if(!output.empty() && output.back() == '\n') output.pop_back();
+    return output;
+}
 
 void capture_qalc_messages(Calculator &calc) {
     last_qalc_messages_text.clear();
@@ -45,13 +100,19 @@ public:
           interval_arithmetic(calculator.usesIntervalArithmetic()),
           temperature_mode(calculator.getTemperatureCalculationMode()),
           decimal_point(calculator.getDecimalPoint()),
-          comma(calculator.getComma()) {}
+          comma(calculator.getComma()),
+          binary_prefixes(calculator.usesBinaryPrefixes()),
+          fixed_denominator(calculator.fixedDenominator()),
+          custom_output_base(calculator.customOutputBase()) {}
 
     ~CalculatorStateGuard() noexcept {
         restore_decimal_mode();
         calc.setPrecision(precision);
         calc.useIntervalArithmetic(interval_arithmetic);
         calc.setTemperatureCalculationMode(temperature_mode);
+        calc.useBinaryPrefixes(binary_prefixes);
+        calc.setFixedDenominator(fixed_denominator);
+        calc.setCustomOutputBase(custom_output_base);
     }
 
     CalculatorStateGuard(const CalculatorStateGuard&) = delete;
@@ -74,6 +135,9 @@ private:
     TemperatureCalculationMode temperature_mode;
     std::string decimal_point;
     std::string comma;
+    int binary_prefixes;
+    long int fixed_denominator;
+    Number custom_output_base;
 };
 
 class CalculatorFfiGuard {
@@ -88,6 +152,287 @@ public:
 private:
     Calculator *prev_calculator;
 };
+
+std::string print_qalc_parsed_markup(
+    const MathStructure &parsed_source,
+    const EvaluationOptions &eo,
+    const PrintOptions &po,
+    bool latex
+) {
+    MathStructure parsed(parsed_source);
+
+    PrintOptions parsed_options;
+    parsed_options.preserve_format = true;
+    parsed_options.show_ending_zeroes = false;
+    parsed_options.exp_display = po.exp_display;
+    parsed_options.lower_case_numbers = po.lower_case_numbers;
+    parsed_options.base_display = po.base_display;
+    parsed_options.twos_complement = po.twos_complement;
+    parsed_options.rounding = po.rounding;
+    parsed_options.hexadecimal_twos_complement = po.hexadecimal_twos_complement;
+    parsed_options.base = eo.parse_options.base;
+    parsed_options.allow_non_usable = true;
+    parsed_options.abbreviate_names = true;
+    parsed_options.digit_grouping = po.digit_grouping;
+    parsed_options.use_unicode_signs = po.use_unicode_signs;
+    parsed_options.multiplication_sign = po.multiplication_sign;
+    parsed_options.division_sign = po.division_sign;
+    parsed_options.short_multiplication = latex;
+    parsed_options.excessive_parenthesis = false;
+    parsed_options.improve_division_multipliers = false;
+    parsed_options.restrict_to_parent_precision = false;
+    parsed_options.spell_out_logical_operators = po.spell_out_logical_operators;
+    parsed_options.interval_display = INTERVAL_DISPLAY_PLUSMINUS;
+    parsed.format(parsed_options);
+    std::string output = parsed.print(
+        parsed_options,
+        true,
+        0,
+        latex ? TAG_TYPE_LATEX : TAG_TYPE_HTML
+    );
+    if(parsed.isComparison() || parsed.isLogicalAnd() || parsed.isLogicalOr()) {
+        if(latex) return "\\left(" + output + "\\right)";
+        return "(" + output + ")";
+    }
+    return output;
+}
+
+std::string wrap_qalc_markup_parentheses(std::string text, bool latex) {
+    if(latex) return "\\left(" + text + "\\right)";
+    return "(" + text + ")";
+}
+
+std::string calculate_qalc_markup(
+    Calculator &calc,
+    const std::string &expression,
+    int32_t timeout_ms,
+    EvaluationOptions eo,
+    PrintOptions &po,
+    bool latex,
+    bool terse,
+    bool &is_approximate,
+    std::string &parsed_output
+) {
+    const auto started_at = std::chrono::steady_clock::now();
+    std::string calculation_expression = expression;
+    bool had_to_expression = false;
+    bool complex_angle_form = false;
+    bool do_factors = false;
+    bool do_partial_fractions = false;
+    bool do_calendars = false;
+    bool do_bases = false;
+    std::string to_expression_text =
+        calc.parseComments(calculation_expression, eo.parse_options);
+    if(!to_expression_text.empty() && calculation_expression.empty()) {
+        calculation_expression = "0";
+    } else {
+        std::string from_expression = calculation_expression;
+        had_to_expression = calc.separateToExpression(
+            from_expression,
+            to_expression_text,
+            eo,
+            true
+        );
+        if(had_to_expression) {
+            Number custom_base;
+            int binary_prefixes = -1;
+            const std::string unit_target = calc.parseToExpression(
+                to_expression_text,
+                eo,
+                po,
+                &custom_base,
+                &binary_prefixes,
+                &complex_angle_form,
+                &do_factors,
+                &do_partial_fractions,
+                &do_calendars,
+                &do_bases
+            );
+            if(!custom_base.isZero()) calc.setCustomOutputBase(custom_base);
+            if(binary_prefixes >= 0) calc.useBinaryPrefixes(binary_prefixes);
+            if(do_calendars) {
+                last_qalc_markup_output_complete = true;
+                const std::string calendar_lines = calc.calculateAndPrint(
+                    expression,
+                    timeout_ms,
+                    eo,
+                    po,
+                    terse ? AUTOMATIC_FRACTION_OFF : AUTOMATIC_FRACTION_AUTO,
+                    terse ? AUTOMATIC_APPROXIMATION_OFF : AUTOMATIC_APPROXIMATION_AUTO,
+                    nullptr,
+                    -1,
+                    nullptr,
+                    true,
+                    0,
+                    latex ? TAG_TYPE_LATEX : TAG_TYPE_HTML
+                );
+                return format_qalc_calendar_table(calendar_lines);
+            }
+            calculation_expression = from_expression;
+            if(!unit_target.empty()) {
+                calculation_expression += " to ";
+                calculation_expression += unit_target;
+            }
+        }
+        calculation_expression =
+            calc.unlocalizeExpression(calculation_expression, eo.parse_options);
+    }
+    MathStructure result;
+    MathStructure parsed;
+    MathStructure to_expression;
+    calc.calculate(
+        &result,
+        calculation_expression,
+        timeout_ms,
+        eo,
+        &parsed,
+        &to_expression
+    );
+
+    const bool converted = had_to_expression || !to_expression.isUndefined();
+    if(!converted && eo.auto_post_conversion == POST_CONVERSION_OPTIMAL) {
+        convert_unchanged_quantity_with_unit(parsed, result, eo);
+    }
+
+    MathStructure exact;
+    exact.setUndefined();
+    MathStructure prepend_result;
+    prepend_result.setUndefined();
+    const AutomaticFractionFormat auto_fraction = !terse
+            && po.number_fraction_format == FRACTION_DECIMAL
+        ? AUTOMATIC_FRACTION_AUTO
+        : AUTOMATIC_FRACTION_OFF;
+    const AutomaticApproximation auto_approximation =
+        terse ? AUTOMATIC_APPROXIMATION_OFF : AUTOMATIC_APPROXIMATION_AUTO;
+    if(!terse && !calc.aborted() && po.base == BASE_DECIMAL) {
+        int exact_timeout_ms = 1000;
+        if(timeout_ms > 0) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started_at
+            ).count();
+            exact_timeout_ms = timeout_ms - static_cast<int>(elapsed) - 10;
+            exact_timeout_ms = std::min(exact_timeout_ms, 1000);
+        }
+        if(exact_timeout_ms > 0) {
+            calculate_dual_exact(
+                exact,
+                &result,
+                calculation_expression,
+                &parsed,
+                eo,
+                auto_approximation,
+                exact_timeout_ms,
+                5
+            );
+            if(calc.aborted()) exact.setUndefined();
+        }
+    }
+
+    if(do_factors) {
+        if(result.isInteger() && !parsed.isNumber()) prepend_result.set(result);
+        if((result.isNumber() || result.isVector())) {
+            po.restrict_fraction_length = false;
+            po.number_fraction_format = FRACTION_FRACTIONAL;
+        }
+        result.integerFactorize();
+        exact.integerFactorize();
+    } else if(do_partial_fractions) {
+        result.expandPartialFractions(eo);
+        exact.expandPartialFractions(eo);
+    }
+
+    if(!terse) {
+        parsed_output = print_qalc_parsed_markup(parsed, eo, po, latex);
+    }
+
+    if(do_bases) {
+        std::string output;
+        for(int base : {BASE_BINARY, BASE_OCTAL, BASE_DECIMAL, BASE_HEXADECIMAL}) {
+            if(!output.empty()) output += " = ";
+            po.base = base;
+            output += calc.print(
+                result,
+                0,
+                po,
+                true,
+                0,
+                latex ? TAG_TYPE_LATEX : TAG_TYPE_HTML
+            );
+        }
+        is_approximate = result.isApproximate();
+        return output;
+    }
+
+    std::string result_output;
+    std::vector<std::string> alternative_results;
+    bool exact_comparison = false;
+    print_dual(
+        result,
+        calculation_expression,
+        parsed,
+        exact,
+        result_output,
+        alternative_results,
+        po,
+        eo,
+        auto_fraction,
+        auto_approximation,
+        complex_angle_form,
+        &exact_comparison,
+        true,
+        true,
+        0,
+        latex ? TAG_TYPE_LATEX : TAG_TYPE_HTML,
+        -1,
+        converted
+    );
+
+    if(!prepend_result.isUndefined()) {
+        PrintOptions prepend_options = po;
+        prepend_options.min_exp = 0;
+        alternative_results.insert(
+            alternative_results.begin(),
+            calc.print(
+                prepend_result,
+                0,
+                prepend_options,
+                true,
+                0,
+                latex ? TAG_TYPE_LATEX : TAG_TYPE_HTML
+            )
+        );
+    }
+
+    if(!alternative_results.empty()) {
+        const bool use_parentheses =
+            result.isComparison() || result.isLogicalAnd() || result.isLogicalOr();
+        const std::string approximate_result = result_output;
+        result_output.clear();
+        for(std::size_t index = 0; index < alternative_results.size(); ++index) {
+            if(index > 0) result_output += " = ";
+            result_output += use_parentheses
+                ? wrap_qalc_markup_parentheses(alternative_results[index], latex)
+                : alternative_results[index];
+        }
+        if(result.isApproximate() || is_approximate) {
+            result_output += po.use_unicode_signs ? " ≈ " : " = approx. ";
+        } else {
+            result_output += " = ";
+        }
+        result_output += use_parentheses
+            ? wrap_qalc_markup_parentheses(approximate_result, latex)
+            : approximate_result;
+    } else if(result.isComparison() || result.isLogicalAnd() || result.isLogicalOr()) {
+        result_output = wrap_qalc_markup_parentheses(result_output, latex);
+    }
+
+    if(exact_comparison || !alternative_results.empty()) {
+        is_approximate = false;
+    } else if(result.isApproximate()) {
+        is_approximate = true;
+    }
+    return result_output;
+}
 
 } // namespace
 
@@ -175,10 +520,16 @@ rust::String calculate_and_print(
 rust::String calculate_and_print_qalc(
     Calculator &calc,
     rust::Str expr,
-    int32_t timeout_ms
+    int32_t timeout_ms,
+    bool unicode_enabled,
+    bool markup,
+    bool latex,
+    bool terse
 ) {
     last_qalc_result_is_approximate = false;
+    last_qalc_markup_output_complete = false;
     last_qalc_messages_text.clear();
+    last_qalc_parsed_expression.clear();
     last_qalc_messages_line_count = 0;
     last_qalc_message_had_error = false;
     try {
@@ -205,7 +556,7 @@ rust::String calculate_and_print_qalc(
         po.number_fraction_format = FRACTION_DECIMAL;
         po.restrict_fraction_length = false;
         po.abbreviate_names = true;
-        po.use_unicode_signs = true;
+        po.use_unicode_signs = unicode_enabled;
         po.use_unit_prefixes = true;
         po.spacious = true;
         po.short_multiplication = true;
@@ -243,7 +594,7 @@ rust::String calculate_and_print_qalc(
         eo.parse_options.comma_as_separator = false;
         eo.mixed_units_conversion = MIXED_UNITS_CONVERSION_DEFAULT;
         eo.complex_number_form = COMPLEX_NUMBER_FORM_RECTANGULAR;
-        eo.local_currency_conversion = false;
+        eo.local_currency_conversion = true;
         eo.interval_calculation = INTERVAL_CALCULATION_VARIANCE_FORMULA;
         eo.parse_options.twos_complement = false;
         eo.parse_options.hexadecimal_twos_complement = false;
@@ -253,14 +604,35 @@ rust::String calculate_and_print_qalc(
         calc.useIntervalArithmetic(true);
         calc.setTemperatureCalculationMode(TEMPERATURE_CALCULATION_HYBRID);
 
-        std::string output = calc.calculateAndPrint(
-            expr_str,
-            timeout_ms,
-            eo,
-            po,
-            AUTOMATIC_FRACTION_OFF,
-            AUTOMATIC_APPROXIMATION_OFF
-        );
+        std::string parsed_expression;
+        std::string output;
+        if(markup) {
+            output = calculate_qalc_markup(
+                calc,
+                expr_str,
+                timeout_ms,
+                eo,
+                po,
+                latex,
+                terse,
+                is_approximate,
+                parsed_expression
+            );
+        } else {
+            output = calc.calculateAndPrint(
+                expr_str,
+                timeout_ms,
+                eo,
+                po,
+                AUTOMATIC_FRACTION_OFF,
+                AUTOMATIC_APPROXIMATION_OFF
+            );
+        }
+        if(markup && latex) {
+            replace_all(output, " ≈ ", " \\approx ");
+            replace_all(output, " = approx. ", " \\approx ");
+        }
+        last_qalc_parsed_expression = parsed_expression;
         last_qalc_result_is_approximate = is_approximate;
         capture_qalc_messages(calc);
         return rust::String(output);
@@ -275,8 +647,16 @@ bool qalc_last_result_is_approximate() {
     return last_qalc_result_is_approximate;
 }
 
+bool qalc_last_markup_output_is_complete() {
+    return last_qalc_markup_output_complete;
+}
+
 rust::String qalc_last_messages() {
     return rust::String(last_qalc_messages_text);
+}
+
+rust::String qalc_last_parsed_expression() {
+    return rust::String(last_qalc_parsed_expression);
 }
 
 std::size_t qalc_last_message_line_count() {

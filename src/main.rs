@@ -6,7 +6,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use libqalculate_rust::batch::read_batch_cases;
-use libqalculate_rust::ffi::Calculator;
+use libqalculate_rust::ffi::{Calculator, FallbackState};
 use libqalculate_rust::parser::commands::{parse_command, SessionCommand, SetSetting};
 use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 
@@ -228,12 +228,19 @@ fn evaluate_expression(
     if let Some(setting) = unicode_setting.as_deref() {
         setting_refs.push(setting);
     }
+    setting_refs.extend(invocation.settings.iter().map(String::as_str));
     if let Some(setting) = programming_setting.as_deref() {
         setting_refs.push(setting);
     }
-    setting_refs.extend(invocation.settings.iter().map(String::as_str));
 
     let mut calc = Calculator::new();
+    if invocation.definitions.global_defs
+        && invocation.definitions.currencies
+        && !fallback_disabled
+        && !calc.load_exchange_rates()
+    {
+        return Err("failed to load exchange rates".to_owned());
+    }
     if invocation.definitions.global_defs
         && !fallback_disabled
         && !calc.load_global_definitions_selected(
@@ -255,7 +262,7 @@ fn evaluate_expression(
     let result = match invocation.output_mode {
         cli::OutputMode::Text => {
             if invocation.terse {
-                calc.calculate_and_print_qalc_with_settings_and_fallback_state(
+                calc.calculate_and_print_qalc_terse_with_settings_and_fallback_state(
                     expression,
                     &setting_refs,
                     timeout,
@@ -302,9 +309,16 @@ fn evaluate_expression(
 
     match result {
         Ok(result) => {
-            let message_had_error = calc.last_native_message_had_error();
+            let message_had_error =
+                calc.last_native_message_had_error() || !invocation.definitions.global_defs;
             if report_fallback {
                 eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());
+            }
+            if !invocation.definitions.global_defs
+                && !invocation.terse
+                && result.fallback_state == FallbackState::Native
+            {
+                println!("error: Radians unit is missing. Creating one for this session.");
             }
             println!("{}", result.output);
             if message_had_error {

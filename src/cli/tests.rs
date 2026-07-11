@@ -125,6 +125,19 @@ fn test_programming_mode_without_a_base_preserves_upstream_setting_shape() {
 }
 
 #[test]
+fn test_programming_mode_is_not_a_user_settable_option() {
+    for setting in [
+        "programming mode 0",
+        "set programming mode 0",
+        "/set programming mode 0",
+    ] {
+        let invocation = parse_args(vec!["qalc-rs", "-s", setting, "1+1"]);
+        assert!(invocation.settings.is_empty());
+        assert_eq!(invocation.diagnostics, vec!["Unrecognized option.\n"]);
+    }
+}
+
+#[test]
 fn test_programming_mode_consumes_separator_but_keeps_default_base() {
     let inv = parse_args(vec!["qalc-rs", "-p", "--", "52"]);
     assert!(inv.programming_mode);
