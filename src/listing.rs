@@ -5,6 +5,7 @@ use libqalculate_rust::definitions_catalog::{FunctionVariableCatalog, VariableKi
 use libqalculate_rust::units::{
     DefinitionName, PrefixDefinition, PrefixKind, PrefixUnitCatalog, UnitDefinition, UnitType,
 };
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const LIST_FOOTER: &str = "For more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).";
@@ -236,6 +237,45 @@ fn render_prefix_details(prefix: &PrefixDefinition, unicode_enabled: bool) -> St
         PrefixKind::Binary => format!("2^{}", prefix.exponent()),
     };
     format!("\nPrefix\nNames: {names}\nValue: {value}\n\n")
+}
+
+pub(crate) fn render_local_variable_list(
+    request: &ListRequest,
+    variables: &BTreeMap<String, String>,
+) -> Option<String> {
+    if !matches!(request.list_type, ListType::All | ListType::Variables) {
+        return None;
+    }
+    let query = request.search_term.as_deref().unwrap_or_default();
+    let query_lower = query.to_ascii_lowercase();
+    let matches = variables
+        .keys()
+        .filter(|name| query.is_empty() || name.to_ascii_lowercase().starts_with(&query_lower))
+        .map(|name| format!("{name}\t"))
+        .collect::<Vec<_>>();
+    if matches.is_empty() {
+        return None;
+    }
+    let mut rendered = matches.join("\n");
+    rendered.push('\n');
+    if request.search_term.is_some() || request.list_type == ListType::All {
+        rendered.push('\n');
+        rendered.push_str(LIST_FOOTER);
+        rendered.push_str("\n\n");
+    }
+    Some(rendered)
+}
+
+pub(crate) fn render_local_variable_info(
+    query: &str,
+    variables: &BTreeMap<String, String>,
+) -> Option<String> {
+    let (name, value) = variables
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(query))?;
+    Some(format!(
+        "\nVariable: {name}\nNames: {name}\nValue: {value}\n\n"
+    ))
 }
 
 pub(crate) fn render_info(

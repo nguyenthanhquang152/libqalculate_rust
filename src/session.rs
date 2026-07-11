@@ -185,7 +185,7 @@ impl NativeSessionSettings {
                     SetSetting::InputBase(10) => {}
                     _ => return None,
                 },
-                SessionCommand::Assume(_) => return None,
+                SessionCommand::Assume(_) => {}
             }
         }
         Some((unicode, output_base))

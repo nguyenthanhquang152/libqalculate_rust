@@ -18,6 +18,7 @@ pub(crate) enum InteractiveCommand {
         query: Option<String>,
     },
     Info(String),
+    Unknown,
     Expression(String),
 }
 
@@ -122,6 +123,21 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
             list_type,
             query: (!query.is_empty()).then_some(query),
         });
+    }
+
+    let conversion_target = without_slash.strip_prefix("->").map(str::trim).or_else(|| {
+        (command_name.eq_ignore_ascii_case("to") || command_name.eq_ignore_ascii_case("convert"))
+            .then_some(command_argument)
+    });
+    if let Some(target) = conversion_target {
+        if target.is_empty() {
+            return Err("No conversion target specified.".to_string());
+        }
+        return Ok(InteractiveCommand::Expression(format!("ans to {target}")));
+    }
+
+    if trimmed.starts_with('/') {
+        return Ok(InteractiveCommand::Unknown);
     }
 
     Ok(InteractiveCommand::Expression(trimmed.to_string()))
@@ -236,6 +252,18 @@ mod tests {
                 list_type: super::ListType::Functions,
                 query: Some("CaseSensitiveName".to_string()),
             })
+        );
+        assert_eq!(
+            parse_interactive_command("to cm"),
+            Ok(InteractiveCommand::Expression("ans to cm".to_string()))
+        );
+        assert_eq!(
+            parse_interactive_command("->cm"),
+            Ok(InteractiveCommand::Expression("ans to cm".to_string()))
+        );
+        assert_eq!(
+            parse_interactive_command("/typo"),
+            Ok(InteractiveCommand::Unknown)
         );
     }
 }

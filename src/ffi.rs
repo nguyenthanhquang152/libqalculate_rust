@@ -964,8 +964,10 @@ impl Calculator {
                 if let Some(output) = native_data_output(profile, expr)? {
                     return Ok(self.finish_native_string(output));
                 }
-                if let Some(output) = native_statistics_output(profile, expr)? {
-                    return Ok(self.finish_native_string(output));
+                if let Some(output) =
+                    native_statistics_output(profile, expr, &mut self.native_context)?
+                {
+                    return Ok(self.finish_native_output(output));
                 }
                 if let Some(output) =
                     native_session_output(profile, expr, &mut self.native_context)?
@@ -1519,16 +1521,24 @@ fn native_data_output(
 fn native_statistics_output(
     profile: PrintProfile,
     expr: &str,
-) -> Result<Option<String>, CalculatorError> {
+    context: &mut crate::context::CalculatorContext,
+) -> Result<Option<NativeOutput>, CalculatorError> {
     let Some(output) = crate::statistics::native_output(expr)
         .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
     else {
         return Ok(None);
     };
 
-    Ok(Some(match profile {
+    let rendering = match profile {
         PrintProfile::Api => output,
         PrintProfile::Qalc => output.replace('-', "\u{2212}"),
+    };
+    let answer = crate::parser::operators::parse_expression(&rendering)
+        .ok()
+        .and_then(|parsed| crate::eval::evaluate_ast(&parsed, context).ok());
+    Ok(Some(match answer {
+        Some(answer) => NativeOutput::plain(rendering.clone()).with_answer(answer, rendering),
+        None => NativeOutput::plain(rendering),
     }))
 }
 
@@ -1573,6 +1583,16 @@ fn native_session_context_output(
     crate::session::apply_raw_settings_to_context(context, settings)?;
     context.clear_messages();
     let answer = context.parse_and_evaluate_expression(expr).ok()?;
+    if matches!(&answer, crate::ast::Expression::Conversion { .. }) {
+        let substituted =
+            crate::text::format_result_with_numbers(&answer, &crate::number::Number::to_string)?;
+        if let Some(output) = native_unit_conversion_output(profile, &substituted, settings)
+            .ok()
+            .flatten()
+        {
+            return Some(output);
+        }
+    }
     let session_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
     let answer_profile = match profile {
         PrintProfile::Api => crate::session::AnswerFormatProfile::Api,

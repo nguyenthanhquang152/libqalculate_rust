@@ -197,6 +197,70 @@ fn assignments_update_the_session_context() {
 }
 
 #[test]
+fn session_defined_variables_are_visible_to_list_and_info() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("myvar:=5\nlist variables myvar\ninfo myvar\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("myvar\t")
+                .and(predicate::str::contains("Variable: myvar"))
+                .and(predicate::str::contains("Value: 5")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn assume_commands_do_not_block_later_cpp_fallback_evaluation() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("assume positive\nEi(3)\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Ei(3) ≈ 9.933832571"))
+        .stderr("");
+}
+
+#[test]
+fn previous_result_conversion_commands_and_unknown_slash_commands_are_typed() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1 m\nto cm\n/typo\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("ans to cm = 100 cm")
+                .and(predicate::str::contains("Unknown command.\n\n")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_statistics_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("mean(5; 6; 4; 2; 3; 7)\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("mean(5, 6, 4, 2, 3, 7) = 4.5")
+                .and(predicate::str::contains("ans + 1 = 5.5")),
+        )
+        .stderr("");
+}
+
+#[test]
 fn interactive_answer_history_rotates_without_cpp_fallback() {
     let mut session = isolated_session();
     session

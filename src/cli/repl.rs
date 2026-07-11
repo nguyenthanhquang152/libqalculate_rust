@@ -1,5 +1,6 @@
 use super::commands::{parse_interactive_command, InteractiveCommand};
-use super::{CliInvocation, ListRequest};
+use super::{CliInvocation, ListRequest, ListType};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -109,10 +110,15 @@ where
     F: FnMut(&CliInvocation, ReplRequest) -> Result<Option<ReplEvaluation>, String>,
 {
     let mut history = History::load();
+    let mut local_variables = BTreeMap::new();
 
     if let Some(expression) = initial_expression {
+        let assignment = local_assignment(&expression);
         match evaluate(invocation, ReplRequest::Evaluate(expression)) {
             Ok(Some(evaluation)) => {
+                if let Some((name, value)) = assignment {
+                    local_variables.insert(name, value);
+                }
                 if render_evaluation(output, &evaluation).is_err() {
                     return 2;
                 }
@@ -181,6 +187,12 @@ where
                 }
                 history.record(&line);
             }
+            InteractiveCommand::Unknown => {
+                history.record(&line);
+                if writeln!(output, "Unknown command.\n").is_err() {
+                    return 2;
+                }
+            }
             InteractiveCommand::Settings(settings) => {
                 let previous_len = invocation.interactive_settings.len();
                 invocation.interactive_settings.extend(settings);
@@ -212,6 +224,18 @@ where
                     list_type,
                     search_term: query,
                 };
+                let local_rendering =
+                    crate::listing::render_local_variable_list(&request, &local_variables);
+                let local_is_authoritative = local_rendering.is_some()
+                    && (request.search_term.is_some() || request.list_type == ListType::All);
+                if let Some(rendered) = local_rendering {
+                    if write!(output, "{rendered}").is_err() {
+                        return 2;
+                    }
+                }
+                if local_is_authoritative {
+                    continue;
+                }
                 let data_dir = libqalculate_rust::rates::definitions_dir();
                 match crate::listing::render_list(
                     &data_dir,
@@ -233,6 +257,14 @@ where
             }
             InteractiveCommand::Info(query) => {
                 history.record(&line);
+                if let Some(rendered) =
+                    crate::listing::render_local_variable_info(&query, &local_variables)
+                {
+                    if write!(output, "{rendered}").is_err() {
+                        return 2;
+                    }
+                    continue;
+                }
                 let data_dir = libqalculate_rust::rates::definitions_dir();
                 match crate::listing::render_info(
                     &data_dir,
@@ -254,8 +286,12 @@ where
             }
             InteractiveCommand::Expression(expression) => {
                 history.record(&line);
+                let assignment = local_assignment(&expression);
                 match evaluate(invocation, ReplRequest::Evaluate(expression)) {
                     Ok(Some(evaluation)) => {
+                        if let Some((name, value)) = assignment {
+                            local_variables.insert(name, value);
+                        }
                         if render_evaluation(output, &evaluation).is_err() {
                             return 2;
                         }
@@ -270,6 +306,21 @@ where
             }
         }
     }
+}
+
+fn local_assignment(expression: &str) -> Option<(String, String)> {
+    let (name, value) = expression.split_once(":=")?;
+    let name = name.trim();
+    let value = value.trim();
+    if name.is_empty()
+        || value.is_empty()
+        || !name
+            .chars()
+            .all(|character| character == '_' || character.is_alphanumeric())
+    {
+        return None;
+    }
+    Some((name.to_string(), value.to_string()))
 }
 
 fn render_evaluation<W: Write>(output: &mut W, evaluation: &ReplEvaluation) -> io::Result<()> {
