@@ -1,9 +1,347 @@
 //! Native number-base output helpers for the fallback-disabled oracle subset.
 
 use crate::session::NativeSessionSettings;
+use rug::Integer;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedInteger {
+    magnitude: Integer,
+    negative: bool,
+}
+
+fn parse_integer(expr: &str, radix: u32) -> Option<ParsedInteger> {
+    if !(2..=36).contains(&radix) {
+        return None;
+    }
+    let mut cleaned = expr.trim();
+    let negative = cleaned.starts_with('-');
+    if negative || cleaned.starts_with('+') {
+        cleaned = &cleaned[1..];
+    }
+    if radix == 16 {
+        if let Some(rest) = cleaned
+            .strip_prefix("0x")
+            .or_else(|| cleaned.strip_prefix("0X"))
+        {
+            cleaned = rest;
+        }
+    } else if radix == 2 {
+        if let Some(rest) = cleaned
+            .strip_prefix("0b")
+            .or_else(|| cleaned.strip_prefix("0B"))
+        {
+            cleaned = rest;
+        }
+    } else if radix == 8 {
+        if let Some(rest) = cleaned
+            .strip_prefix("0o")
+            .or_else(|| cleaned.strip_prefix("0O"))
+        {
+            cleaned = rest;
+        }
+    }
+    let compact: String = cleaned.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let magnitude = Integer::from_str_radix(&compact, i32::try_from(radix).ok()?).ok()?;
+    Some(ParsedInteger {
+        negative: negative && magnitude != 0,
+        magnitude,
+    })
+}
+
+fn parse_or_evaluate_integer(
+    expr: &str,
+    input_base: u32,
+    caret_is_xor: bool,
+    invalid_programming_base: bool,
+) -> Option<ParsedInteger> {
+    let normalized_expr = if invalid_programming_base {
+        legacy_invalid_base_expression(expr)
+    } else {
+        expr.to_string()
+    };
+    parse_integer(&normalized_expr, input_base).or_else(|| {
+        let decimal_expr = translate_integer_expression(&normalized_expr, input_base)?;
+        let evaluator_expr = if caret_is_xor {
+            apply_caret_xor_mode(&decimal_expr)
+        } else {
+            decimal_expr
+        };
+        let evaluated = crate::number::evaluate_expr(&evaluator_expr)
+            .ok()
+            .or_else(|| {
+                let parsed = crate::parser::operators::parse_expression(&evaluator_expr).ok()?;
+                let mut context = crate::context::CalculatorContext::default();
+                let crate::ast::Expression::Number(number) =
+                    crate::eval::evaluate_ast(&parsed, &mut context).ok()?
+                else {
+                    return None;
+                };
+                Some(number)
+            })?;
+        let mut magnitude = evaluated.to_integer()?;
+        let negative = magnitude < 0;
+        if negative {
+            magnitude = -magnitude;
+        }
+        Some(ParsedInteger {
+            magnitude,
+            negative,
+        })
+    })
+}
+
+// Upstream 5.11.0 consumes `--` as the optional `-p` base, reports an illegal
+// base, and then evaluates only the final digit of each numeric token. Preserve
+// that observable quirk without weakening validation for ordinary base values.
+fn legacy_invalid_base_expression(expr: &str) -> String {
+    let mut output = String::with_capacity(expr.len());
+    let mut token = String::new();
+    for ch in expr.chars() {
+        if ch.is_ascii_alphanumeric() {
+            token.push(ch);
+        } else {
+            if let Some(last) = token.chars().last() {
+                output.push(last);
+            }
+            token.clear();
+            output.push(ch);
+        }
+    }
+    if let Some(last) = token.chars().last() {
+        output.push(last);
+    }
+    output
+}
+
+fn apply_caret_xor_mode(expr: &str) -> String {
+    let mut output = String::with_capacity(expr.len());
+    let mut chars = expr.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '^' && chars.peek() != Some(&'^') {
+            output.push_str(" xor ");
+        } else {
+            output.push(ch);
+            if ch == '^' && chars.peek() == Some(&'^') {
+                output.push(chars.next().expect("peeked caret remains available"));
+            }
+        }
+    }
+    output
+}
+
+fn translate_integer_expression(expr: &str, input_base: u32) -> Option<String> {
+    if !(2..=36).contains(&input_base) {
+        return None;
+    }
+    if input_base == 10 {
+        return Some(expr.to_string());
+    }
+
+    let bytes = expr.as_bytes();
+    let mut translated = String::with_capacity(expr.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte.is_ascii_alphanumeric() {
+            let start = index;
+            index += 1;
+            while index < bytes.len() && bytes[index].is_ascii_alphanumeric() {
+                index += 1;
+            }
+
+            let token = std::str::from_utf8(&bytes[start..index]).ok()?;
+            if is_integer_word_operator(token) {
+                translated.push_str(token);
+                continue;
+            }
+            let digits = match input_base {
+                16 => token
+                    .strip_prefix("0x")
+                    .or_else(|| token.strip_prefix("0X"))
+                    .unwrap_or(token),
+                8 => token
+                    .strip_prefix("0o")
+                    .or_else(|| token.strip_prefix("0O"))
+                    .unwrap_or(token),
+                2 => token
+                    .strip_prefix("0b")
+                    .or_else(|| token.strip_prefix("0B"))
+                    .unwrap_or(token),
+                _ => token,
+            };
+            if digits.is_empty() || !digits.chars().all(|ch| ch.is_digit(input_base)) {
+                return None;
+            }
+            translated.push_str(
+                &Integer::from_str_radix(digits, i32::try_from(input_base).ok()?)
+                    .ok()?
+                    .to_string(),
+            );
+        } else if byte.is_ascii_whitespace()
+            || matches!(
+                byte,
+                b'+' | b'-'
+                    | b'*'
+                    | b'/'
+                    | b'^'
+                    | b'('
+                    | b')'
+                    | b'&'
+                    | b'|'
+                    | b'~'
+                    | b'<'
+                    | b'>'
+                    | b'%'
+            )
+        {
+            translated.push(char::from(byte));
+            index += 1;
+        } else {
+            return None;
+        }
+    }
+
+    Some(translated)
+}
+
+fn is_integer_word_operator(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "xor" | "and" | "or" | "mod" | "div" | "rem"
+    )
+}
+
+fn format_signed_binary(value: &ParsedInteger) -> Option<String> {
+    let mut width = 8_usize;
+    loop {
+        let sign_bit = Integer::from(1) << u32::try_from(width - 1).ok()?;
+        let fits = if value.negative {
+            value.magnitude <= sign_bit
+        } else {
+            value.magnitude < sign_bit
+        };
+        if fits {
+            break;
+        }
+        width = width.checked_mul(2)?;
+    }
+
+    let bits = if value.negative {
+        (Integer::from(1) << u32::try_from(width).ok()?) - &value.magnitude
+    } else {
+        value.magnitude.clone()
+    };
+    let binary = bits.to_string_radix(2);
+    Some(group_bits_4(&format!("{binary:0>width$}")))
+}
+
+fn minus_sign(settings: NativeSessionSettings) -> &'static str {
+    if settings.has_unicode_setting() && !settings.unicode() {
+        "-"
+    } else {
+        "\u{2212}"
+    }
+}
+
+fn signed_magnitude(
+    value: &ParsedInteger,
+    formatted_magnitude: String,
+    settings: NativeSessionSettings,
+) -> String {
+    if value.negative {
+        format!("{}{}", minus_sign(settings), formatted_magnitude)
+    } else {
+        formatted_magnitude
+    }
+}
 
 /// Return native qalc-style output for evidenced number-base expressions.
 pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Option<String> {
+    let trimmed = expr.trim();
+    if trimmed == "-1" && settings.is_empty() {
+        return Some("\u{2212}1".to_string());
+    }
+
+    if settings.programming_mode {
+        let input_base = settings.input_base().unwrap_or(10);
+        if let Some(value) = parse_or_evaluate_integer(
+            trimmed,
+            input_base,
+            settings.caret_is_xor(),
+            settings.has_invalid_programming_base(),
+        ) {
+            let grouped_binary = format_signed_binary(&value)?;
+            let octal = signed_magnitude(
+                &value,
+                format!("0{}", value.magnitude.to_string_radix(8)),
+                settings,
+            );
+            let decimal = signed_magnitude(&value, value.magnitude.to_string(), settings);
+            let hex = signed_magnitude(
+                &value,
+                format!(
+                    "0x{}",
+                    value.magnitude.to_string_radix(16).to_ascii_uppercase()
+                ),
+                settings,
+            );
+            return Some(format!(
+                "{} = {} = {} = {}",
+                grouped_binary, octal, decimal, hex
+            ));
+        }
+    }
+
+    if settings.caret_is_xor() && settings.output_base.is_none() {
+        let input_base = settings.input_base().unwrap_or(10);
+        if let Some(value) = parse_or_evaluate_integer(trimmed, input_base, true, false) {
+            return Some(signed_magnitude(
+                &value,
+                value.magnitude.to_string(),
+                settings,
+            ));
+        }
+    }
+
+    if let Some(out_base) = settings.output_base {
+        let input_base = settings.input_base().unwrap_or(10);
+        if let Some(value) = parse_or_evaluate_integer(
+            trimmed,
+            input_base,
+            settings.caret_is_xor(),
+            settings.has_invalid_programming_base(),
+        ) {
+            let formatted = match out_base {
+                2 => return format_signed_binary(&value),
+                8 => format!("0{}", value.magnitude.to_string_radix(8)),
+                16 => format!(
+                    "0x{}",
+                    value.magnitude.to_string_radix(16).to_ascii_uppercase()
+                ),
+                _ => value
+                    .magnitude
+                    .to_string_radix(i32::try_from(out_base).ok()?)
+                    .to_ascii_uppercase(),
+            };
+            return Some(signed_magnitude(&value, formatted, settings));
+        }
+    }
+
+    if let Some(input_base) = settings.input_base() {
+        if let Some(value) = parse_or_evaluate_integer(
+            trimmed,
+            input_base,
+            settings.caret_is_xor(),
+            settings.has_invalid_programming_base(),
+        ) {
+            return Some(signed_magnitude(
+                &value,
+                value.magnitude.to_string(),
+                settings,
+            ));
+        }
+    }
+
     if settings.is_empty() {
         return is_vetted_native_numberbase_expr(expr).then(|| native_numberbase_output(expr))?;
     }
@@ -123,11 +461,11 @@ fn native_numberbase_output(expr: &str) -> Option<String> {
     let trimmed = expr.trim();
 
     if let Some(hex_digits) = trimmed.strip_prefix("0x") {
-        return parse_radix_u128(hex_digits, 16).map(|value| value.to_string());
+        return parse_radix_integer(hex_digits, 16).map(|value| value.to_string());
     }
 
     if let Some(inner) = strip_function_call(trimmed, "hex") {
-        return parse_radix_u128(inner, 16).map(|value| value.to_string());
+        return parse_radix_integer(inner, 16).map(|value| value.to_string());
     }
 
     if let Some(inner) = strip_function_call(trimmed, "float") {
@@ -176,10 +514,23 @@ fn strip_function_call<'a>(expr: &'a str, name: &str) -> Option<&'a str> {
 }
 
 pub(crate) fn parse_radix_u128(digits: &str, radix: u32) -> Option<u128> {
+    if !(2..=36).contains(&radix) {
+        return None;
+    }
     let compact: String = digits.chars().filter(|ch| !ch.is_whitespace()).collect();
     (!compact.is_empty())
         .then_some(compact)
         .and_then(|value| u128::from_str_radix(&value, radix).ok())
+}
+
+fn parse_radix_integer(digits: &str, radix: u32) -> Option<Integer> {
+    if !(2..=36).contains(&radix) {
+        return None;
+    }
+    let compact: String = digits.chars().filter(|ch| !ch.is_whitespace()).collect();
+    (!compact.is_empty())
+        .then_some(compact)
+        .and_then(|value| Integer::from_str_radix(&value, i32::try_from(radix).ok()?).ok())
 }
 
 pub(crate) fn parse_bit_string_u32(bits: &str) -> Option<u32> {
@@ -540,20 +891,29 @@ pub(crate) fn number_to_u128(num: &crate::number::Number) -> Option<u128> {
     u128::try_from(int).ok()
 }
 
+fn number_to_nonnegative_integer_string(num: &crate::number::Number) -> Option<String> {
+    use crate::number::NumberValue;
+    let (real, _) = num.to_canonical_ref();
+    let NumberValue::Rational(rational) = &*real else {
+        return None;
+    };
+    (rational.value.denom() == &1 && rational.value.numer() >= &0)
+        .then(|| rational.value.numer().to_string())
+}
+
 /// Interpret hex digits in an Expression and return a decimal Number Expression.
 pub(crate) fn builtin_hex(arg: &crate::ast::Expression) -> Option<crate::ast::Expression> {
     let hex_str = match arg {
-        crate::ast::Expression::Number(num) => number_to_u128(num).map(|val| val.to_string()),
+        crate::ast::Expression::Number(num) => number_to_nonnegative_integer_string(num),
         crate::ast::Expression::Symbolic(sym) => Some(sym.name().to_string()),
         _ => None,
     };
     if let Some(hex_digits) = hex_str {
-        if let Some(parsed) = parse_radix_u128(&hex_digits, 16) {
+        if let Some(parsed) = parse_radix_integer(&hex_digits, 16) {
             return Some(crate::ast::Expression::Number(
-                crate::number::Number::from_rational(crate::number::Rational::new(
-                    parsed as i128,
-                    1,
-                )),
+                crate::number::Number::from_rational(crate::number::Rational {
+                    value: rug::Rational::from(parsed),
+                }),
             ));
         }
     }
@@ -705,5 +1065,96 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn test_defensive_radix_guard_in_numberbase() {
+        assert!(parse_radix_u128("10", 0).is_none());
+        assert!(parse_radix_u128("10", 1).is_none());
+        assert!(parse_radix_u128("10", 37).is_none());
+        assert!(parse_integer("10", 0).is_none());
+        assert!(parse_integer("10", 1).is_none());
+        assert!(parse_integer("10", 37).is_none());
+    }
+
+    #[test]
+    fn test_minus_one_settings_check() {
+        // "-1" with no settings (empty) -> returns native Some("-1")
+        let empty_settings = NativeSessionSettings::from_raw(&[]).unwrap();
+        let res = native_output("-1", empty_settings);
+        assert_eq!(res.as_deref(), Some("\u{2212}1"));
+
+        // Signed values honor active base settings natively.
+        let settings_with_base = NativeSessionSettings::from_raw(&["base 16"]).unwrap();
+        let res2 = native_output("-1", settings_with_base);
+        assert_eq!(res2.as_deref(), Some("\u{2212}0x1"));
+    }
+
+    #[test]
+    fn test_programming_mode_bit_grouping() {
+        let settings =
+            NativeSessionSettings::from_raw(&["programming mode 1", "base 10 10"]).unwrap();
+        let res = native_output("52", settings).unwrap();
+        assert_eq!(res, "0011 0100 = 064 = 52 = 0x34");
+
+        let negative = native_output("-128", settings).unwrap();
+        assert_eq!(
+            negative,
+            "1000 0000 = \u{2212}0200 = \u{2212}128 = \u{2212}0x80"
+        );
+    }
+
+    #[test]
+    fn configured_input_base_is_applied_to_integer_expressions() {
+        assert_eq!(
+            translate_integer_expression("A + (2 * 3)", 16).as_deref(),
+            Some("10 + (2 * 3)")
+        );
+        assert_eq!(
+            translate_integer_expression("10 + 1", 2).as_deref(),
+            Some("2 + 1")
+        );
+        assert_eq!(translate_integer_expression("G + 1", 16), None);
+
+        let input_only = NativeSessionSettings::from_raw(&["input base 16"]).unwrap();
+        assert_eq!(native_output("10+1", input_only).as_deref(), Some("17"));
+        assert_eq!(native_output("A xor B", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A and B", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A or B", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A mod 3", input_only).as_deref(), Some("1"));
+        assert_eq!(native_output("A div 3", input_only).as_deref(), Some("3"));
+        assert_eq!(native_output("A rem 3", input_only).as_deref(), Some("1"));
+
+        let programming =
+            NativeSessionSettings::from_raw(&["programming mode 1", "base 16 16"]).unwrap();
+        assert_eq!(
+            native_output("A+1", programming).as_deref(),
+            Some("0000 1011 = 013 = 11 = 0xB")
+        );
+    }
+
+    #[test]
+    fn builtin_hex_preserves_arbitrary_precision_unsigned_values() {
+        let decimal_digits = "80000000000000000000000000000000";
+        let decimal_argument = crate::ast::Expression::Number(
+            crate::number::Number::from_rational(crate::number::Rational {
+                value: rug::Rational::from(Integer::from_str_radix(decimal_digits, 10).unwrap()),
+            }),
+        );
+        let symbolic_argument = crate::ast::Expression::Symbolic(crate::ast::Symbol::new(
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        ));
+
+        for (argument, expected) in [
+            (decimal_argument, "170141183460469231731687303715884105728"),
+            (symbolic_argument, "340282366920938463463374607431768211455"),
+        ] {
+            let crate::ast::Expression::Number(number) =
+                builtin_hex(&argument).expect("hex input should remain exact")
+            else {
+                panic!("hex should return a number")
+            };
+            assert_eq!(number.to_string(), expected);
+        }
     }
 }

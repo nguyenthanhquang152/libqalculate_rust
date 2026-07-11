@@ -704,7 +704,8 @@ fn run_rust_expression_in_dir(
         .arg("qalc-rs")
         .arg("--manifest-path")
         .arg(manifest_dir.join("Cargo.toml"))
-        .arg("--");
+        .arg("--")
+        .arg("-t");
     apply_oracle_environment(&mut cmd, defs);
     cmd.env_remove("QALCULATE_DISABLE_FALLBACK")
         .env_remove("QALCULATE_REPORT_FALLBACK");

@@ -4439,6 +4439,25 @@ impl Number {
         self.approximate
     }
 
+    pub(crate) fn qalc_relation_is_approximate(&self) -> bool {
+        if self.approximate() {
+            return true;
+        }
+        let (real, imag) = self.to_canonical_real_imag();
+        [real, imag].iter().any(|value| match value {
+            NumberValue::Rational(rational) => {
+                !rational.value.is_integer() && rational.terminating_decimal_string().is_none()
+            }
+            NumberValue::Uncertainty { value, .. } => !matches!(
+                value.as_ref(),
+                NumberValue::Rational(rational)
+                    if rational.value.is_integer()
+                        || rational.terminating_decimal_string().is_some()
+            ),
+            _ => false,
+        })
+    }
+
     /// Safe public accessor for the is_imaginary flag.
     pub fn is_imaginary(&self) -> bool {
         self.is_imaginary

@@ -6,9 +6,28 @@ const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
 // request MPFR allocation through the fallback-disabled scaffold.
 const MAX_NATIVE_PRECISION_DIGITS: usize = 4096;
 
+fn parse_standard_base(value: &str) -> Option<u32> {
+    let base = if value.eq_ignore_ascii_case("bin") || value.eq_ignore_ascii_case("binary") {
+        2
+    } else if value.eq_ignore_ascii_case("oct") || value.eq_ignore_ascii_case("octal") {
+        8
+    } else if value.eq_ignore_ascii_case("dec") || value.eq_ignore_ascii_case("decimal") {
+        10
+    } else if value.eq_ignore_ascii_case("hex") || value.eq_ignore_ascii_case("hexadecimal") {
+        16
+    } else {
+        value.parse::<u32>().ok()?
+    };
+    (2..=36).contains(&base).then_some(base)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct NativeSessionSettings {
     input_base: Option<u32>,
+    pub(crate) output_base: Option<u32>,
+    pub(crate) programming_mode: bool,
+    invalid_programming_base: bool,
+    xor_caret: bool,
     unicode: bool,
     unicode_setting_seen: bool,
     precision_digits: Option<usize>,
@@ -27,26 +46,50 @@ impl NativeSessionSettings {
     pub(crate) fn from_raw(settings: &[&str]) -> Option<Self> {
         let mut state = Self::default();
         for setting in settings {
-            let cmd_str = if setting.trim_start().starts_with("assumptions ") {
-                let rest = setting.trim_start().strip_prefix("assumptions ").unwrap();
-                format!("assume {}", rest)
-            } else if setting.trim_start().starts_with("/assumptions ") {
-                let rest = setting.trim_start().strip_prefix("/assumptions ").unwrap();
-                format!("assume {}", rest)
-            } else if setting.trim_start().starts_with("set ")
-                || setting.trim_start().starts_with("/set ")
-                || setting.trim_start().starts_with("assume ")
-                || setting.trim_start().starts_with("/assume ")
-            {
-                setting.to_string()
-            } else {
-                format!("set {}", setting)
-            };
+            let s_trimmed = setting.trim();
+            if s_trimmed == "base -- --" {
+                state.invalid_programming_base = true;
+                continue;
+            } else if let Some(stripped) = s_trimmed.strip_prefix("base ") {
+                let parts: Vec<&str> = stripped.split_whitespace().collect();
+                if parts.len() == 1 {
+                    state.output_base = Some(parse_standard_base(parts[0])?);
+                } else if parts.len() == 2 {
+                    state.input_base = Some(parse_standard_base(parts[0])?);
+                    state.output_base = Some(parse_standard_base(parts[1])?);
+                } else {
+                    return None;
+                }
+                continue;
+            } else if let Some(stripped) = s_trimmed.strip_prefix("xor^ ") {
+                let val = stripped.trim();
+                state.xor_caret = match val {
+                    "0" => false,
+                    "1" => true,
+                    _ => return None,
+                };
+                continue;
+            } else if let Some(stripped) = s_trimmed.strip_prefix("programming mode ") {
+                let val = stripped.trim();
+                if val == "1" {
+                    state.programming_mode = true;
+                } else if val == "0" {
+                    state.programming_mode = false;
+                } else {
+                    return None;
+                }
+                continue;
+            }
+
+            let cmd_str = normalized_context_command(setting);
             let cmd = parse_command(&cmd_str).ok()?;
             match cmd {
                 SessionCommand::Set(c) => match c.setting {
-                    SetSetting::InputBase(b) if b == 10 || b == 16 => {
+                    SetSetting::InputBase(b) if (2..=36).contains(&b) => {
                         state.input_base = Some(b);
+                    }
+                    SetSetting::OutputBase(b) if (2..=36).contains(&b) => {
+                        state.output_base = Some(b);
                     }
                     SetSetting::Unicode(value) => {
                         state.unicode = value;
@@ -100,8 +143,36 @@ impl NativeSessionSettings {
         self.unicode
     }
 
+    pub(crate) const fn caret_is_xor(self) -> bool {
+        self.xor_caret
+    }
+
+    pub(crate) const fn has_invalid_programming_base(self) -> bool {
+        self.invalid_programming_base
+    }
+
     pub(crate) const fn has_unicode_setting(self) -> bool {
         self.unicode_setting_seen
+    }
+
+    /// Parse a non-empty setting list that contains only Unicode toggles.
+    ///
+    /// This validates every raw command so no-op settings such as
+    /// `programming mode 0` cannot disappear into the final state and cross
+    /// the C++ fallback boundary unnoticed.
+    pub(crate) fn unicode_only_from_raw(settings: &[&str]) -> Option<bool> {
+        let mut unicode = None;
+        for setting in settings {
+            let command = parse_command(&normalized_context_command(setting)).ok()?;
+            match command {
+                SessionCommand::Set(command) => match command.setting {
+                    SetSetting::Unicode(value) => unicode = Some(value),
+                    _ => return None,
+                },
+                SessionCommand::Assume(_) => return None,
+            }
+        }
+        unicode
     }
 
     pub(crate) const fn precision_digits(self) -> usize {
@@ -113,6 +184,10 @@ impl NativeSessionSettings {
 
     pub(crate) const fn is_empty(self) -> bool {
         self.input_base.is_none()
+            && self.output_base.is_none()
+            && !self.programming_mode
+            && !self.invalid_programming_base
+            && !self.xor_caret
             && !self.unicode
             && !self.unicode_setting_seen
             && self.precision_digits.is_none()
@@ -130,7 +205,7 @@ impl NativeSessionSettings {
     /// Returns true when settings can be applied to the vetted numeric
     /// scaffold path without invoking numberbase-specific interpretation.
     pub(crate) const fn is_numeric_scaffold_compatible(self) -> bool {
-        self.input_base.is_none() && !self.unicode
+        matches!(self.input_base, None | Some(10))
     }
 
     pub(crate) const fn has_precision(self) -> bool {
@@ -154,19 +229,17 @@ impl NativeSessionSettings {
         self.approximation
     }
 
-    #[allow(dead_code)]
-    pub(crate) const fn fraction_format(self) -> Option<u32> {
-        self.fraction_format
+    pub(crate) const fn number_fraction_format(
+        self,
+    ) -> Option<crate::options::NumberFractionFormat> {
+        match self.fraction_format {
+            Some(2) => Some(crate::options::NumberFractionFormat::Fractional),
+            _ => None,
+        }
     }
 
-    #[allow(dead_code)]
-    pub(crate) const fn has_approximation(self) -> bool {
-        self.approximation.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) const fn has_fraction_format(self) -> bool {
-        self.fraction_format.is_some()
+    pub(crate) const fn has_non_default_approximation(self) -> bool {
+        !matches!(self.approximation, None | Some(ApproximationMode::TryExact))
     }
 
     pub(crate) const fn has_print_format_settings(self) -> bool {
@@ -195,6 +268,62 @@ impl NativeSessionSettings {
     pub(crate) const fn max_decimals(self) -> Option<i32> {
         self.max_decimals
     }
+}
+
+fn normalized_context_command(setting: &str) -> String {
+    let trimmed = setting.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("assumptions ") {
+        format!("assume {rest}")
+    } else if let Some(rest) = trimmed.strip_prefix("/assumptions ") {
+        format!("assume {rest}")
+    } else if trimmed.starts_with("set ")
+        || trimmed.starts_with("/set ")
+        || trimmed.starts_with("assume ")
+        || trimmed.starts_with("/assume ")
+    {
+        setting.to_string()
+    } else {
+        format!("set {setting}")
+    }
+}
+
+pub(crate) fn apply_raw_settings_to_context(
+    context: &mut crate::context::CalculatorContext,
+    settings: &[&str],
+) -> Option<()> {
+    for setting in settings {
+        let trimmed = setting.trim();
+        if let Some(base) = trimmed.strip_prefix("base ") {
+            let parts = base.split_whitespace().collect::<Vec<_>>();
+            match parts.as_slice() {
+                [output] => {
+                    let output = parse_standard_base(output)?;
+                    context.output_base = output;
+                    context.print_options.base = i32::try_from(output).ok()?;
+                }
+                [input, output] => {
+                    let input = parse_standard_base(input)?;
+                    let output = parse_standard_base(output)?;
+                    context.input_base = input;
+                    context.parse_options.base = i32::try_from(input).ok()?;
+                    context.output_base = output;
+                    context.print_options.base = i32::try_from(output).ok()?;
+                }
+                _ => return None,
+            }
+            continue;
+        }
+        if trimmed == "base -- --"
+            || trimmed.starts_with("xor^ ")
+            || trimmed.starts_with("programming mode ")
+        {
+            continue;
+        }
+        context
+            .apply_command(&normalized_context_command(setting))
+            .ok()?;
+    }
+    Some(())
 }
 
 pub(crate) fn native_output(
@@ -282,6 +411,10 @@ mod tests {
             ]),
             Some(NativeSessionSettings {
                 input_base: Some(10),
+                output_base: None,
+                programming_mode: false,
+                invalid_programming_base: false,
+                xor_caret: false,
                 unicode: true,
                 unicode_setting_seen: true,
                 precision_digits: Some(128),
@@ -300,6 +433,10 @@ mod tests {
             NativeSessionSettings::from_raw(&["set approximation exact", "set fr 2",]),
             Some(NativeSessionSettings {
                 input_base: None,
+                output_base: None,
+                programming_mode: false,
+                invalid_programming_base: false,
+                xor_caret: false,
                 unicode: false,
                 unicode_setting_seen: false,
                 precision_digits: None,
@@ -323,6 +460,10 @@ mod tests {
             ]),
             Some(NativeSessionSettings {
                 input_base: None,
+                output_base: None,
+                programming_mode: false,
+                invalid_programming_base: false,
+                xor_caret: false,
                 unicode: false,
                 unicode_setting_seen: false,
                 precision_digits: None,
@@ -359,6 +500,26 @@ mod tests {
     }
 
     #[test]
+    fn accepts_only_unicode_toggles_at_the_cpp_fallback_boundary() {
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0"]),
+            Some(false)
+        );
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "unicode 1"]),
+            Some(true)
+        );
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "precision 10"]),
+            None
+        );
+        assert_eq!(
+            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "programming mode 0"]),
+            None
+        );
+    }
+
+    #[test]
     fn parses_stats_batch_csv_setup_and_delete_lines() {
         assert_eq!(
             parse_load_assignment("libqalculate_tests_vector=load(tests/vectordata.csv)")
@@ -382,5 +543,46 @@ mod tests {
             parse_delete("delete libqalculate_tests_vector"),
             Some("libqalculate_tests_vector")
         );
+    }
+
+    #[test]
+    fn test_native_session_settings_radix_validation() {
+        // Supported bases
+        let base_16 = NativeSessionSettings::from_raw(&["base 16"]).unwrap();
+        assert_eq!(base_16.input_base(), None);
+
+        let prog_10_16 = NativeSessionSettings::from_raw(&["base 10 16"]).unwrap();
+        assert_eq!(prog_10_16.input_base(), Some(10));
+
+        for (name, expected) in [
+            ("bin", 2),
+            ("binary", 2),
+            ("oct", 8),
+            ("octal", 8),
+            ("dec", 10),
+            ("decimal", 10),
+            ("hex", 16),
+            ("hexadecimal", 16),
+        ] {
+            let output = NativeSessionSettings::from_raw(&[&format!("base {name}")]).unwrap();
+            assert_eq!(output.output_base, Some(expected));
+
+            let programming =
+                NativeSessionSettings::from_raw(&[&format!("base {name} {name}")]).unwrap();
+            assert_eq!(programming.input_base(), Some(expected));
+            assert_eq!(programming.output_base, Some(expected));
+        }
+
+        // Unsupported/invalid/malformed bases (must reject / return None, not panic)
+        assert!(NativeSessionSettings::from_raw(&["base 0"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base 1"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base 37"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base 9999999999"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base -5"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base 16 99"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base 1 16"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["base 10 37"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["set base 16"]).is_none());
+        assert!(NativeSessionSettings::from_raw(&["/set base 16"]).is_none());
     }
 }

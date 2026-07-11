@@ -487,7 +487,7 @@ where
 pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     match expr {
         Expression::Number(num) => num.to_string(),
-        Expression::Text(text) => text.clone(),
+        Expression::Text(text) => quote_text_for_qalc(text),
         Expression::Symbolic(symbol) => symbol.name().to_string(),
         Expression::Variable(variable) => variable.id().to_string(),
         Expression::Unit { unit, prefix, .. } => {
@@ -661,6 +661,65 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     }
 }
 
+pub(crate) fn format_qalc_equation(
+    input: &str,
+    output: &str,
+    approximate: bool,
+    unicode_enabled: bool,
+    message_line_count: usize,
+) -> String {
+    let formatted_input = match crate::parser::operators::parse_expression(input) {
+        Ok(expression) => {
+            if let Expression::Conversion { target, .. } = &expression {
+                if let Expression::Symbolic(symbol) = target.as_ref() {
+                    if symbol.name().eq_ignore_ascii_case("latex")
+                        || symbol.name().eq_ignore_ascii_case("html")
+                    {
+                        return output.to_string();
+                    }
+                }
+            }
+            if let Expression::Division {
+                numerator,
+                denominator,
+            } = &expression
+            {
+                format!(
+                    "{} / {}",
+                    format_raw_child(&expression, numerator, ChildPosition::Left),
+                    format_raw_child(&expression, denominator, ChildPosition::Right)
+                )
+            } else {
+                format_raw_expression(&expression)
+            }
+        }
+        Err(_) => input.trim().to_string(),
+    };
+
+    let relation = if approximate && unicode_enabled {
+        " ≈ "
+    } else if approximate {
+        " = approx. "
+    } else {
+        " = "
+    };
+    if message_line_count == 0 {
+        return format!("{formatted_input}{relation}{output}");
+    }
+
+    match output
+        .match_indices('\n')
+        .nth(message_line_count.saturating_sub(1))
+    {
+        Some((split_at, _)) => format!(
+            "{}\n{formatted_input}{relation}{}",
+            &output[..split_at],
+            &output[split_at + 1..]
+        ),
+        None => format!("{formatted_input}{relation}{output}"),
+    }
+}
+
 pub(crate) fn unicode_len(text: &str) -> usize {
     text.chars().count()
 }
@@ -742,12 +801,42 @@ fn format_nary_raw(parent: &Expression, children: &NaryChildren, op: &str) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::{format_raw_expression, format_result_with_numbers};
+    use super::{format_qalc_equation, format_raw_expression, format_result_with_numbers};
     use crate::ast::{
         ComparisonOperator, Expression, FunctionRef, NaryChildren, PrefixRef, Symbol, UnitRef,
         VariableRef,
     };
     use crate::number::Number;
+
+    #[test]
+    fn qalc_equation_formats_input_and_preserves_message_lines() {
+        assert_eq!(
+            format_qalc_equation("1+1", "2", false, true, 0),
+            "1 + 1 = 2"
+        );
+        assert_eq!(
+            format_qalc_equation("warning(1)", "warning: first\n0", false, true, 1),
+            "warning: first\nwarning(1) = 0"
+        );
+        assert_eq!(
+            format_qalc_equation("matrix()", "[1  2]\n[3  4]", false, true, 0),
+            "matrix() = [1  2]\n[3  4]"
+        );
+        assert_eq!(
+            format_qalc_equation(
+                "1/2 to latex",
+                "$\\displaystyle \\frac{1}{2}$",
+                false,
+                true,
+                0,
+            ),
+            "$\\displaystyle \\frac{1}{2}$"
+        );
+        assert_eq!(
+            format_qalc_equation("1/3", "0.3333333333", true, false, 0),
+            "1 / 3 = approx. 0.3333333333"
+        );
+    }
     use crate::parser::operators::parse_expression;
     use proptest::prelude::*;
 

@@ -53,7 +53,7 @@ fn reduced_currency_conversion_regressions_match_focused_oracle_cases() {
     for (expression, expected) in cases {
         let output = assert_cmd::Command::cargo_bin("qalc-rs")
             .expect("qalc-rs binary")
-            .args(["--", expression])
+            .args(["-t", "--", expression])
             .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
             .env("QALCULATE_DISABLE_FALLBACK", "1")
             .env("QALCULATE_REPORT_FALLBACK", "1")
@@ -95,7 +95,7 @@ fn reduced_unit_conversion_regressions_match_focused_oracle_cases() {
     for (expression, expected) in cases {
         let output = assert_cmd::Command::cargo_bin("qalc-rs")
             .expect("qalc-rs binary")
-            .args(["--", expression])
+            .args(["-t", "--", expression])
             .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
             .env("QALCULATE_DISABLE_FALLBACK", "1")
             .env("QALCULATE_REPORT_FALLBACK", "1")
@@ -113,4 +113,53 @@ fn reduced_unit_conversion_regressions_match_focused_oracle_cases() {
             "{expression} should run natively"
         );
     }
+}
+
+#[test]
+fn test_latex_html_markup_terse_and_non_terse() {
+    let mut calc = libqalculate_rust::ffi::Calculator::new();
+    calc.load_global_definitions();
+
+    // 1. Non-terse LaTeX
+    let res = calc
+        .calculate_and_print_qalc_latex_with_settings_and_fallback_state(
+            "1/2 + sqrt(2)",
+            &["precision 10"],
+            1000,
+        )
+        .unwrap();
+    assert_eq!(
+        res.output,
+        "$\\displaystyle \\frac{1}{2} + \\sqrt{2} \\approx \\num{1.914213562}$"
+    );
+
+    // 2. Terse LaTeX
+    let res_terse = calc
+        .calculate_and_print_qalc_latex_terse_with_settings_and_fallback_state(
+            "1/2 + sqrt(2)",
+            &["precision 10"],
+            1000,
+        )
+        .unwrap();
+    assert_eq!(res_terse.output, "$\\displaystyle \\num{1.914213562}$");
+
+    // 3. Non-terse HTML
+    let res_html = calc
+        .calculate_and_print_qalc_html_with_settings_and_fallback_state(
+            "1/2 + sqrt(2)",
+            &["precision 10"],
+            1000,
+        )
+        .unwrap();
+    assert_eq!(res_html.output, "1 / 2 + √(2) ≈ 1.914213562");
+
+    // 4. Terse HTML
+    let res_html_terse = calc
+        .calculate_and_print_qalc_html_terse_with_settings_and_fallback_state(
+            "1/2 + sqrt(2)",
+            &["precision 10"],
+            1000,
+        )
+        .unwrap();
+    assert_eq!(res_html_terse.output, "1.914213562");
 }

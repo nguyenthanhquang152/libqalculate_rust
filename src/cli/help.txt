@@ -1,0 +1,79 @@
+usage: qalc [options] [expression]
+
+where options are:
+
+	-b, -base BASE
+	set the number base for results and, optionally, expressions
+
+	-c, -color [COLOR]
+	use colors to highlight different elements of expressions and results
+
+	-defaults
+	load default settings
+
+	-e, -exrates
+	update exchange rates
+
+	-f, -file FILE
+	execute commands from a file first
+
+	-h, -help
+	display this help and exit
+
+	-i, -interactive
+	start in interactive mode
+
+	-l, -list [SEARCH TERM]
+	displays a list of all user-defined or matching variables, functions, units, and prefixes
+
+	--list-functions [SEARCH TERM]
+	displays a list of all or matching functions
+
+	--list-prefixes [SEARCH TERM]
+	displays a list of all or matching prefixes
+
+	--list-units [SEARCH TERM]
+	displays a list of all or matching units
+
+	--list-variables [SEARCH TERM]
+	displays a list of all or matching variables
+
+	-m, -time MILLISECONDS
+	terminate calculation and display of result after specified amount of time
+
+	-n, -nodefs
+	do not load any functions, units, or variables from file
+
+	-nocurrencies
+	do not load any global currencies from file
+
+	-nodatasets
+	do not load any global data sets from file
+
+	-nofunctions
+	do not load any global functions from file
+
+	-nounits
+	do not load any global units from file
+
+	-novariables
+	do not load any global variables from file
+
+	-p [BASE]
+	start in programming mode (same as -b "BASE BASE" -s "xor^", with base conversion)
+
+	-s, -set "OPTION VALUE"
+	as set command in interactive program session (e.g. -set "base 16")
+
+	-t, -terse
+	reduce output to just the result of the input expression
+
+	-/+u8
+	switch unicode support on/off
+
+	-v, -version
+	show application version and exit
+
+The program will start in interactive mode if no expression and no file is specified (or interactive mode is explicitly selected). Type help in interactive mode for information about available commands.
+
+For more information about mathematical expression and different options, please consult the man page, or the relevant sections in the manual of the graphical user interface (available at https://qalculate.github.io/manual/index.html), which also includes a complete list of functions, variables, and units.
