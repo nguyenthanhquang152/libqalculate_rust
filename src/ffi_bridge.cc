@@ -611,8 +611,9 @@ rust::String qalc_print_session_answer(
         bool is_approximate = answer.isApproximate();
         PrintOptions po = qalc_print_options(unicode_enabled, &is_approximate);
         po.base = output_base;
+        const std::string rendering = calc.print(answer, 0, po);
         last_qalc_result_is_approximate = is_approximate;
-        return rust::String(calc.print(answer, 0, po));
+        return rust::String(rendering);
     } catch (const std::exception&) {
         throw;
     } catch (...) {

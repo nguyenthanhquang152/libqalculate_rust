@@ -103,6 +103,23 @@ fn interactive_session_preserves_native_answer_state() {
 }
 
 #[test]
+fn native_boolean_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("(1 + i) = (1 + i)\nans\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("i + 1 = i + 1 = true")
+                .and(predicate::str::contains("ans = 1")),
+        )
+        .stderr("");
+}
+
+#[test]
 fn cpp_fallback_results_update_the_typed_answer_state() {
     let mut session = isolated_session();
     session
@@ -322,6 +339,61 @@ fn cpp_answer_reformat_reports_the_cpp_fallback_state() {
 }
 
 #[test]
+fn cpp_answer_reformat_rejects_settings_the_cpp_printer_cannot_apply() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("1/3\nset precision 20\nans\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans = 0.3333333333"))
+        .stderr(predicate::str::contains(
+            "session settings are not supported by the C++ FFI fallback path: precision 20",
+        ));
+}
+
+#[test]
+fn cpp_answer_reformat_reads_approximation_metadata_after_printing() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("1/3\nset base 16\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0.3333333333 ≈ 0x0.555555"))
+        .stderr("");
+}
+
+#[test]
+fn native_markup_updates_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("sin(1)\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1.841470985"))
+        .stderr("");
+}
+
+#[test]
+fn cpp_markup_fallback_updates_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .write_stdin("Ei(3)\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("10.93383257"))
+        .stderr(predicate::str::contains("fallback=cpp-fallback-enabled"));
+}
+
+#[test]
 fn calendar_rendering_retains_the_underlying_date_answer() {
     let mut session = isolated_session();
     session
@@ -421,6 +493,26 @@ fn interactive_help_list_and_info_commands_use_typed_catalogs() {
                 .and(predicate::str::contains("sin (Sine)"))
                 .and(predicate::str::contains("Function: Sine"))
                 .and(predicate::str::contains("sin(Angle)")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn interactive_info_renders_variable_unit_and_prefix_details() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("info pi\ninfo meter\ninfo mega\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Variable: Archimedes' Constant (pi)")
+                .and(predicate::str::contains("Value: built-in"))
+                .and(predicate::str::contains("Unit: Meter"))
+                .and(predicate::str::contains("System: SI"))
+                .and(predicate::str::contains("Prefix\n"))
+                .and(predicate::str::contains("Value: 10^6")),
         )
         .stderr("");
 }

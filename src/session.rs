@@ -311,6 +311,10 @@ impl SessionAnswerState {
         self.enabled && !self.cpp_owned && !self.answers.is_empty()
     }
 
+    pub(crate) fn has_cpp_answer(&self) -> bool {
+        self.enabled && self.cpp_owned && self.last_rendering.is_some()
+    }
+
     pub(crate) fn current(&self) -> Option<(&crate::ast::Expression, &str)> {
         if self.cpp_owned {
             return None;

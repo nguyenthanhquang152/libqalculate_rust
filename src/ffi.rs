@@ -390,13 +390,21 @@ impl Calculator {
             if self.inner.is_null() {
                 return Ok(None);
             }
-            let unicode_enabled =
-                !parsed_settings.has_unicode_setting() || parsed_settings.unicode();
+            let (unicode_enabled, output_base) =
+                crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
+                    .ok_or_else(|| {
+                        CalculatorError::UnsupportedSessionSettings(
+                            settings
+                                .iter()
+                                .map(|setting| (*setting).to_string())
+                                .collect(),
+                        )
+                    })?;
             let (rendering, approximate) = {
                 let _guard = FFI_LOCK.lock().unwrap();
                 let rendering = sys::qalc_print_session_answer(
                     self.inner.pin_mut(),
-                    parsed_settings.output_base.unwrap_or(10) as i32,
+                    output_base as i32,
                     unicode_enabled,
                 )
                 .map_err(CalculatorError::Cxx)?;
@@ -742,23 +750,22 @@ impl Calculator {
         self.last_output_approximate = false;
         self.last_output_message_lines = 0;
         let fallback_disabled = fallback_disabled_by_env();
-        match native_markup_output(
-            mode,
-            expr,
-            settings,
-            terse,
-            !fallback_disabled,
-            &mut self.native_context,
-        ) {
-            Ok(Some(output)) => {
-                return Ok(CalculationOutput {
-                    output,
-                    fallback_state: FallbackState::Native,
-                });
+        if !self.session_answers.has_cpp_answer() {
+            match native_markup_output(
+                mode,
+                expr,
+                settings,
+                terse,
+                !fallback_disabled,
+                &mut self.native_context,
+            ) {
+                Ok(Some(output)) => {
+                    return Ok(self.finish_native_output(output));
+                }
+                Ok(None) => {}
+                Err(error) if fallback_disabled => return Err(error),
+                Err(_) => {}
             }
-            Ok(None) => {}
-            Err(error) if fallback_disabled => return Err(error),
-            Err(_) => {}
         }
 
         if fallback_disabled {
@@ -770,7 +777,8 @@ impl Calculator {
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
         );
-        let (mut output, messages) = {
+        let capture_result = self.session_answers.is_enabled();
+        let (mut output, messages, answer_rendering) = {
             let _guard = FFI_LOCK.lock().unwrap();
             let pin = self.inner.pin_mut();
             let mode_flags =
@@ -778,7 +786,8 @@ impl Calculator {
                     0x02
                 } else {
                     0
-                } | if terse { 0x04 } else { 0 };
+                } | if terse { 0x04 } else { 0 }
+                    | if capture_result { 0x08 } else { 0 };
             let output = sys::calculate_and_print_qalc(
                 pin,
                 expr,
@@ -788,6 +797,7 @@ impl Calculator {
                 mode_flags,
             )
             .map_err(CalculatorError::Cxx)?;
+            let answer_rendering = output.clone();
             self.last_output_approximate = sys::qalc_last_result_is_approximate();
             self.last_output_message_lines = sys::qalc_last_message_line_count();
             self.last_native_message_had_error = sys::qalc_last_message_had_error();
@@ -809,7 +819,7 @@ impl Calculator {
                     unicode_enabled,
                 )
             };
-            (output, messages)
+            (output, messages, answer_rendering)
         };
         if !messages.is_empty() {
             output = if output.is_empty() {
@@ -817,6 +827,10 @@ impl Calculator {
             } else {
                 format!("{messages}\n{output}")
             };
+        }
+        if capture_result {
+            self.session_answers
+                .record_cpp(&mut self.native_context, answer_rendering);
         }
 
         Ok(CalculationOutput {
@@ -1090,6 +1104,7 @@ fn native_markup_conversion_output(
     };
 
     native_markup_output_for_parsed(mode, &inner, settings, false, false, context)
+        .map(|output| output.map(|output| output.output))
 }
 
 fn native_markup_output(
@@ -1099,7 +1114,7 @@ fn native_markup_output(
     terse: bool,
     prefer_cpp_definitions: bool,
     context: &mut crate::context::CalculatorContext,
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
         return Ok(None);
     };
@@ -1120,7 +1135,7 @@ fn native_markup_output_for_parsed(
     terse: bool,
     prefer_cpp_definitions: bool,
     context: &mut crate::context::CalculatorContext,
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     if prefer_cpp_definitions
         && expression_contains(parsed, &|expr| {
             matches!(expr, crate::ast::Expression::Conversion { .. })
@@ -1182,6 +1197,15 @@ fn native_markup_output_for_parsed(
     let output = output.ok_or_else(|| {
         CalculatorError::NativeEvaluation("failed to format native markup output".to_string())
     })?;
+    let Some((answer_rendering, approximate)) = crate::session::format_answer(
+        crate::session::AnswerFormatProfile::Qalc,
+        &evaluated,
+        parsed_settings,
+    ) else {
+        return Ok(None);
+    };
+    let mut output = NativeOutput::plain(output).with_answer(evaluated, answer_rendering);
+    output.approximate = approximate;
     Ok(Some(output))
 }
 
@@ -1955,8 +1979,12 @@ fn native_scaffold_output(
         ));
     }
 
-    if let Some(output) = native_boolean_evidence(expr, parsed_settings) {
-        return Some(NativeOutput::plain(output));
+    if let Some(value) = native_boolean_evidence(expr, parsed_settings) {
+        let rendering = value.to_string();
+        return Some(NativeOutput::plain(rendering.clone()).with_answer(
+            crate::ast::Expression::Number(crate::number::Number::from_i32(i32::from(value))),
+            rendering,
+        ));
     }
 
     if let Some(output) = native_interval_set_evidence(expr, parsed_settings) {
@@ -2126,7 +2154,7 @@ const NATIVE_BOOLEAN_EVIDENCE: &[(&str, NativeBooleanEvidence)] = &[
 fn native_boolean_evidence(
     expr: &str,
     settings: crate::session::NativeSessionSettings,
-) -> Option<String> {
+) -> Option<bool> {
     let trimmed = expr.trim();
     let evidence = NATIVE_BOOLEAN_EVIDENCE
         .iter()
@@ -2152,7 +2180,7 @@ fn native_boolean_evidence(
         _ => return None,
     };
 
-    evaluated.ok().flatten().map(|value| value.to_string())
+    evaluated.ok().flatten()
 }
 
 #[derive(Clone, Copy)]

@@ -50,7 +50,7 @@ Rust behavior: the issue #61 session engine uses injected buffered input/output.
 Rationale: the repository has no line-editor or signal dependency, and adding one or extending the CXX bridge with readline/signal ownership would materially expand the M-sized session task. The bounded engine keeps evaluator semantics independent from terminal I/O and leaves the adapter replaceable.
 Normalization policy: none; covered pipe and PTY outputs remain exact. The unsupported terminal interactions are explicitly excluded rather than normalized.
 Tests: `tests/interactive_cli.rs::fresh_profile_uses_the_line_repl_without_autocalc_onboarding` and `tests/interactive_cli.rs::pty_smoke_covers_prompt_quit_and_answer_state`; the missing event-driven completion/history-navigation/Ctrl-C cases are tracked by #201
-Review evidence: `code-review`, Thermos correctness/maintainability passes, code-review-graph impact analysis, and the final schema-validated Antigravity correctness review completed on #61; final PR-bot review remains pending
+Review evidence: `code-review`, Thermos correctness/maintainability passes, code-review-graph impact analysis, and the final schema-validated Antigravity correctness review completed on #61; the PR-bot review gate is enforced before merge
 Retirement condition: #201 supplies a readline-equivalent terminal adapter with event-driven PTY coverage for Tab/selection, Unicode editing, history recall, Ctrl-C/abort semantics, and first-run onboarding
 
 ## Retired Deviations
