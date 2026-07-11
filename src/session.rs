@@ -144,6 +144,16 @@ impl NativeSessionSettings {
         self.input_base
     }
 
+    /// Return settings suitable for formatting an already-evaluated value.
+    ///
+    /// Stored numbers are decimal values regardless of the input base that is
+    /// active for newly parsed expressions.
+    pub(crate) const fn for_evaluated_output(mut self) -> Self {
+        self.input_base = Some(10);
+        self.invalid_programming_base = false;
+        self
+    }
+
     pub(crate) const fn unicode(self) -> bool {
         self.unicode
     }
@@ -413,7 +423,10 @@ pub(crate) fn format_answer(
             return Some(number.to_string());
         }
         if settings.programming_mode || settings.output_base.is_some_and(|base| base != 10) {
-            return crate::numberbase::native_output(&number.to_string(), settings);
+            return crate::numberbase::native_output(
+                &number.to_string(),
+                settings.for_evaluated_output(),
+            );
         }
         if settings.has_interval_display() {
             return number.to_qalc_interval_display_string(settings.precision_digits());

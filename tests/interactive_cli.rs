@@ -214,6 +214,47 @@ fn session_defined_variables_are_visible_to_list_and_info() {
 }
 
 #[test]
+fn local_variable_searches_include_matching_global_definitions() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("s:=1\nlist s\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("s\t").and(predicate::str::contains("sin (Sine)")))
+        .stderr("");
+}
+
+#[test]
+fn local_variable_info_uses_the_evaluated_assignment_value() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("x:=1+1\ninfo x\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Value: 2").and(predicate::str::contains("Value: 1+1").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn local_variable_info_uses_plain_values_after_markup_fallback_assignments() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=Ei(3)\ninfo x\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Value: 9.933832571"))
+        .stderr("");
+}
+
+#[test]
 fn assume_commands_do_not_block_later_cpp_fallback_evaluation() {
     let mut session = isolated_session();
     session
@@ -372,6 +413,36 @@ fn interactive_settings_recalculate_and_persist() {
 }
 
 #[test]
+fn stored_answer_reformat_uses_the_evaluated_value_with_a_new_input_base() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("set base 10 10\n10\nset base 16 16\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("10 = 0xA").and(predicate::str::contains("10 = 0x10").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn nondecimal_input_base_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("set input base 16\nA\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans + 1 = 11"))
+        .stderr("");
+}
+
+#[test]
 fn unsupported_setting_is_rejected_without_poisoning_later_evaluations() {
     let mut session = isolated_session();
     session
@@ -463,6 +534,20 @@ fn native_markup_updates_the_typed_answer_state() {
 }
 
 #[test]
+fn native_markup_assignments_persist_in_the_session_context() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("x:=1\nx+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<i>x</i> + 1 = 2"))
+        .stderr("");
+}
+
+#[test]
 fn cpp_markup_fallback_updates_the_typed_answer_state() {
     let mut session = isolated_session();
     session
@@ -520,6 +605,20 @@ fn interactive_text_terse_cpp_fallback_matches_result_only_mode() {
                 .and(predicate::str::contains("  10.93383257\n"))
                 .and(predicate::str::contains("≈").not()),
         )
+        .stderr("");
+}
+
+#[test]
+fn interactive_terse_answer_reformat_remains_result_only() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "-t"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1+1\nset base 16\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("  0x2\n").and(predicate::str::contains("2 = 0x2").not()))
         .stderr("");
 }
 

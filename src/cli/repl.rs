@@ -11,6 +11,7 @@ const MAX_HISTORY_ENTRIES: usize = 100;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReplEvaluation {
     pub(crate) output: String,
+    pub(crate) answer_rendering: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,7 +119,8 @@ where
         match evaluate(invocation, ReplRequest::Evaluate(expression)) {
             Ok(Some(evaluation)) => {
                 if let Some((name, value)) = assignment {
-                    local_variables.insert(name, value);
+                    local_variables
+                        .insert(name, evaluation.answer_rendering.clone().unwrap_or(value));
                 }
                 if render_evaluation(output, &evaluation).is_err() {
                     return 2;
@@ -225,10 +227,16 @@ where
                     list_type,
                     search_term: query,
                 };
-                let local_rendering =
-                    crate::listing::render_local_variable_list(&request, &local_variables);
-                let local_is_authoritative = local_rendering.is_some()
-                    && (request.search_term.is_some() || request.list_type == ListType::All);
+                let local_can_be_authoritative = (request.list_type == ListType::Variables
+                    && request.search_term.is_some())
+                    || (request.list_type == ListType::All && request.search_term.is_none());
+                let local_rendering = crate::listing::render_local_variable_list(
+                    &request,
+                    &local_variables,
+                    local_can_be_authoritative,
+                );
+                let has_local_rendering = local_rendering.is_some();
+                let local_is_authoritative = has_local_rendering && local_can_be_authoritative;
                 if let Some(rendered) = local_rendering {
                     if write!(output, "{rendered}").is_err() {
                         return 2;
@@ -245,6 +253,9 @@ where
                     super::super::cli_unicode_enabled(invocation),
                 ) {
                     Ok(rendered) => {
+                        if has_local_rendering && crate::listing::is_no_match_rendering(&rendered) {
+                            continue;
+                        }
                         if write!(output, "{rendered}").is_err() {
                             return 2;
                         }
@@ -304,7 +315,8 @@ where
                 match evaluate(invocation, ReplRequest::Evaluate(expression)) {
                     Ok(Some(evaluation)) => {
                         if let Some((name, value)) = assignment {
-                            local_variables.insert(name, value);
+                            local_variables
+                                .insert(name, evaluation.answer_rendering.clone().unwrap_or(value));
                         }
                         if render_evaluation(output, &evaluation).is_err() {
                             return 2;

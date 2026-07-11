@@ -143,8 +143,10 @@ fn main() {
             |invocation, request| match request {
                 cli::repl::ReplRequest::Evaluate(expression) => {
                     evaluate_expression(invocation, &mut calculator, &expression).map(|outcome| {
+                        let answer_rendering = calculator.session_answer_rendering();
                         Some(cli::repl::ReplEvaluation {
                             output: outcome.output,
+                            answer_rendering,
                         })
                     })
                 }
@@ -372,10 +374,23 @@ fn reformat_session_answer(
     let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
     let settings = evaluation_settings(invocation, fallback_disabled);
     let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
-    let result = match invocation.output_mode {
-        cli::OutputMode::Text => calc.reformat_session_answer_with_settings(&setting_refs),
-        cli::OutputMode::Latex => calc.reformat_session_answer_latex_with_settings(&setting_refs),
-        cli::OutputMode::Html => calc.reformat_session_answer_html_with_settings(&setting_refs),
+    let result = match (invocation.output_mode, invocation.terse) {
+        (cli::OutputMode::Text, false) => calc.reformat_session_answer_with_settings(&setting_refs),
+        (cli::OutputMode::Text, true) => {
+            calc.reformat_session_answer_terse_with_settings(&setting_refs)
+        }
+        (cli::OutputMode::Latex, false) => {
+            calc.reformat_session_answer_latex_with_settings(&setting_refs)
+        }
+        (cli::OutputMode::Latex, true) => {
+            calc.reformat_session_answer_latex_terse_with_settings(&setting_refs)
+        }
+        (cli::OutputMode::Html, false) => {
+            calc.reformat_session_answer_html_with_settings(&setting_refs)
+        }
+        (cli::OutputMode::Html, true) => {
+            calc.reformat_session_answer_html_terse_with_settings(&setting_refs)
+        }
     }
     .map_err(|error| format!("calculation failed: {error}"))?;
     if std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1") {
@@ -385,6 +400,7 @@ fn reformat_session_answer(
     }
     Ok(result.map(|result| cli::repl::ReplEvaluation {
         output: result.output,
+        answer_rendering: None,
     }))
 }
 

@@ -242,6 +242,7 @@ fn render_prefix_details(prefix: &PrefixDefinition, unicode_enabled: bool) -> St
 pub(crate) fn render_local_variable_list(
     request: &ListRequest,
     variables: &BTreeMap<String, String>,
+    include_footer: bool,
 ) -> Option<String> {
     if !matches!(request.list_type, ListType::All | ListType::Variables) {
         return None;
@@ -258,12 +259,16 @@ pub(crate) fn render_local_variable_list(
     }
     let mut rendered = matches.join("\n");
     rendered.push('\n');
-    if request.search_term.is_some() || request.list_type == ListType::All {
+    if include_footer {
         rendered.push('\n');
         rendered.push_str(LIST_FOOTER);
         rendered.push_str("\n\n");
     }
     Some(rendered)
+}
+
+pub(crate) fn is_no_match_rendering(rendering: &str) -> bool {
+    rendering == NO_MATCH
 }
 
 pub(crate) fn render_local_variable_info(

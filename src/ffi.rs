@@ -384,6 +384,18 @@ impl Calculator {
         native_removed || cpp_removed
     }
 
+    /// Return the display rendering of the current typed session answer.
+    pub fn session_answer_rendering(&self) -> Option<String> {
+        self.session_answers
+            .cpp_rendering()
+            .or_else(|| {
+                self.session_answers
+                    .current()
+                    .map(|(_, rendering)| rendering)
+            })
+            .map(str::to_string)
+    }
+
     /// Re-render the current typed session answer after settings change.
     ///
     /// This updates only the display of the current answer. It does not
@@ -392,7 +404,15 @@ impl Calculator {
         &mut self,
         settings: &[&str],
     ) -> Result<Option<CalculationOutput>, CalculatorError> {
-        self.reformat_session_answer_with_settings_and_markup(settings, None)
+        self.reformat_session_answer_with_settings_and_markup(settings, None, false)
+    }
+
+    /// Re-render only the current typed session answer after settings change.
+    pub fn reformat_session_answer_terse_with_settings(
+        &mut self,
+        settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        self.reformat_session_answer_with_settings_and_markup(settings, None, true)
     }
 
     /// Re-render the current typed session answer as LaTeX after settings change.
@@ -403,6 +423,19 @@ impl Calculator {
         self.reformat_session_answer_with_settings_and_markup(
             settings,
             Some(crate::markup::MarkupMode::Latex),
+            false,
+        )
+    }
+
+    /// Re-render only the current typed session answer as LaTeX after settings change.
+    pub fn reformat_session_answer_latex_terse_with_settings(
+        &mut self,
+        settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        self.reformat_session_answer_with_settings_and_markup(
+            settings,
+            Some(crate::markup::MarkupMode::Latex),
+            true,
         )
     }
 
@@ -414,6 +447,19 @@ impl Calculator {
         self.reformat_session_answer_with_settings_and_markup(
             settings,
             Some(crate::markup::MarkupMode::Html),
+            false,
+        )
+    }
+
+    /// Re-render only the current typed session answer as HTML after settings change.
+    pub fn reformat_session_answer_html_terse_with_settings(
+        &mut self,
+        settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        self.reformat_session_answer_with_settings_and_markup(
+            settings,
+            Some(crate::markup::MarkupMode::Html),
+            true,
         )
     }
 
@@ -421,6 +467,7 @@ impl Calculator {
         &mut self,
         settings: &[&str],
         markup_mode: Option<crate::markup::MarkupMode>,
+        terse: bool,
     ) -> Result<Option<CalculationOutput>, CalculatorError> {
         let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)
             .ok_or_else(|| {
@@ -458,23 +505,14 @@ impl Calculator {
             if rendering.is_empty() {
                 return Ok(None);
             }
-            let output = match markup_mode {
-                Some(mode) => format_cpp_markup_output(
-                    mode,
-                    &previous_rendering,
-                    &rendering,
-                    false,
-                    approximate,
-                    unicode_enabled,
-                ),
-                None => crate::text::format_qalc_equation(
-                    &previous_rendering,
-                    &rendering,
-                    approximate,
-                    unicode_enabled,
-                    0,
-                ),
-            };
+            let output = format_reformatted_session_answer(
+                markup_mode,
+                terse,
+                &previous_rendering,
+                &rendering,
+                approximate,
+                unicode_enabled,
+            );
             self.last_native_message_had_error = false;
             self.last_output_approximate = approximate;
             self.last_output_message_lines = 0;
@@ -524,23 +562,14 @@ impl Calculator {
             (rendering, sys::qalc_last_result_is_approximate())
         };
         let unicode_enabled = !parsed_settings.has_unicode_setting() || parsed_settings.unicode();
-        let output = match markup_mode {
-            Some(mode) => format_cpp_markup_output(
-                mode,
-                &previous_rendering,
-                &rendering,
-                false,
-                approximate,
-                unicode_enabled,
-            ),
-            None => crate::text::format_qalc_equation(
-                &previous_rendering,
-                &rendering,
-                approximate,
-                unicode_enabled,
-                0,
-            ),
-        };
+        let output = format_reformatted_session_answer(
+            markup_mode,
+            terse,
+            &previous_rendering,
+            &rendering,
+            approximate,
+            unicode_enabled,
+        );
         self.last_native_message_had_error = false;
         self.last_output_approximate = approximate;
         self.last_output_message_lines = 0;
@@ -1152,6 +1181,34 @@ fn cpp_fallback_print_options(settings: &[&str]) -> Result<(bool, i32, u8), Calc
     ))
 }
 
+fn format_reformatted_session_answer(
+    markup_mode: Option<crate::markup::MarkupMode>,
+    terse: bool,
+    previous_rendering: &str,
+    rendering: &str,
+    approximate: bool,
+    unicode_enabled: bool,
+) -> String {
+    match markup_mode {
+        Some(mode) => format_cpp_markup_output(
+            mode,
+            previous_rendering,
+            rendering,
+            terse,
+            approximate,
+            unicode_enabled,
+        ),
+        None if terse => rendering.to_string(),
+        None => crate::text::format_qalc_equation(
+            previous_rendering,
+            rendering,
+            approximate,
+            unicode_enabled,
+            0,
+        ),
+    }
+}
+
 fn format_cpp_markup_output(
     mode: crate::markup::MarkupMode,
     parsed: &str,
@@ -1277,14 +1334,24 @@ fn native_markup_output_for_parsed(
     markup_context.precision_digits = parsed_settings.precision_digits();
     let evaluated = crate::eval::evaluate_ast(parsed, &mut markup_context)
         .map_err(CalculatorError::NativeEvaluation)?;
+    let assignment = if let crate::ast::Expression::Assignment { variable, .. } = parsed {
+        markup_context
+            .variables
+            .get(variable)
+            .cloned()
+            .map(|value| (variable.clone(), value))
+    } else {
+        None
+    };
     let precision_digits = parsed_settings.precision_digits();
     let formatter = |num: &crate::number::Number| {
         if parsed_settings.programming_mode
             || parsed_settings.output_base.is_some_and(|base| base != 10)
         {
-            if let Some(output) =
-                crate::numberbase::native_output(&num.to_string(), parsed_settings)
-            {
+            if let Some(output) = crate::numberbase::native_output(
+                &num.to_string(),
+                parsed_settings.for_evaluated_output(),
+            ) {
                 return output;
             }
         }
@@ -1313,6 +1380,9 @@ fn native_markup_output_for_parsed(
     };
     let mut output = NativeOutput::plain(output).with_answer(evaluated, answer_rendering);
     output.approximate = approximate;
+    if let Some((variable, value)) = assignment {
+        context.variables.insert(variable, value);
+    }
     Ok(Some(output))
 }
 
@@ -2228,10 +2298,8 @@ fn native_numberbase_output_with_answer(
     settings: crate::session::NativeSessionSettings,
 ) -> Option<NativeOutput> {
     let rendering = crate::numberbase::native_output(expr, settings)?;
-    let answer = matches!(settings.input_base(), None | Some(10))
-        .then(|| crate::number::evaluate_expr(expr).ok())
-        .flatten()
-        .map(crate::ast::Expression::Number);
+    let answer =
+        crate::numberbase::native_integer_value(expr, settings).map(crate::ast::Expression::Number);
     Some(match answer {
         Some(answer) => NativeOutput::plain(rendering.clone()).with_answer(answer, rendering),
         None => NativeOutput::plain(rendering),
