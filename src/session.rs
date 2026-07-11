@@ -155,24 +155,40 @@ impl NativeSessionSettings {
         self.unicode_setting_seen
     }
 
-    /// Parse a non-empty setting list that contains only Unicode toggles.
-    ///
-    /// This validates every raw command so no-op settings such as
-    /// `programming mode 0` cannot disappear into the final state and cross
-    /// the C++ fallback boundary unnoticed.
-    pub(crate) fn unicode_only_from_raw(settings: &[&str]) -> Option<bool> {
-        let mut unicode = None;
+    /// Parse settings that the C++ qalc printer can apply without changing
+    /// evaluation semantics. Input base is accepted only when it remains
+    /// decimal; all other settings fail closed.
+    pub(crate) fn cpp_print_options_from_raw(settings: &[&str]) -> Option<(bool, u32)> {
+        let mut unicode = true;
+        let mut output_base = 10;
         for setting in settings {
+            let trimmed = setting.trim();
+            if let Some(base) = trimmed.strip_prefix("base ") {
+                let parts = base.split_whitespace().collect::<Vec<_>>();
+                match parts.as_slice() {
+                    [output] => output_base = parse_standard_base(output)?,
+                    [input, output] if parse_standard_base(input)? == 10 => {
+                        output_base = parse_standard_base(output)?;
+                    }
+                    _ => return None,
+                }
+                continue;
+            }
+
             let command = parse_command(&normalized_context_command(setting)).ok()?;
             match command {
                 SessionCommand::Set(command) => match command.setting {
-                    SetSetting::Unicode(value) => unicode = Some(value),
+                    SetSetting::Unicode(value) => unicode = value,
+                    SetSetting::OutputBase(value) if (2..=36).contains(&value) => {
+                        output_base = value;
+                    }
+                    SetSetting::InputBase(10) => {}
                     _ => return None,
                 },
                 SessionCommand::Assume(_) => return None,
             }
         }
-        unicode
+        Some((unicode, output_base))
     }
 
     pub(crate) const fn precision_digits(self) -> usize {
@@ -268,6 +284,181 @@ impl NativeSessionSettings {
     pub(crate) const fn max_decimals(self) -> Option<i32> {
         self.max_decimals
     }
+}
+
+/// Typed answer history owned by a long-lived CLI calculator session.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SessionAnswerState {
+    enabled: bool,
+    answers: Vec<crate::ast::Expression>,
+    last_rendering: Option<String>,
+    cpp_owned: bool,
+}
+
+impl SessionAnswerState {
+    const MAX_ANSWERS: usize = 5;
+    const ALIASES: [&'static str; 7] = ["ans", "answer", "ans1", "ans2", "ans3", "ans4", "ans5"];
+
+    pub(crate) fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    pub(crate) const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub(crate) fn has_native_answer(&self) -> bool {
+        self.enabled && !self.cpp_owned && !self.answers.is_empty()
+    }
+
+    pub(crate) fn current(&self) -> Option<(&crate::ast::Expression, &str)> {
+        if self.cpp_owned {
+            return None;
+        }
+        Some((self.answers.first()?, self.last_rendering.as_deref()?))
+    }
+
+    pub(crate) fn cpp_rendering(&self) -> Option<&str> {
+        self.cpp_owned
+            .then_some(self.last_rendering.as_deref())
+            .flatten()
+    }
+
+    pub(crate) fn update_rendering(&mut self, rendering: String) {
+        self.last_rendering = Some(rendering);
+    }
+
+    pub(crate) fn record(
+        &mut self,
+        context: &mut crate::context::CalculatorContext,
+        answer: crate::ast::Expression,
+        rendering: String,
+    ) {
+        self.answers.insert(0, answer);
+        self.cpp_owned = false;
+        self.answers.truncate(Self::MAX_ANSWERS);
+        Self::remove_aliases(context);
+        for (index, answer) in self.answers.iter().enumerate() {
+            context
+                .variables
+                .insert(format!("ans{}", index + 1), answer.clone());
+            if index == 0 {
+                context.variables.insert("ans".to_string(), answer.clone());
+                context
+                    .variables
+                    .insert("answer".to_string(), answer.clone());
+            }
+        }
+        self.last_rendering = Some(rendering);
+    }
+
+    pub(crate) fn record_cpp(
+        &mut self,
+        context: &mut crate::context::CalculatorContext,
+        rendering: String,
+    ) {
+        self.answers.clear();
+        self.cpp_owned = true;
+        self.last_rendering = Some(rendering);
+        Self::remove_aliases(context);
+    }
+
+    pub(crate) fn invalidate(&mut self, context: &mut crate::context::CalculatorContext) {
+        self.answers.clear();
+        self.last_rendering = None;
+        self.cpp_owned = false;
+        Self::remove_aliases(context);
+    }
+
+    fn remove_aliases(context: &mut crate::context::CalculatorContext) {
+        for alias in Self::ALIASES {
+            context.variables.remove(alias);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnswerFormatProfile {
+    Api,
+    Qalc,
+}
+
+pub(crate) fn format_answer(
+    profile: AnswerFormatProfile,
+    expression: &crate::ast::Expression,
+    settings: NativeSessionSettings,
+) -> Option<(String, bool)> {
+    fn format_number(
+        profile: AnswerFormatProfile,
+        number: &crate::number::Number,
+        settings: NativeSessionSettings,
+    ) -> Option<String> {
+        if profile == AnswerFormatProfile::Api {
+            return Some(number.to_string());
+        }
+        if settings.programming_mode || settings.output_base.is_some_and(|base| base != 10) {
+            return crate::numberbase::native_output(&number.to_string(), settings);
+        }
+        if settings.has_interval_display() {
+            return number.to_qalc_interval_display_string(settings.precision_digits());
+        }
+        let output = if let Some(format) = settings.number_fraction_format() {
+            number
+                .to_string_with_options(
+                    settings.precision_digits(),
+                    format,
+                    crate::options::ApproximationMode::TryExact,
+                )
+                .replace(" / ", "/")
+        } else {
+            number.to_qalc_string_with_settings(
+                settings.precision_digits(),
+                settings.min_exp(),
+                settings.exp_display(),
+                settings.min_decimals(),
+                settings.max_decimals(),
+            )
+        };
+        Some(if settings.has_unicode_setting() && !settings.unicode() {
+            output
+        } else {
+            output
+                .strip_prefix('-')
+                .map_or(output.clone(), |rest| format!("−{rest}"))
+        })
+    }
+
+    let currency_rendering = match expression {
+        crate::ast::Expression::Unit {
+            unit, prefix: None, ..
+        } => crate::rates::currency_info(unit.id()).and_then(|(_, symbol)| {
+            format_number(profile, &crate::number::Number::from_i32(1), settings)
+                .map(|number| format!("{symbol}{number}"))
+        }),
+        crate::ast::Expression::Multiplication(children) => match children.as_slice() {
+            [crate::ast::Expression::Number(number), crate::ast::Expression::Unit {
+                unit, prefix: None, ..
+            }] => crate::rates::currency_info(unit.id()).and_then(|(_, symbol)| {
+                format_number(profile, number, settings).map(|number| format!("{symbol}{number}"))
+            }),
+            _ => None,
+        },
+        _ => None,
+    };
+    let approximate = currency_rendering.is_some()
+        || matches!(expression, crate::ast::Expression::Number(number)
+            if settings.number_fraction_format().is_none() && number.qalc_relation_is_approximate());
+    let rendering = match expression {
+        _ if currency_rendering.is_some() => currency_rendering?,
+        crate::ast::Expression::Unit {
+            unit, prefix: None, ..
+        } => format!("1 {}", unit.id()),
+        crate::ast::Expression::Number(number) => format_number(profile, number, settings)?,
+        other => crate::text::format_result_with_numbers(other, &|number| {
+            format_number(profile, number, settings).unwrap_or_else(|| number.to_string())
+        })?,
+    };
+    Some((rendering, approximate))
 }
 
 fn normalized_context_command(setting: &str) -> String {
@@ -500,21 +691,29 @@ mod tests {
     }
 
     #[test]
-    fn accepts_only_unicode_toggles_at_the_cpp_fallback_boundary() {
+    fn accepts_only_cpp_print_settings_at_the_fallback_boundary() {
         assert_eq!(
-            NativeSessionSettings::unicode_only_from_raw(&["unicode 0"]),
-            Some(false)
+            NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0"]),
+            Some((false, 10))
         );
         assert_eq!(
-            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "unicode 1"]),
-            Some(true)
+            NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0", "output base 16"]),
+            Some((false, 16))
         );
         assert_eq!(
-            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "precision 10"]),
+            NativeSessionSettings::cpp_print_options_from_raw(&["base 10 16"]),
+            Some((true, 16))
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_print_options_from_raw(&["base 2 16"]),
             None
         );
         assert_eq!(
-            NativeSessionSettings::unicode_only_from_raw(&["unicode 0", "programming mode 0"]),
+            NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0", "precision 10"]),
+            None
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0", "programming mode 0"]),
             None
         );
     }

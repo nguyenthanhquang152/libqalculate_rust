@@ -668,7 +668,14 @@ pub(crate) fn format_qalc_equation(
     unicode_enabled: bool,
     message_line_count: usize,
 ) -> String {
+    let trimmed_input = input.trim();
+    let explicit_radix_literal = trimmed_input
+        .strip_prefix(['+', '-'])
+        .unwrap_or(trimmed_input)
+        .get(..2)
+        .is_some_and(|prefix| matches!(prefix, "0x" | "0X" | "0b" | "0B" | "0o" | "0O"));
     let formatted_input = match crate::parser::operators::parse_expression(input) {
+        Ok(_) if explicit_radix_literal => trimmed_input.to_string(),
         Ok(expression) => {
             if let Expression::Conversion { target, .. } = &expression {
                 if let Expression::Symbolic(symbol) = target.as_ref() {
@@ -696,6 +703,8 @@ pub(crate) fn format_qalc_equation(
         Err(_) => input.trim().to_string(),
     };
 
+    let formatted_input = style_qalc_input_operators(&formatted_input, unicode_enabled);
+
     let relation = if approximate && unicode_enabled {
         " ≈ "
     } else if approximate {
@@ -718,6 +727,67 @@ pub(crate) fn format_qalc_equation(
         ),
         None => format!("{formatted_input}{relation}{output}"),
     }
+}
+
+fn style_qalc_input_operators(input: &str, unicode_enabled: bool) -> String {
+    let chars = input.chars().collect::<Vec<_>>();
+    let mut styled = String::with_capacity(input.len());
+    let mut quote = None;
+    let mut escaped = false;
+    let mut index = 0;
+
+    while index < chars.len() {
+        let ch = chars[index];
+        if let Some(active_quote) = quote {
+            styled.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if matches!(ch, '\'' | '"') {
+            quote = Some(ch);
+            styled.push(ch);
+            index += 1;
+            continue;
+        }
+        if ch == '*' {
+            while styled.ends_with(char::is_whitespace) {
+                styled.pop();
+            }
+            styled.push_str(if unicode_enabled { " × " } else { " * " });
+            index += 1;
+            while index < chars.len() && chars[index].is_whitespace() {
+                index += 1;
+            }
+            continue;
+        }
+        if unicode_enabled && ch == '-' {
+            styled.push('−');
+            index += 1;
+            continue;
+        }
+        if unicode_enabled && ch == '^' && index + 1 < chars.len() {
+            let exponent = chars[index + 1];
+            let has_token_boundary = index + 2 == chars.len()
+                || !(chars[index + 2].is_ascii_alphanumeric()
+                    || matches!(chars[index + 2], '.' | '_'));
+            if has_token_boundary && matches!(exponent, '2' | '3') {
+                styled.push(if exponent == '2' { '²' } else { '³' });
+                index += 2;
+                continue;
+            }
+        }
+        styled.push(ch);
+        index += 1;
+    }
+
+    styled
 }
 
 pub(crate) fn unicode_len(text: &str) -> usize {
@@ -835,6 +905,19 @@ mod tests {
         assert_eq!(
             format_qalc_equation("1/3", "0.3333333333", true, false, 0),
             "1 / 3 = approx. 0.3333333333"
+        );
+        assert_eq!(
+            format_qalc_equation("x^20", "1", false, true, 0),
+            "x^20 = 1"
+        );
+        assert_eq!(format_qalc_equation("x^2", "1", false, true, 0), "x² = 1");
+        assert_eq!(
+            format_qalc_equation("\"a*b\"", "\"a*b\"", false, true, 0),
+            "\"a*b\" = \"a*b\""
+        );
+        assert_eq!(
+            format_qalc_equation("sqrt(-1)", "i", false, true, 0),
+            "sqrt(−1) = i"
         );
     }
     use crate::parser::operators::parse_expression;

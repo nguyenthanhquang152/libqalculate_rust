@@ -1,7 +1,7 @@
 # Compatibility Inventory — libqalculate → libqalculate_rust
 
 > **Upstream version**: libqalculate 5.11.0
-> **Inventory date**: 2026-07-03
+> **Inventory date**: 2026-07-12
 > **Epics**: 0 — Project Bootstrap & Inventory; 1 — Workspace Foundation and Optional C++ Oracle/FFI; 2 — Numeric Core (Number); 3 — AST, Parser, and Session Commands; 8 — Vectors, Matrices, Statistics, and CSV Data; 9 — Definitions, Units, Datasets, Currencies, and Rates
 > **Tasks**: 0.1/0.2 inventory baseline; 1.1 (hybrid-build-inventory), 1.2 (ffi-sys-bindings), 1.3 (safe-ffi-calculator-wrapper), 1.4 (no-cpp-fallback-gate), 2.1-2.6 numeric-core slices; 3.1-3.5 AST, parser, name resolution, and command parsing slices; 8.1 (vector-matrix-ast-eval) and 8.2 (matrix-functions) native `matrixvector.batch` coverage; 9.1 (xml-loader-core), 9.2 (prefix-unit-loader), 9.3 (function-variable-loader), 9.4 (datasets-elements-planets), and 9.5 (currency-rate-loader) loader/lookup scaffolds
 
@@ -16,7 +16,7 @@
 | Definition Data Files | 9 | 0 | 0 | 9 | 0 | 0 | 0 |
 | Batch Test Files | 17 | 5 | 0 | 3 | 0 | 9 | 0 |
 | Batch Test Cases | 656 | 352 | 0 | 0 | 0 | 304 | 0 |
-| CLI Behaviors | 14 | 3 | 3 | 5 | 1 | 2 | 0 |
+| CLI Behaviors | 14 | 3 | 3 | 6 | 1 | 1 | 0 |
 | Core Class API Groups | 59 | 0 | 0 | 30 | 1 | 28 | 0 |
 
 **Overall porting progress**: The workspace has an FFI fallback wrapper, build inventory, sys bindings, and a no-fallback gate for native evidence. The `Number` type now has native Rust slices for representation, exact rational storage, MPFR-backed floats, complex values, interval storage, uncertainty, selected arithmetic, formatting, and a small fallback-disabled expression evaluator. Full upstream `Number.cc` parity is not complete: setters, full conversion/format APIs, all edge-case arithmetic, base conversion display, and broad native oracle coverage remain incomplete. `Calculator` expression evaluation is still fallback-first, with native fallback-disabled routing only for oracle-proven subsets that the Rust scaffold can parse and evaluate successfully, including focused precision-context float arithmetic/comparison evidence, complex zero-part collapse, component metadata evidence, equality/inequality and equal-operand ordering evidence, finite interval arithmetic, infinity interval endpoint evidence, endpoint extraction, a narrow disjoint interval intersection row, alphabetic infinity literal/arithmetic evidence, one focused real-valued uncertainty `ln` propagation case, all 130 `matrixvector.batch` rows covering vector/matrix literals, constructors/accessors, arithmetic, shape helpers, and matrix functions, plus a narrow CSV loader count proof for `vectordata.csv` and `vectordata2.csv`, direct CSV-backed `mean(load(...))`/`stdev(load(...))`/`min(load(...))`/`max(load(...))`/`total(load(...))`/`range(load(...))`/`median(load(...))`, `geomean(abs(load(...)))`/`harmmean(abs(load(...)))`/`rms(load(...))`/`trimmean(load(...), 10)`/`winsormean(load(...), 10)`/`weighmean(load(...), genvector(2;1;100))`/`stderr(load(...))`/`meandev(load(...))`/`quartile(load(...), 1, 7)`/`percentile(load(...), 25, 7)`/`decile(load(...), 9, 7)`/`iqr(load(...))` proof for `vectordata.csv`, direct paired CSV `pearson`/`spearman`/`covar`/`poolvar`/`ttest`/`pttest` proof for `vectordata.csv` and `vectordata2.csv`, quoted-path forms for those direct CSV consumers, fallback-disabled native session-variable execution for the original `stats.batch` `name=load(...)` setup/delete rows, focused fallback-disabled native session-variable execution for all `variables.batch` rows in one context, selected literal statistics `mean`/`stdev`/`quartile`/`percentile`/`normdist`/`normdistinv`/`quadraticfit`/`cubicfit`/`fdist`/`chisqdistinv`/`mode`/`median` evidence, focused native dataset lookup evidence for `atom`/`planet` element and planet properties, and all 11 fallback-disabled `dates.batch` rows covering time arithmetic, CET-to-UTC-offset formatting, date arithmetic, `addDays`, timestamp/stamptodate, and focused lunar phase helpers. Epic 9 now has a Rust XML definition loader scaffold in `src/definitions.rs`, a typed prefix/unit catalog in `src/units.rs`, a typed function/variable catalog in `src/definitions_catalog.rs`, and a typed dataset catalog in `src/datasets.rs` that loads upstream dataset metadata, property aliases and flags, object data rows, provenance, and focused `atom`/`planet` lookup behavior; it does not claim unit conversion, currency rate, function-body execution, full variable-evaluation, or full DataSet public API parity. The batch manifest currently has 352 `native-pass` rows across selected batch rows; every other batch case remains inventory-only until proven through the manifest runner with fallback disabled. Focused numeric native oracle evidence is recorded in `docs/epic2_native_evidence.md`; vector/matrix evidence is recorded by `tests/oracle.rs::focused_issue41_vector_matrix_literal_oracle_cases`; CSV loader/statistics evidence is recorded by `tests/oracle.rs::focused_issue44_csv_load_oracle_cases`; literal statistics evidence is recorded by `tests/oracle.rs::focused_issue43_literal_statistics_oracle_cases`; XML loader scaffold evidence is recorded by `tests/definition_loader.rs`; prefix/unit loader evidence is recorded by `tests/prefix_unit_loader.rs`; function/variable loader evidence is recorded by `tests/function_variable_loader.rs`; dataset loader and lookup evidence is recorded by `tests/dataset_loader.rs`, `tests/dataset_lookup.rs`, and `tests/oracle.rs::focused_issue48_dataset_lookup_oracle_cases`; session-variable statistics evidence is recorded by `src/ffi.rs::tests::fallback_disabled_preserves_csv_loaded_statistics_session_variables`; focused `variables.batch` session evidence is recorded by `tests/oracle.rs::focused_issue47_variables_batch_session_oracle_cases`; focused date/time parser/formatter evidence is recorded by `tests/oracle.rs::focused_issue52_datetime_parser_formatter_oracle_cases`; and focused date/time function evidence is recorded by `tests/oracle.rs::focused_issue53_datetime_function_oracle_cases`.
@@ -24,6 +24,8 @@
 **Issue #49 update**: `src/rates.rs` now parses `rates.json` snapshot dates and raw per-currency rates with provenance, applies offline `eurofxref-daily.xml` precedence for the focused fiat conversion oracle cases, preserves the upstream built-in BTC relation from `Calculator.cc`, and routes only explicit currency conversions through fallback-disabled native evaluation. This does not claim network exchange-rate refresh or general unit conversion parity; those remain staged follow-ups.
 
 **Issue #60 update**: CLI listing (`-l`, `--list`, and the typed `--list-*` variants) is rendered from the existing Rust XML catalogs with exact upstream-derived search examples. Definition-disable flags gate only expressions that use the disabled family, unrelated native work remains available, and the C++ bridge loads selected global catalogs in upstream startup order. `-defaults` preserves the current built-in-only configuration behavior; no persistent user-configuration reader exists yet. `-exrates` validates the configured local snapshot and effective offline catalog; network refresh is tracked in #199. Color-off is effective, while forced-on color fails explicitly and links to #198.
+
+**Issue #61 update**: no-argument and `-i` invocations now share an injected buffered REPL with exact pipe-oracle evidence for prompting, initial expressions, exact typed `ans`/`ans1`–`ans5` history, base/Unicode setting persistence and immediate re-rendering, quit/exit/EOF, typed help/list/info dispatch, and XDG/QALCULATE_USER_DIR history save/dedup/cap/clear behavior. `DEV-0001` records the remaining readline-only terminal editor gap (live Tab completion, arrow-key recall, Ctrl-C editing/abort semantics, and first-run autocalc onboarding), owned by #201. Command/stdin files and batch-test mode remain owned by #62/#63.
 
 ---
 
@@ -332,7 +334,7 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 | 11 | `-e`, `--exrates` | Refresh exchange rates, including network sources when available | Validates configured `rates.json` and the effective offline catalog | `scaffold` | Offline behavior lands in #60; network refresh is tracked in #199 |
 | 12 | `-c`, `--color` | Select terminal colorization | `-c0` is uncolored; forced-on mode is an explicit error | `scaffold` | Exact token-aware colorization is tracked in #198 rather than silently ignored |
 | 13 | `--test-file <path>` | Run batch test file | Explicit handoff to #63 | `unstarted` | `qalc-rs` has `--parse-batch` but no test-file execution |
-| 14 | Interactive REPL | Line-editing REPL | Explicit handoff to #61 | `unstarted` | |
+| 14 | Interactive REPL | Line-editing REPL | Injected buffered REPL with persistent calculator/session state | `scaffold` | Exact pipe and bounded PTY evidence covers prompt/EOF, initial expressions, native `ans`, base/Unicode re-rendering, history, and typed commands; `DEV-0001`/#201 owns readline-only live editing and onboarding |
 
 ### CLI Status Summary
 
@@ -340,9 +342,9 @@ Maps upstream `qalc` CLI flags and behaviors to `qalc-rs` implementation status.
 |---|---|
 | `native-pass` | 3 |
 | `tooling-pass` | 3 |
-| `scaffold` | 5 |
+| `scaffold` | 6 |
 | `fallback-only` | 1 |
-| `unstarted` | 2 |
+| `unstarted` | 1 |
 
 ---
 

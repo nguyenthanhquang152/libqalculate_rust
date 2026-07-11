@@ -49,6 +49,7 @@ test-smoke:
 # Run CLI e2e tests.
 test-e2e:
     cargo test --test e2e_cli
+    cargo test --test interactive_cli -- --test-threads=1
 
 # Run regression fixture tests.
 test-regression:

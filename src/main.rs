@@ -3,6 +3,7 @@ mod cli;
 mod listing;
 
 use std::env;
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 
 use libqalculate_rust::batch::read_batch_cases;
@@ -10,9 +11,9 @@ use libqalculate_rust::ffi::{Calculator, FallbackState};
 use libqalculate_rust::parser::commands::{parse_command, SessionCommand, SetSetting};
 use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 
-enum EvaluationOutcome {
-    Success,
-    MessageError,
+struct EvaluationOutcome {
+    output: String,
+    message_error: bool,
 }
 
 fn main() {
@@ -46,7 +47,7 @@ fn main() {
         }
     }
 
-    let invocation = cli::parse_args(env::args());
+    let mut invocation = cli::parse_args(env::args());
 
     // qalc-rs has no persistent configuration reader yet, so every invocation
     // starts from built-in defaults. `--defaults` is retained as typed state so
@@ -106,9 +107,6 @@ fn main() {
         }
         return;
     }
-    if invocation.interactive {
-        exit_with_error("Interactive mode is not implemented (owner #61)");
-    }
     if let Some(ref file) = invocation.command_file {
         match file.mode {
             cli::CommandFileMode::Commands => {
@@ -120,14 +118,65 @@ fn main() {
         }
     }
 
-    let Some(expression) = invocation.expression.as_deref() else {
-        exit_with_error("Interactive mode is not implemented (owner #61)");
+    let mut calculator = match prepare_calculator(&invocation) {
+        Ok(calculator) => calculator,
+        Err(error) => exit_with_error(&error),
     };
 
-    match evaluate_expression(&invocation, expression) {
-        Ok(EvaluationOutcome::Success) => {}
-        Ok(EvaluationOutcome::MessageError) => std::process::exit(1),
-        Err(error) => exit_with_error(&error),
+    if invocation.interactive || invocation.expression.is_none() {
+        calculator.enable_session_mode();
+        let initial_expression = invocation.expression.clone();
+        let echo_input = !io::stdin().is_terminal();
+        let stdin = io::stdin();
+        let stdout = io::stdout();
+        let stderr = io::stderr();
+        let mut input = stdin.lock();
+        let mut output = stdout.lock();
+        let mut error = stderr.lock();
+        let exit_code = cli::repl::run(
+            &mut invocation,
+            &mut input,
+            &mut output,
+            &mut error,
+            echo_input,
+            initial_expression,
+            |invocation, request| match request {
+                cli::repl::ReplRequest::Evaluate(expression) => {
+                    evaluate_expression(invocation, &mut calculator, &expression).map(|outcome| {
+                        Some(cli::repl::ReplEvaluation {
+                            output: outcome.output,
+                        })
+                    })
+                }
+                cli::repl::ReplRequest::ReformatLastAnswer => {
+                    reformat_session_answer(invocation, &mut calculator)
+                }
+            },
+        );
+        drop(calculator);
+        if exit_code != 0 {
+            std::process::exit(exit_code);
+        }
+        return;
+    }
+
+    let expression = invocation
+        .expression
+        .as_deref()
+        .expect("non-interactive invocation must contain an expression");
+
+    match evaluate_expression(&invocation, &mut calculator, expression) {
+        Ok(outcome) => {
+            drop(calculator);
+            println!("{}", outcome.output);
+            if outcome.message_error {
+                std::process::exit(1);
+            }
+        }
+        Err(error) => {
+            drop(calculator);
+            exit_with_error(&error);
+        }
     }
 }
 
@@ -153,6 +202,13 @@ fn cli_unicode_enabled(invocation: &cli::CliInvocation) -> bool {
         if let Ok(SessionCommand::Set(command)) = parse_command(&command) {
             if let SetSetting::Unicode(value) = command.setting {
                 enabled = value;
+            }
+        }
+    }
+    for command in &invocation.interactive_settings {
+        if let SessionCommand::Set(command) = command {
+            if let SetSetting::Unicode(value) = &command.setting {
+                enabled = *value;
             }
         }
     }
@@ -183,6 +239,7 @@ fn validate_exchange_rates() -> Result<(), String> {
 
 fn evaluate_expression(
     invocation: &cli::CliInvocation,
+    calc: &mut Calculator,
     expression: &str,
 ) -> Result<EvaluationOutcome, String> {
     let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
@@ -213,46 +270,8 @@ fn evaluate_expression(
         return Err("global definitions are disabled for this native expression".to_string());
     }
 
-    let unicode_setting = invocation.unicode.and_then(|enabled| {
-        (!enabled || fallback_disabled).then(|| format!("unicode {}", i32::from(enabled)))
-    });
-    let programming_setting = invocation
-        .programming_mode
-        .then(|| "programming mode 1".to_string());
-
-    let mut setting_refs = Vec::with_capacity(
-        invocation.settings.len()
-            + usize::from(unicode_setting.is_some())
-            + usize::from(programming_setting.is_some()),
-    );
-    if let Some(setting) = unicode_setting.as_deref() {
-        setting_refs.push(setting);
-    }
-    setting_refs.extend(invocation.settings.iter().map(String::as_str));
-    if let Some(setting) = programming_setting.as_deref() {
-        setting_refs.push(setting);
-    }
-
-    let mut calc = Calculator::new();
-    if invocation.definitions.global_defs
-        && invocation.definitions.currencies
-        && !fallback_disabled
-        && !calc.load_exchange_rates()
-    {
-        return Err("failed to load exchange rates".to_owned());
-    }
-    if invocation.definitions.global_defs
-        && !fallback_disabled
-        && !calc.load_global_definitions_selected(
-            defs.units,
-            defs.currencies,
-            defs.functions,
-            defs.variables,
-            defs.datasets,
-        )
-    {
-        return Err("failed to load global definitions".to_owned());
-    }
+    let settings = evaluation_settings(invocation, fallback_disabled);
+    let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
 
     let timeout = if invocation.timeout_ms == 0 {
         1000
@@ -308,7 +327,7 @@ fn evaluate_expression(
     };
 
     match result {
-        Ok(result) => {
+        Ok(mut result) => {
             let message_had_error =
                 calc.last_native_message_had_error() || !invocation.definitions.global_defs;
             if report_fallback {
@@ -318,14 +337,15 @@ fn evaluate_expression(
                 && !invocation.terse
                 && result.fallback_state == FallbackState::Native
             {
-                println!("error: Radians unit is missing. Creating one for this session.");
+                result.output = format!(
+                    "error: Radians unit is missing. Creating one for this session.\n{}",
+                    result.output
+                );
             }
-            println!("{}", result.output);
-            if message_had_error {
-                Ok(EvaluationOutcome::MessageError)
-            } else {
-                Ok(EvaluationOutcome::Success)
-            }
+            Ok(EvaluationOutcome {
+                output: result.output,
+                message_error: message_had_error,
+            })
         }
         Err(err) => {
             if report_fallback {
@@ -334,6 +354,77 @@ fn evaluate_expression(
             Err(format!("calculation failed: {err}"))
         }
     }
+}
+
+fn reformat_session_answer(
+    invocation: &cli::CliInvocation,
+    calc: &mut Calculator,
+) -> Result<Option<cli::repl::ReplEvaluation>, String> {
+    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let settings = evaluation_settings(invocation, fallback_disabled);
+    let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
+    let result = calc
+        .reformat_session_answer_with_settings(&setting_refs)
+        .map_err(|error| format!("calculation failed: {error}"))?;
+    if std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1") {
+        if let Some(result) = result.as_ref() {
+            eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());
+        }
+    }
+    Ok(result.map(|result| cli::repl::ReplEvaluation {
+        output: result.output,
+    }))
+}
+
+fn evaluation_settings(invocation: &cli::CliInvocation, fallback_disabled: bool) -> Vec<String> {
+    let unicode_setting = invocation.unicode.and_then(|enabled| {
+        (!enabled || fallback_disabled).then(|| format!("unicode {}", i32::from(enabled)))
+    });
+    let programming_setting = invocation
+        .programming_mode
+        .then(|| "programming mode 1".to_string());
+
+    let mut settings = Vec::with_capacity(
+        invocation.settings.len()
+            + usize::from(unicode_setting.is_some())
+            + usize::from(programming_setting.is_some()),
+    );
+    if let Some(setting) = unicode_setting {
+        settings.push(setting);
+    }
+    settings.extend(invocation.settings.iter().cloned());
+    settings.extend(
+        invocation
+            .interactive_settings
+            .iter()
+            .map(cli::commands::serialize_setting),
+    );
+    if let Some(setting) = programming_setting {
+        settings.push(setting);
+    }
+    settings
+}
+
+fn prepare_calculator(invocation: &cli::CliInvocation) -> Result<Calculator, String> {
+    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let defs = &invocation.definitions;
+    let mut calc = Calculator::new();
+    if defs.global_defs && defs.currencies && !fallback_disabled && !calc.load_exchange_rates() {
+        return Err("failed to load exchange rates".to_owned());
+    }
+    if defs.global_defs
+        && !fallback_disabled
+        && !calc.load_global_definitions_selected(
+            defs.units,
+            defs.currencies,
+            defs.functions,
+            defs.variables,
+            defs.datasets,
+        )
+    {
+        return Err("failed to load global definitions".to_owned());
+    }
+    Ok(calc)
 }
 
 fn upstream_batch_files() -> Result<Vec<PathBuf>, String> {

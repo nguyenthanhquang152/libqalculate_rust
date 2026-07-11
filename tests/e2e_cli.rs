@@ -1923,7 +1923,6 @@ fn cli_fails_closed_instead_of_ignoring_settings_on_cpp_fallback() {
             vec!["-t", "-set", "approximation exact", "--", "sqrt(2)"],
             "approximation exact",
         ),
-        (vec!["-t", "-b", "16", "--", "1/3"], "base 16"),
     ];
 
     for (args, setting) in cases {
@@ -1939,6 +1938,21 @@ fn cli_fails_closed_instead_of_ignoring_settings_on_cpp_fallback() {
                 "session settings are not supported by the C++ FFI fallback path: {setting}"
             )));
     }
+}
+
+#[test]
+fn cli_cpp_fallback_applies_supported_output_base_settings() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-t", "-b", "16", "--", "1/3"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .env_remove("QALCULATE_DISABLE_FALLBACK")
+        .assert()
+        .success()
+        .stdout("0x0.55555555\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=cpp-fallback-enabled",
+        ));
 }
 
 #[test]
@@ -2312,6 +2326,8 @@ fn cli_cpp_fallback_initializes_exchange_rates_before_currency_definitions() {
             .env("QALCULATE_REPORT_FALLBACK", "1")
             .env("HOME", home.path())
             .env("XDG_CONFIG_HOME", home.path())
+            .env("LC_ALL", "C")
+            .env("LANG", "C")
             .assert()
             .success()
             .stdout(expected)
@@ -2449,20 +2465,8 @@ fn cli_test_file_without_path_reports_upstream_diagnostic_before_handoff() {
 }
 
 #[test]
-fn test_task5_handoff_contract() {
+fn test_remaining_workflow_handoff_contract() {
     let cases: &[(&[&str], &str)] = &[
-        (
-            &["-i"],
-            "error: Interactive mode is not implemented (owner #61)\n",
-        ),
-        (
-            &["-interactive"],
-            "error: Interactive mode is not implemented (owner #61)\n",
-        ),
-        (
-            &["--interactive"],
-            "error: Interactive mode is not implemented (owner #61)\n",
-        ),
         (
             &["-f", "dummy_file.txt"],
             "error: Command file execution is not implemented (owner #62)\n",
@@ -2480,10 +2484,6 @@ fn test_task5_handoff_contract() {
             "error: Test file execution is not implemented (owner #63)\n",
         ),
         (
-            &["-i", "-f", "dummy.txt", "1+1"],
-            "error: Interactive mode is not implemented (owner #61)\n",
-        ),
-        (
             &["-f", "dummy.txt", "1+1"],
             "error: Command file execution is not implemented (owner #62)\n",
         ),
@@ -2497,10 +2497,6 @@ fn test_task5_handoff_contract() {
                 "1+1",
             ],
             "error: Test file execution is not implemented (owner #63)\n",
-        ),
-        (
-            &["-defaults"],
-            "error: Interactive mode is not implemented (owner #61)\n",
         ),
     ];
 

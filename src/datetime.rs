@@ -654,6 +654,126 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
     native_utc_conversion_output(lhs, target)
 }
 
+/// Returns the structured result for native date/time functions whose value
+/// can be represented by the Rust expression model without parsing display
+/// text back into an expression.
+pub(crate) fn native_answer(expr: &str) -> Result<Option<crate::ast::Expression>, String> {
+    let trimmed = expr.trim();
+    if let Some((left, rest)) = parse_leading_quoted(trimmed) {
+        let left = parse_datetime_arg(left)?;
+        let rest = rest.trim_start();
+        if let Some(days) = rest.strip_prefix('+') {
+            let shifted = left
+                .value
+                .add_days(&parse_day_count(days.trim())?)
+                .map_err(|error| error.to_string())?;
+            return Ok(Some(datetime_expression(shifted, None)));
+        }
+        if let Some(right) = rest.strip_prefix('-') {
+            let Some((right, trailing)) = parse_leading_quoted(right.trim_start()) else {
+                return Ok(None);
+            };
+            if !trailing.trim().is_empty() {
+                return Ok(None);
+            }
+            let right = parse_datetime_arg(right)?;
+            return Ok(Some(unit_quantity_expression(
+                right.value.days_to(&left.value),
+                "d",
+            )));
+        }
+    }
+    if let Some(inner) = strip_function_call(trimmed, "timestamp") {
+        let date = parse_datetime_arg(inner.trim())?;
+        return Ok(Some(crate::ast::Expression::Number(
+            parsed_datetime_utc_timestamp(&date),
+        )));
+    }
+    if let Some(inner) = strip_function_call(trimmed, "addDays") {
+        let Some((date, days)) = inner.split_once(';') else {
+            return Err("addDays requires date and day count".to_string());
+        };
+        let date = parse_datetime_arg(date.trim())?;
+        let days = parse_number_literal(days)?;
+        let shifted = date
+            .value
+            .add_days(&days)
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(crate::ast::Expression::DateTime(
+            crate::ast::DateTimeLiteral::from_value(shifted),
+        )));
+    }
+    if let Some(inner) = strip_function_call(trimmed, "lunarphase") {
+        let date = parse_datetime_arg(inner.trim())?;
+        return Ok(Some(crate::ast::Expression::Number(Number::from_f64(
+            lunar_phase_fraction(&date),
+        ))));
+    }
+
+    let Some((lhs, target)) = split_conversion(trimmed) else {
+        return Ok(None);
+    };
+    if target.eq_ignore_ascii_case("time") {
+        return Ok(parse_time_sum(lhs)?
+            .map(|seconds| unit_quantity_expression(Number::from_i64(seconds), "s")));
+    }
+    if !target.to_ascii_lowercase().starts_with("utc") {
+        return Ok(None);
+    }
+    let target_offset = parse_timezone_target(target).map_err(|error| error.to_string())?;
+    if let Some(literal) = unquote(lhs.trim()) {
+        let parsed = parse_datetime_literal(literal).map_err(|error| error.to_string())?;
+        let source_offset = parsed
+            .offset_minutes
+            .ok_or_else(|| "source date/time has no timezone".to_string())?;
+        let utc = parsed
+            .value
+            .timestamp_utc()
+            .sub(&Number::from_i64(i64::from(source_offset) * 60));
+        let shifted = utc.add(&Number::from_i64(i64::from(target_offset) * 60));
+        let value = DateTime::from_timestamp_utc(&shifted).map_err(|error| error.to_string())?;
+        return Ok(Some(datetime_expression(value, Some(target_offset))));
+    }
+    if let Some(inner) = strip_function_call(lhs.trim(), "stamptodate") {
+        let timestamp = parse_number_literal(inner)?;
+        let shifted = timestamp.add(&Number::from_i64(i64::from(target_offset) * 60));
+        let value = DateTime::from_timestamp_utc(&shifted).map_err(|error| error.to_string())?;
+        return Ok(Some(datetime_expression(value, Some(target_offset))));
+    }
+    if let Some(inner) = strip_function_call(lhs.trim(), "nextlunarphase") {
+        let Some((phase, date)) = inner.split_once(',') else {
+            return Err("nextlunarphase requires phase and date".to_string());
+        };
+        let value = next_lunar_phase_datetime(
+            &parse_datetime_arg(date.trim())?,
+            parse_phase_fraction(phase)?,
+        )?
+        .add_seconds(&Number::from_i64(i64::from(target_offset) * 60))
+        .map_err(|error| error.to_string())?;
+        return Ok(Some(datetime_expression(value, Some(target_offset))));
+    }
+    Ok(None)
+}
+
+fn datetime_expression(value: DateTime, offset_minutes: Option<i32>) -> crate::ast::Expression {
+    let source = format_iso_datetime_with_offset(&value, offset_minutes);
+    crate::ast::Expression::DateTime(crate::ast::DateTimeLiteral::from_source_and_value(
+        source, value,
+    ))
+}
+
+fn unit_quantity_expression(number: Number, unit: &str) -> crate::ast::Expression {
+    crate::ast::Expression::Multiplication(crate::ast::NaryChildren::from_two(
+        crate::ast::Expression::Number(number),
+        crate::ast::Expression::Unit {
+            unit: crate::ast::UnitRef::new(unit),
+            prefix: None,
+            plural: false,
+        },
+        Vec::new(),
+    ))
+}
+
 impl PartialEq for DateTime {
     fn eq(&self, other: &Self) -> bool {
         self.year == other.year

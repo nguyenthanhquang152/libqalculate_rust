@@ -135,6 +135,74 @@ fn format_names(names: &[DefinitionName], unicode_enabled: bool, is_currency: bo
     name_str
 }
 
+fn name_equals(name: &DefinitionName, query: &str) -> bool {
+    if name.case_sensitive {
+        name.name() == query
+    } else {
+        name.name().eq_ignore_ascii_case(query)
+    }
+}
+
+pub(crate) fn render_info(
+    data_dir: &Path,
+    query: &str,
+    selection: &DefinitionSelection,
+    unicode_enabled: bool,
+) -> Result<String, String> {
+    if !selection.global_defs || query.trim().is_empty() {
+        return Ok(NO_MATCH.to_string());
+    }
+
+    if selection.functions {
+        let document = load_definition_xml_file(data_dir.join("functions.xml.in"))
+            .map_err(|error| format!("failed to load functions.xml.in: {error}"))?;
+        let catalog = FunctionVariableCatalog::from_documents(vec![document]);
+        if let Some(function) = catalog.functions().functions().iter().find(|function| {
+            function.active()
+                && !function.hidden()
+                && function.names().iter().any(|name| name_equals(name, query))
+        }) {
+            let name = format_names(function.names(), unicode_enabled, false);
+            let title = function.title().unwrap_or(&name);
+            let arguments = function
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    argument
+                        .title()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("Argument {}", argument.index()))
+                })
+                .collect::<Vec<_>>();
+            let mut rendered = format!("\nFunction: {title}\n\n{name}({})\n", arguments.join("; "));
+            if !arguments.is_empty() {
+                rendered.push_str("\nArguments\n");
+                for (argument, title) in function.arguments().iter().zip(&arguments) {
+                    let description = argument.argument_type().unwrap_or("value");
+                    rendered.push_str(&format!("{title}: {description}\n"));
+                }
+            }
+            if let Some(description) = function.description() {
+                rendered.push('\n');
+                rendered.push_str(description);
+                rendered.push('\n');
+            }
+            rendered.push('\n');
+            return Ok(rendered);
+        }
+    }
+
+    render_list(
+        data_dir,
+        &ListRequest {
+            list_type: ListType::All,
+            search_term: Some(query.to_string()),
+        },
+        selection,
+        unicode_enabled,
+    )
+}
+
 pub(crate) fn render_list(
     data_dir: &Path,
     request: &ListRequest,

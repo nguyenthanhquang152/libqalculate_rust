@@ -21,6 +21,14 @@ pub(crate) mod sys {
 
         /// Create a std::unique_ptr to a Calculator.
         fn new_calculator() -> UniquePtr<Calculator>;
+        fn qalc_enable_session_answers(calc: Pin<&mut Calculator>) -> bool;
+        fn qalc_set_session_answer(calc: Pin<&mut Calculator>, expression: &str) -> bool;
+        fn qalc_clear_session_answers(calc: Pin<&mut Calculator>);
+        fn qalc_print_session_answer(
+            calc: Pin<&mut Calculator>,
+            output_base: i32,
+            unicode_enabled: bool,
+        ) -> Result<String>;
 
         /// Load exchange rates.
         fn load_exchange_rates(calc: Pin<&mut Calculator>) -> bool;
@@ -54,9 +62,8 @@ pub(crate) mod sys {
             expr: &str,
             timeout_ms: i32,
             unicode_enabled: bool,
-            markup: bool,
-            latex: bool,
-            terse: bool,
+            output_base: i32,
+            mode_flags: u8,
         ) -> Result<String>;
 
         fn qalc_last_result_is_approximate() -> bool;
@@ -72,6 +79,7 @@ pub(crate) mod sys {
 pub struct Calculator {
     inner: UniquePtr<sys::Calculator>,
     native_context: crate::context::CalculatorContext,
+    session_answers: crate::session::SessionAnswerState,
     last_native_message_had_error: bool,
     last_output_approximate: bool,
     last_output_message_lines: usize,
@@ -334,6 +342,7 @@ impl Calculator {
         Self {
             inner,
             native_context: crate::context::CalculatorContext::default(),
+            session_answers: crate::session::SessionAnswerState::default(),
             last_native_message_had_error: false,
             last_output_approximate: false,
             last_output_message_lines: 0,
@@ -344,6 +353,102 @@ impl Calculator {
     /// Whether the last evaluation emitted an error-severity message.
     pub fn last_native_message_had_error(&self) -> bool {
         self.last_native_message_had_error
+    }
+
+    /// Enable typed answer tracking for a long-lived interactive session.
+    pub fn enable_session_mode(&mut self) {
+        if self.inner.is_null() {
+            return;
+        }
+        let enabled = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            sys::qalc_enable_session_answers(self.inner.pin_mut())
+        };
+        if enabled {
+            self.session_answers.enable();
+        }
+    }
+
+    /// Re-render the current typed session answer after settings change.
+    ///
+    /// This updates only the display of the current answer. It does not
+    /// evaluate the rendered text or rotate the `ans` history.
+    pub fn reformat_session_answer_with_settings(
+        &mut self,
+        settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)
+            .ok_or_else(|| {
+                CalculatorError::UnsupportedSessionSettings(
+                    settings
+                        .iter()
+                        .map(|setting| (*setting).to_string())
+                        .collect(),
+                )
+            })?;
+        if let Some(previous_rendering) = self.session_answers.cpp_rendering().map(str::to_string) {
+            if self.inner.is_null() {
+                return Ok(None);
+            }
+            let unicode_enabled =
+                !parsed_settings.has_unicode_setting() || parsed_settings.unicode();
+            let (rendering, approximate) = {
+                let _guard = FFI_LOCK.lock().unwrap();
+                let rendering = sys::qalc_print_session_answer(
+                    self.inner.pin_mut(),
+                    parsed_settings.output_base.unwrap_or(10) as i32,
+                    unicode_enabled,
+                )
+                .map_err(CalculatorError::Cxx)?;
+                (rendering, sys::qalc_last_result_is_approximate())
+            };
+            if rendering.is_empty() {
+                return Ok(None);
+            }
+            let output = crate::text::format_qalc_equation(
+                &previous_rendering,
+                &rendering,
+                approximate,
+                unicode_enabled,
+                0,
+            );
+            self.last_native_message_had_error = false;
+            self.last_output_approximate = approximate;
+            self.last_output_message_lines = 0;
+            self.session_answers.update_rendering(rendering);
+            return Ok(Some(CalculationOutput {
+                output,
+                fallback_state: FallbackState::CppFallbackEnabled,
+            }));
+        }
+
+        let Some((answer, previous_rendering)) = self.session_answers.current() else {
+            return Ok(None);
+        };
+        let previous_rendering = previous_rendering.to_string();
+        let Some((rendering, approximate)) = crate::session::format_answer(
+            crate::session::AnswerFormatProfile::Qalc,
+            answer,
+            parsed_settings,
+        ) else {
+            return Ok(None);
+        };
+        let unicode_enabled = !parsed_settings.has_unicode_setting() || parsed_settings.unicode();
+        let output = crate::text::format_qalc_equation(
+            &previous_rendering,
+            &rendering,
+            approximate,
+            unicode_enabled,
+            0,
+        );
+        self.last_native_message_had_error = false;
+        self.last_output_approximate = approximate;
+        self.last_output_message_lines = 0;
+        self.session_answers.update_rendering(rendering);
+        Ok(Some(CalculationOutput {
+            output,
+            fallback_state: FallbackState::Native,
+        }))
     }
 
     /// Load the exchange rates for currencies.
@@ -660,7 +765,7 @@ impl Calculator {
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        let unicode_enabled = cpp_fallback_unicode(settings)?;
+        let (unicode_enabled, output_base) = cpp_fallback_print_options(settings)?;
         assert!(
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
@@ -668,14 +773,19 @@ impl Calculator {
         let (mut output, messages) = {
             let _guard = FFI_LOCK.lock().unwrap();
             let pin = self.inner.pin_mut();
+            let mode_flags =
+                0x01 | if mode == crate::markup::MarkupMode::Latex {
+                    0x02
+                } else {
+                    0
+                } | if terse { 0x04 } else { 0 };
             let output = sys::calculate_and_print_qalc(
                 pin,
                 expr,
                 timeout_ms,
                 unicode_enabled,
-                true,
-                mode == crate::markup::MarkupMode::Latex,
-                terse,
+                output_base,
+                mode_flags,
             )
             .map_err(CalculatorError::Cxx)?;
             self.last_output_approximate = sys::qalc_last_result_is_approximate();
@@ -715,6 +825,69 @@ impl Calculator {
         })
     }
 
+    fn finish_native_output(&mut self, output: NativeOutput) -> CalculationOutput {
+        self.last_native_message_had_error = output.has_error_message;
+        self.last_output_approximate = output.approximate;
+        self.last_output_message_lines = output.message_line_count;
+        if self.session_answers.is_enabled() {
+            if let Some(answer) = output.answer {
+                if self.set_cpp_session_answer(&answer.expression) {
+                    self.session_answers.record(
+                        &mut self.native_context,
+                        answer.expression,
+                        answer.rendering,
+                    );
+                } else {
+                    self.session_answers.invalidate(&mut self.native_context);
+                }
+            } else {
+                self.session_answers.invalidate(&mut self.native_context);
+                self.clear_cpp_session_answers();
+            }
+        }
+        CalculationOutput {
+            output: output.output,
+            fallback_state: FallbackState::Native,
+        }
+    }
+
+    fn finish_native_string(&mut self, output: String) -> CalculationOutput {
+        if self.session_answers.is_enabled() {
+            self.session_answers.invalidate(&mut self.native_context);
+            self.clear_cpp_session_answers();
+        }
+        CalculationOutput {
+            output,
+            fallback_state: FallbackState::Native,
+        }
+    }
+
+    fn set_cpp_session_answer(&mut self, answer: &crate::ast::Expression) -> bool {
+        let Some(expression) =
+            crate::text::format_result_with_numbers(answer, &crate::number::Number::to_string)
+        else {
+            self.clear_cpp_session_answers();
+            return false;
+        };
+        if self.inner.is_null() {
+            return false;
+        }
+        let _guard = FFI_LOCK.lock().unwrap();
+        let synchronized = sys::qalc_set_session_answer(self.inner.pin_mut(), &expression);
+        if !synchronized {
+            sys::qalc_clear_session_answers(self.inner.pin_mut());
+        }
+        synchronized
+    }
+
+    fn clear_cpp_session_answers(&mut self) {
+        if self.inner.is_null() {
+            return;
+        }
+        let _guard = FFI_LOCK.lock().unwrap();
+        sys::qalc_clear_session_answers(self.inner.pin_mut());
+    }
+
     fn calculate_with_profile(
         &mut self,
         profile: PrintProfile,
@@ -739,91 +912,76 @@ impl Calculator {
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
         );
+        let fallback_disabled = fallback_disabled_by_env();
+
+        if self.session_answers.is_enabled()
+            && (fallback_disabled || self.session_answers.has_native_answer())
+        {
+            if let Some(output) = native_session_context_output(
+                profile,
+                expr,
+                settings,
+                &mut self.native_context,
+                fallback_disabled,
+            ) {
+                return Ok(self.finish_native_output(output));
+            }
+        }
 
         // CLI/session settings are implemented by the native scaffold. Try that
         // evidence-backed path even when the C++ fallback is available so normal
         // CLI invocations do not reject supported settings before evaluation.
         if !settings.is_empty() {
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
-                self.last_native_message_had_error = output.has_error_message;
-                self.last_output_approximate = output.approximate;
-                self.last_output_message_lines = output.message_line_count;
-                return Ok(CalculationOutput {
-                    output: output.output,
-                    fallback_state: FallbackState::Native,
-                });
+                return Ok(self.finish_native_output(output));
             }
         }
 
-        if fallback_disabled_by_env() {
+        if fallback_disabled {
             if let Some(output) =
                 native_markup_conversion_output(expr, settings, &mut self.native_context)?
             {
-                return Ok(CalculationOutput {
-                    output,
-                    fallback_state: FallbackState::Native,
-                });
+                return Ok(self.finish_native_string(output));
             }
             if let Some(output) = native_currency_conversion_output(profile, expr, settings)? {
-                return Ok(CalculationOutput {
-                    output,
-                    fallback_state: FallbackState::Native,
-                });
+                return Ok(self.finish_native_output(output));
             }
             if settings.is_empty() {
                 if let Some(output) = native_data_output(profile, expr)? {
-                    return Ok(CalculationOutput {
-                        output,
-                        fallback_state: FallbackState::Native,
-                    });
+                    return Ok(self.finish_native_string(output));
                 }
                 if let Some(output) = native_statistics_output(profile, expr)? {
-                    return Ok(CalculationOutput {
-                        output,
-                        fallback_state: FallbackState::Native,
-                    });
+                    return Ok(self.finish_native_string(output));
                 }
                 if let Some(output) =
                     native_session_output(profile, expr, &mut self.native_context)?
                 {
-                    return Ok(CalculationOutput {
-                        output,
-                        fallback_state: FallbackState::Native,
-                    });
+                    return Ok(self.finish_native_string(output));
                 }
                 if let Some(output) = native_datetime_output(profile, expr)? {
-                    return Ok(CalculationOutput {
-                        output,
-                        fallback_state: FallbackState::Native,
-                    });
+                    return Ok(self.finish_native_output(output));
                 }
                 if let Some(output) = native_unit_conversion_output(profile, expr, settings)? {
-                    return Ok(CalculationOutput {
-                        output,
-                        fallback_state: FallbackState::Native,
-                    });
+                    return Ok(self.finish_native_output(output));
                 }
             }
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
-                self.last_native_message_had_error = output.has_error_message;
-                self.last_output_approximate = output.approximate;
-                self.last_output_message_lines = output.message_line_count;
-                return Ok(CalculationOutput {
-                    output: output.output,
-                    fallback_state: FallbackState::Native,
-                });
+                return Ok(self.finish_native_output(output));
             }
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        let unicode_enabled = cpp_fallback_unicode(settings)?;
+        let (unicode_enabled, output_base) = cpp_fallback_print_options(settings)?;
 
-        let output = {
+        let capture_result = self.session_answers.is_enabled();
+        let (output, answer_rendering) = {
             let _guard = FFI_LOCK.lock().unwrap();
             let pin = self.inner.pin_mut();
             match profile {
                 PrintProfile::Api => {
-                    sys::calculate_and_print(pin, expr, timeout_ms).map_err(CalculatorError::Cxx)?
+                    let output = sys::calculate_and_print(pin, expr, timeout_ms)
+                        .map_err(CalculatorError::Cxx)?;
+                    (output.clone(), output)
                 }
                 PrintProfile::Qalc => {
                     let mut output = sys::calculate_and_print_qalc(
@@ -831,14 +989,14 @@ impl Calculator {
                         expr,
                         timeout_ms,
                         unicode_enabled,
-                        false,
-                        false,
-                        false,
+                        output_base,
+                        if capture_result { 0x08 } else { 0 },
                     )
                     .map_err(CalculatorError::Cxx)?;
                     self.last_output_approximate = sys::qalc_last_result_is_approximate();
                     self.last_output_message_lines = sys::qalc_last_message_line_count();
                     self.last_native_message_had_error = sys::qalc_last_message_had_error();
+                    let answer_rendering = output.clone();
                     let messages = sys::qalc_last_messages();
                     if include_cpp_messages && !messages.is_empty() {
                         output = if output.is_empty() {
@@ -847,10 +1005,15 @@ impl Calculator {
                             format!("{messages}\n{output}")
                         };
                     }
-                    output
+                    (output, answer_rendering)
                 }
             }
         };
+
+        if self.session_answers.is_enabled() {
+            self.session_answers
+                .record_cpp(&mut self.native_context, answer_rendering);
+        }
 
         Ok(CalculationOutput {
             output,
@@ -863,12 +1026,11 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn cpp_fallback_unicode(settings: &[&str]) -> Result<bool, CalculatorError> {
-    if settings.is_empty() {
-        return Ok(true);
-    }
-    if let Some(unicode) = crate::session::NativeSessionSettings::unicode_only_from_raw(settings) {
-        return Ok(unicode);
+fn cpp_fallback_print_options(settings: &[&str]) -> Result<(bool, i32), CalculatorError> {
+    if let Some((unicode, output_base)) =
+        crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
+    {
+        return Ok((unicode, output_base as i32));
     }
     Err(CalculatorError::UnsupportedSessionSettings(
         settings
@@ -1246,41 +1408,45 @@ fn evaluate_general_expression_natively(
     parsed: &crate::ast::Expression,
     context: &mut crate::context::CalculatorContext,
     precision_digits: usize,
-) -> Option<String> {
+) -> Option<SessionAnswer> {
     let evaluated = crate::eval::evaluate_ast(parsed, context).ok()?;
-    match evaluated {
+    let rendering = match &evaluated {
         crate::ast::Expression::Number(num) => {
             let output = num.to_string_with_options(
                 precision_digits,
                 context.print_options.number_fraction_format,
                 context.evaluation_options.approximation,
             );
-            Some(match profile {
+            match profile {
                 PrintProfile::Api => output,
                 PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-            })
+            }
         }
         crate::ast::Expression::Symbolic(sym) => {
             let name = qalc_symbolic_conversion_output(profile, parsed, sym.name());
-            Some(match profile {
+            match profile {
                 PrintProfile::Api => name,
                 PrintProfile::Qalc => name.replace('-', "\u{2212}"),
-            })
+            }
         }
         other => {
-            let output = crate::text::format_result_with_numbers(&other, &|num| {
+            let output = crate::text::format_result_with_numbers(other, &|num| {
                 num.to_string_with_options(
                     precision_digits,
                     context.print_options.number_fraction_format,
                     context.evaluation_options.approximation,
                 )
             })?;
-            Some(match profile {
+            match profile {
                 PrintProfile::Api => output,
                 PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-            })
+            }
         }
-    }
+    };
+    Some(SessionAnswer {
+        expression: evaluated,
+        rendering,
+    })
 }
 
 fn qalc_symbolic_conversion_output(
@@ -1359,24 +1525,65 @@ fn native_session_output(
     }))
 }
 
+fn native_session_context_output(
+    profile: PrintProfile,
+    expr: &str,
+    settings: &[&str],
+    context: &mut crate::context::CalculatorContext,
+    allow_assignment: bool,
+) -> Option<NativeOutput> {
+    let parsed = crate::parser::operators::parse_expression(expr).ok()?;
+    let is_assignment = matches!(&parsed, crate::ast::Expression::Assignment { .. });
+    if is_assignment && !allow_assignment {
+        return None;
+    }
+    let uses_session_variable = expression_contains(&parsed, &|node| match node {
+        crate::ast::Expression::Symbolic(symbol) => context.variables.contains_key(symbol.name()),
+        crate::ast::Expression::Variable(variable) => context.variables.contains_key(variable.id()),
+        _ => false,
+    });
+    if !is_assignment && !uses_session_variable {
+        return None;
+    }
+
+    crate::session::apply_raw_settings_to_context(context, settings)?;
+    context.clear_messages();
+    let answer = context.parse_and_evaluate_expression(expr).ok()?;
+    let session_settings = crate::session::NativeSessionSettings::from_raw(settings)?;
+    let answer_profile = match profile {
+        PrintProfile::Api => crate::session::AnswerFormatProfile::Api,
+        PrintProfile::Qalc => crate::session::AnswerFormatProfile::Qalc,
+    };
+    let (rendering, approximate) =
+        crate::session::format_answer(answer_profile, &answer, session_settings)?;
+    let mut output = native_output_with_messages(profile, rendering.clone(), context)
+        .with_answer(answer, rendering);
+    output.approximate = approximate;
+    Some(output)
+}
+
 fn native_datetime_output(
     _profile: PrintProfile,
     expr: &str,
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     let Some(output) =
         crate::datetime::native_output(expr).map_err(CalculatorError::NativeEvaluation)?
     else {
         return Ok(None);
     };
-
-    Ok(Some(output))
+    let answer = crate::datetime::native_answer(expr).map_err(CalculatorError::NativeEvaluation)?;
+    let native = match answer {
+        Some(answer) => NativeOutput::plain(output.clone()).with_answer(answer, output),
+        None => NativeOutput::plain(output),
+    };
+    Ok(Some(native))
 }
 
 fn native_currency_conversion_output(
     profile: PrintProfile,
     expr: &str,
     settings: &[&str],
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     if !settings.is_empty() {
         return Ok(None);
     }
@@ -1409,36 +1616,58 @@ fn native_currency_conversion_output(
         format!("{formatted_num} {tgt}")
     };
 
-    Ok(Some(formatted))
+    let approximate = src != tgt;
+    let target = crate::ast::Expression::Unit {
+        unit: crate::ast::UnitRef::new(tgt),
+        prefix: None,
+        plural: false,
+    };
+    let answer = crate::ast::Expression::Multiplication(crate::ast::NaryChildren::from_two(
+        crate::ast::Expression::Number(converted),
+        target,
+        Vec::new(),
+    ));
+    let mut output = NativeOutput::plain(formatted.clone()).with_answer(answer, formatted);
+    output.approximate = approximate;
+    Ok(Some(output))
 }
 
 fn native_unit_conversion_output(
     profile: PrintProfile,
     expr: &str,
     settings: &[&str],
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     if !settings.is_empty() {
         return Ok(None);
     }
 
-    let Some(output) =
-        crate::unit_conversion::native_output(expr).map_err(CalculatorError::NativeEvaluation)?
+    let Some(output) = crate::unit_conversion::native_output_with_answer(expr)
+        .map_err(CalculatorError::NativeEvaluation)?
     else {
         return Ok(None);
     };
-
-    Ok(Some(match profile {
-        PrintProfile::Api => output,
-        PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-    }))
+    let rendering = match profile {
+        PrintProfile::Api => output.output,
+        PrintProfile::Qalc => output.output.replace('-', "\u{2212}"),
+    };
+    Ok(Some(
+        NativeOutput::plain(rendering.clone()).with_answer(output.answer, rendering),
+    ))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeOutput {
     output: String,
     has_error_message: bool,
     approximate: bool,
     message_line_count: usize,
+    answer: Option<SessionAnswer>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SessionAnswer {
+    expression: crate::ast::Expression,
+    rendering: String,
 }
 
 impl NativeOutput {
@@ -1448,7 +1677,16 @@ impl NativeOutput {
             has_error_message: false,
             approximate: false,
             message_line_count: 0,
+            answer: None,
         }
+    }
+
+    fn with_answer(mut self, expression: crate::ast::Expression, rendering: String) -> Self {
+        self.answer = Some(SessionAnswer {
+            expression,
+            rendering,
+        });
+        self
     }
 }
 
@@ -1470,6 +1708,7 @@ fn native_output_with_messages(
             has_error_message,
             approximate: false,
             message_line_count: 0,
+            answer: None,
         };
     }
 
@@ -1480,6 +1719,7 @@ fn native_output_with_messages(
             has_error_message,
             approximate: false,
             message_line_count: 0,
+            answer: None,
         };
     }
 
@@ -1490,7 +1730,17 @@ fn native_output_with_messages(
         has_error_message,
         approximate: false,
         message_line_count,
+        answer: None,
     }
+}
+
+fn native_output_with_answer_and_messages(
+    profile: PrintProfile,
+    answer: SessionAnswer,
+    context: &mut crate::context::CalculatorContext,
+) -> NativeOutput {
+    let output = native_output_with_messages(profile, answer.rendering.clone(), context);
+    output.with_answer(answer.expression, answer.rendering)
 }
 
 fn native_scaffold_output(
@@ -1507,7 +1757,7 @@ fn native_scaffold_output(
         || (!parsed_settings.has_interval_display()
             && parsed_settings.input_base().is_some_and(|base| base != 10))
     {
-        return crate::numberbase::native_output(expr, parsed_settings).map(NativeOutput::plain);
+        return native_numberbase_output_with_answer(expr, parsed_settings);
     }
 
     if let Some(output) = crate::matrix::promoted_top_level_list_literal_output(expr) {
@@ -1523,13 +1773,17 @@ fn native_scaffold_output(
     if let Some(collection) = crate::matrix::parse_collection_literal(expr) {
         let mut context = crate::context::CalculatorContext::default();
         crate::session::apply_raw_settings_to_context(&mut context, settings)?;
-        if let Some(output) = evaluate_general_expression_natively(
+        if let Some(answer) = evaluate_general_expression_natively(
             profile,
             &collection,
             &mut context,
             parsed_settings.precision_digits(),
         ) {
-            return Some(native_output_with_messages(profile, output, &mut context));
+            return Some(native_output_with_answer_and_messages(
+                profile,
+                answer,
+                &mut context,
+            ));
         }
     }
 
@@ -1616,26 +1870,34 @@ fn native_scaffold_output(
     if let Some(collection_result) = crate::matrix::evaluate_collection_function(expr) {
         let mut context = crate::context::CalculatorContext::default();
         crate::session::apply_raw_settings_to_context(&mut context, settings)?;
-        if let Some(output) = evaluate_general_expression_natively(
+        if let Some(answer) = evaluate_general_expression_natively(
             profile,
             &collection_result,
             &mut context,
             parsed_settings.precision_digits(),
         ) {
-            return Some(native_output_with_messages(profile, output, &mut context));
+            return Some(native_output_with_answer_and_messages(
+                profile,
+                answer,
+                &mut context,
+            ));
         }
     }
 
     if let Some(collection_result) = crate::matrix::evaluate_collection_arithmetic(expr) {
         let mut context = crate::context::CalculatorContext::default();
         crate::session::apply_raw_settings_to_context(&mut context, settings)?;
-        if let Some(output) = evaluate_general_expression_natively(
+        if let Some(answer) = evaluate_general_expression_natively(
             profile,
             &collection_result,
             &mut context,
             parsed_settings.precision_digits(),
         ) {
-            return Some(native_output_with_messages(profile, output, &mut context));
+            return Some(native_output_with_answer_and_messages(
+                profile,
+                answer,
+                &mut context,
+            ));
         }
     }
 
@@ -1651,20 +1913,24 @@ fn native_scaffold_output(
             // respects user configuration (precision, base, etc.).
             let mut context = crate::context::CalculatorContext::default();
             crate::session::apply_raw_settings_to_context(&mut context, settings)?;
-            if let Some(output) = evaluate_general_expression_natively(
+            if let Some(answer) = evaluate_general_expression_natively(
                 profile,
                 ast,
                 &mut context,
                 parsed_settings.precision_digits(),
             ) {
-                return Some(native_output_with_messages(profile, output, &mut context));
+                return Some(native_output_with_answer_and_messages(
+                    profile,
+                    answer,
+                    &mut context,
+                ));
             }
         }
     }
 
     if !parsed_settings.has_interval_display() {
-        if let Some(output) = crate::numberbase::native_output(expr, parsed_settings) {
-            return Some(NativeOutput::plain(output));
+        if let Some(output) = native_numberbase_output_with_answer(expr, parsed_settings) {
+            return Some(output);
         }
         if parsed_settings
             .output_base
@@ -1764,16 +2030,21 @@ fn native_scaffold_output(
             };
             let approximate = parsed_settings.number_fraction_format().is_none()
                 && num.qalc_relation_is_approximate();
+            let rendering = match profile {
+                PrintProfile::Api => output,
+                PrintProfile::Qalc
+                    if parsed_settings.has_unicode_setting() && !parsed_settings.unicode() =>
+                {
+                    output
+                }
+                PrintProfile::Qalc => output.replace('-', "−"),
+            };
             Some(NativeOutput {
-                output: match profile {
-                    PrintProfile::Api => output,
-                    PrintProfile::Qalc
-                        if parsed_settings.has_unicode_setting() && !parsed_settings.unicode() =>
-                    {
-                        output
-                    }
-                    PrintProfile::Qalc => output.replace('-', "−"),
-                },
+                output: rendering.clone(),
+                answer: Some(SessionAnswer {
+                    expression: crate::ast::Expression::Number(num),
+                    rendering,
+                }),
                 has_error_message: false,
                 approximate,
                 message_line_count: 0,
@@ -1781,6 +2052,21 @@ fn native_scaffold_output(
         }
         _ => None,
     }
+}
+
+fn native_numberbase_output_with_answer(
+    expr: &str,
+    settings: crate::session::NativeSessionSettings,
+) -> Option<NativeOutput> {
+    let rendering = crate::numberbase::native_output(expr, settings)?;
+    let answer = matches!(settings.input_base(), None | Some(10))
+        .then(|| crate::number::evaluate_expr(expr).ok())
+        .flatten()
+        .map(crate::ast::Expression::Number);
+    Some(match answer {
+        Some(answer) => NativeOutput::plain(rendering.clone()).with_answer(answer, rendering),
+        None => NativeOutput::plain(rendering),
+    })
 }
 
 fn native_interval_set_evidence(
@@ -2089,6 +2375,7 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("1 / -infinity", NativeNumericEvidence::DefaultOnly),
     ("0", NativeNumericEvidence::DefaultOnly),
     ("1", NativeNumericEvidence::PrintOptions),
+    ("2", NativeNumericEvidence::PrintOptions),
     ("-0", NativeNumericEvidence::DefaultOnly),
     ("123456789", NativeNumericEvidence::DefaultOnly),
     ("-123", NativeNumericEvidence::DefaultOnly),
@@ -2139,7 +2426,8 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("5--2", NativeNumericEvidence::DefaultOnly),
     ("5---2", NativeNumericEvidence::DefaultOnly),
     ("-5-2", NativeNumericEvidence::DefaultOnly),
-    ("2*3", NativeNumericEvidence::DefaultOnly),
+    ("2*3", NativeNumericEvidence::PrintOptions),
+    ("6", NativeNumericEvidence::PrintOptions),
     ("6/2", NativeNumericEvidence::DefaultOnly),
     ("1/2", NativeNumericEvidence::DefaultOnly),
     ("i", NativeNumericEvidence::DefaultOnly),

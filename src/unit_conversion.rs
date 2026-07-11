@@ -9,6 +9,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NativeUnitOutput {
+    pub(crate) output: String,
+    pub(crate) answer: Expression,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct UnitProduct {
     factor: Number,
     dimensions: BTreeMap<String, i32>,
@@ -148,8 +154,8 @@ impl Quantity {
     }
 }
 
-/// Evaluates a qalc expression with the native unit conversion slice.
-pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
+/// Evaluates a qalc expression and retains its structured quantity result.
+pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitOutput>, String> {
     let parsed = match parse_expression(expr) {
         Ok(parsed) => parsed,
         Err(_) => return Ok(None),
@@ -179,7 +185,10 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
                     dimensions: units.dimensions.clone(),
                 };
             }
-            Ok(Some(format_conversion(&source, target, &catalog)?))
+            Ok(Some(NativeUnitOutput {
+                output: format_conversion(&source, target, &catalog)?,
+                answer: evaluated_expr,
+            }))
         }
         other => {
             let evaluated = crate::eval::evaluate_ast(&other, &mut context)?;
@@ -190,7 +199,12 @@ pub(crate) fn native_output(expr: &str) -> Result<Option<String>, String> {
             if quantity.units.is_unitless() {
                 return Ok(None);
             }
-            Ok(format_automatic_quantity(&quantity, &catalog))
+            Ok(
+                format_automatic_quantity(&quantity, &catalog).map(|output| NativeUnitOutput {
+                    output,
+                    answer: evaluated,
+                }),
+            )
         }
     }
 }

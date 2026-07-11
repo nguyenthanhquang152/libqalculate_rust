@@ -1,0 +1,502 @@
+use assert_cmd::Command;
+use predicates::prelude::*;
+use std::time::Duration;
+use tempfile::{tempdir, TempDir};
+
+struct IsolatedSession {
+    _home: TempDir,
+    state: TempDir,
+    _config: TempDir,
+    command: Command,
+}
+
+fn isolated_session() -> IsolatedSession {
+    let home = tempdir().expect("temporary home");
+    let state = tempdir().expect("temporary state directory");
+    let config = tempdir().expect("temporary config directory");
+    let config_dir = config.path().join("qalculate");
+    std::fs::create_dir_all(&config_dir).expect("configuration directory");
+    std::fs::write(config_dir.join("qalc.cfg"), "").expect("seeded preferences");
+
+    let mut command = Command::cargo_bin("qalc-rs").expect("binary should build");
+    command
+        .env_remove("QALCULATE_REPORT_FALLBACK")
+        .env("HOME", home.path())
+        .env("XDG_STATE_HOME", state.path())
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data");
+
+    IsolatedSession {
+        _home: home,
+        state,
+        _config: config,
+        command,
+    }
+}
+
+#[test]
+fn no_arguments_start_an_interactive_session_and_quit_cleanly() {
+    let mut session = isolated_session();
+    session
+        .command
+        .write_stdin("quit\n")
+        .assert()
+        .success()
+        .stdout("> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn fresh_profile_uses_the_line_repl_without_autocalc_onboarding() {
+    let mut session = isolated_session();
+    std::fs::remove_file(session._config.path().join("qalculate/qalc.cfg"))
+        .expect("remove seeded preferences");
+    session
+        .command
+        .write_stdin("quit\n")
+        .assert()
+        .success()
+        .stdout("> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn eof_at_an_empty_prompt_exits_successfully_without_a_newline() {
+    let mut session = isolated_session();
+    session.command.assert().success().stdout("> ").stderr("");
+}
+
+#[test]
+fn interactive_flag_evaluates_an_initial_expression_before_prompting() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--", "1+1"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("exit\n")
+        .assert()
+        .success()
+        .stdout("\n  1 + 1 = 2\n\n> exit\n")
+        .stderr("");
+}
+
+#[test]
+fn interactive_session_preserves_native_answer_state() {
+    let mut session = isolated_session();
+    let output = session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .write_stdin("1+1\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout("> 1+1\n\n  1 + 1 = 2\n\n> ans+1\n\n  ans + 1 = 3\n\n> quit\n")
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).expect("metadata should be UTF-8");
+    assert_eq!(stderr.matches("fallback=native").count(), 2);
+    assert!(!stderr.contains("cpp-fallback"));
+}
+
+#[test]
+fn cpp_fallback_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("5+5\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout("> 5+5\n\n  5 + 5 = 10\n\n> ans+1\n\n  ans + 1 = 11\n\n> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn cpp_fallback_records_the_actual_complex_and_symbolic_results() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("sqrt(-1)\nans+1\ndiff(x^2,x)\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("ans + 1 = 1 + i")
+                .and(predicate::str::contains("ans + 1 = 2x + 1")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn cpp_fallback_preserves_structured_assignments_and_vectors() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("z:=sqrt(-1)\nz+1\n[1,2]\nx:=ans\nx\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("z + 1 = 1 + i").and(predicate::str::contains("x = [1  2]")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_to_cpp_transition_preserves_exact_answer_history() {
+    let mut session = isolated_session();
+    let output = session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .write_stdin("set unicode off\n1/3\ndiff(x^2,x)\nans2*3\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans2 * 3 = 1"))
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).expect("metadata should be UTF-8");
+    assert_eq!(stderr.matches("fallback=native").count(), 1);
+    assert_eq!(stderr.matches("fallback=cpp-fallback-enabled").count(), 2);
+}
+
+#[test]
+fn assignments_update_the_session_context() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("myvar:=5\nmyvar+1\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("myvar + 1 = 6").and(predicate::str::contains("ans + 1 = 7")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn interactive_answer_history_rotates_without_cpp_fallback() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1\n2\nans2\nquit\n")
+        .assert()
+        .success()
+        .stdout("> 1\n\n  1 = 1\n\n> 2\n\n  2 = 2\n\n> ans2\n\n  ans2 = 1\n\n> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn interactive_answer_retains_exact_value_behind_approximate_display() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1/3\nans*3\nquit\n")
+        .assert()
+        .success()
+        .stdout("> 1/3\n\n  1 / 3 ≈ 0.3333333333\n\n> ans*3\n\n  ans × 3 = 1\n\n> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn fallback_disabled_native_results_remain_available_as_answers() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin(
+            "1 m to cm\nans\nans/2\n9.8 m/s^2\nans\natom(\"H\";\"weight\")\nans\n1 USD to EUR\nans\nans*2\ntimestamp(\"1970-01-01\")\nans+1\nquit\n",
+        )
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("ans = 1 m")
+                .and(predicate::str::contains("ans / 2 = m / 2"))
+                .and(predicate::str::contains("ans = 9.8 m / s^2"))
+                .and(predicate::str::contains("ans = 1.008 u"))
+                .and(predicate::str::contains("ans ≈ €0.8585164835"))
+                .and(predicate::str::contains("ans × 2 ≈ €1.717032967"))
+                .and(predicate::str::contains("ans + 1 = 1")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn fallback_disabled_datetime_results_remain_typed_answers() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin(
+            "addDays(\"2024-01-01\";7)\nans\n\"2024-01-10\" - \"2024-01-01\"\nans\nstamptodate(0) to UTC\nans\nquit\n",
+        )
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("ans = \"2024-01-08\"")
+                .and(predicate::str::contains("ans = 9 d"))
+                .and(predicate::str::contains(
+                    "ans = \"1970-01-01T00:00:00Z\"",
+                )),
+        )
+        .stderr("");
+}
+
+#[test]
+fn interactive_settings_recalculate_and_persist() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin(
+            "set base 16\n10\nset base 10\n10\n/set unicode off\n2*3\n/set unicode on\n2*3\nquit\n",
+        )
+        .assert()
+        .success()
+        .stdout(
+            "> set base 16\n> 10\n\n  10 = 0xA\n\n> set base 10\n\n  0xA = 10\n\n> 10\n\n  10 = 10\n\n> /set unicode off\n\n  10 = 10\n\n> 2*3\n\n  2 * 3 = 6\n\n> /set unicode on\n\n  6 = 6\n\n> 2*3\n\n  2 × 3 = 6\n\n> quit\n",
+        )
+        .stderr("");
+}
+
+#[test]
+fn unsupported_setting_is_rejected_without_poisoning_later_evaluations() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("set decimal comma 1\n1+1\nquit\n")
+        .assert()
+        .success()
+        .stdout("> set decimal comma 1\n> 1+1\n\n  1 + 1 = 2\n\n> quit\n")
+        .stderr(predicate::str::contains(
+            "session settings are not supported by the C++ FFI fallback path: decimal comma 1",
+        ));
+}
+
+#[test]
+fn cpp_answer_is_reformatted_from_the_retained_value() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("1+1\nsin(1)\nset base 16\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("sin(1) = 0.8414709848")
+                .and(predicate::str::contains("0.8414709848 ≈ 0x0.D76AA4"))
+                .and(predicate::str::contains("ans + 1 ≈ 0x1.D76AA48"))
+                .and(predicate::str::contains("2 = 0x2").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn cpp_answer_reformat_reports_the_cpp_fallback_state() {
+    let mut session = isolated_session();
+    let output = session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .write_stdin("sin(1)\nset base 16\nquit\n")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).expect("metadata should be UTF-8");
+    assert_eq!(stderr.matches("fallback=cpp-fallback-enabled").count(), 2);
+    assert!(!stderr.contains("fallback=native"));
+}
+
+#[test]
+fn calendar_rendering_retains_the_underlying_date_answer() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("date(2024;1;1) to calendars\nans\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Gregorian:")
+                .and(predicate::str::contains("ans = \"2024-01-01\"")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn session_answer_respects_the_active_output_base() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("set base 16\n10\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout("> set base 16\n> 10\n\n  10 = 0xA\n\n> ans+1\n\n  ans + 1 = 0xB\n\n> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn interactive_accepts_separate_input_and_output_bases() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("set base 10 16\n10\nquit\n")
+        .assert()
+        .success()
+        .stdout("> set base 10 16\n> 10\n\n  10 = 0xA\n\n> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn history_uses_xdg_state_and_clear_history_truncates_it() {
+    let mut first = isolated_session();
+    let history_path = first.state.path().join("qalculate/qalc.history");
+    first
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1+1\nquit\n")
+        .assert()
+        .success();
+
+    let history = std::fs::read_to_string(&history_path).expect("history should be persisted");
+    assert_eq!(history, "1+1\n");
+
+    let mut clear = isolated_session();
+    clear.command.env("XDG_STATE_HOME", first.state.path());
+    clear
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("clear history\nquit\n")
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(history_path).expect("history file should remain readable"),
+        ""
+    );
+}
+
+#[test]
+fn unreadable_history_path_disables_persistence_without_aborting() {
+    let mut session = isolated_session();
+    let state_file = tempfile::NamedTempFile::new().expect("state path sentinel");
+    session.command.env("XDG_STATE_HOME", state_file.path());
+    session
+        .command
+        .write_stdin("quit\n")
+        .assert()
+        .success()
+        .stdout("> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn interactive_help_list_and_info_commands_use_typed_catalogs() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("HeLp history\nLiSt functions sin\nInFo sin\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Lists the expression history.")
+                .and(predicate::str::contains("sin (Sine)"))
+                .and(predicate::str::contains("Function: Sine"))
+                .and(predicate::str::contains("sin(Angle)")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn stateful_pipe_transcript_matches_the_upstream_oracle() {
+    let upstream = std::path::Path::new("../libqalculate/src/qalc");
+    if !upstream.exists() {
+        return;
+    }
+    let input = "1+1\nans+1\nset base 16\n15\nset base 10\n15\n/set unicode off\n2*3\n/set unicode on\n2*3\nquit\n";
+
+    let mut rust = isolated_session();
+    let rust_output = rust
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let upstream_home = tempdir().expect("upstream home");
+    let upstream_state = tempdir().expect("upstream state");
+    let upstream_config = tempdir().expect("upstream config");
+    let upstream_config_dir = upstream_config.path().join("qalculate");
+    std::fs::create_dir_all(&upstream_config_dir).expect("upstream config directory");
+    std::fs::write(
+        upstream_config_dir.join("qalc.cfg"),
+        "colorize=0\ncalculate_as_you_type=0\n",
+    )
+    .expect("upstream preferences");
+    let mut oracle = Command::new(upstream);
+    let oracle_output = oracle
+        .args(["-i", "-c0"])
+        .env("HOME", upstream_home.path())
+        .env("XDG_STATE_HOME", upstream_state.path())
+        .env("XDG_CONFIG_HOME", upstream_config.path())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data")
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    assert_eq!(rust_output.stdout, oracle_output.stdout);
+    assert_eq!(rust_output.stderr, oracle_output.stderr);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pty_smoke_covers_prompt_quit_and_answer_state() {
+    let session = isolated_session();
+    let binary = assert_cmd::cargo::cargo_bin!("qalc-rs");
+    let command_line = format!("'{}' -i -c0", binary.display());
+    let mut cmd = Command::new("script");
+    cmd.args(["-qfec", &command_line, "/dev/null"])
+        .env("HOME", session._home.path())
+        .env("XDG_STATE_HOME", session.state.path())
+        .env("XDG_CONFIG_HOME", session._config.path())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data")
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .timeout(Duration::from_secs(10))
+        .write_stdin("1+1\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("1 + 1 = 2")
+                .and(predicate::str::contains("ans + 1 = 3"))
+                .and(predicate::str::ends_with("> ")),
+        );
+}

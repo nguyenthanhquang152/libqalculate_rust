@@ -273,62 +273,24 @@ impl CalculatorContext {
         &mut self,
         input: &str,
     ) -> Result<crate::number::Number, String> {
-        // 1. Parse stage
-        let expr = match crate::parser::operators::parse_expression(input) {
-            Ok(expr) => expr,
-            Err(err) => {
-                let msg = crate::messages::CalculatorMessage::new(
-                    err.to_string(),
-                    crate::messages::MessageType::Error,
-                    crate::messages::MessageCategory::Parsing,
-                    crate::messages::MessageStage::Parsing,
-                );
-                self.messages.push(msg);
-                return Err(err.to_string());
-            }
-        };
-
-        // 2. Evaluation stage
-        let res = crate::eval::evaluate_ast(&expr, self);
-
-        match res {
-            Ok(expr_res) => {
-                let simplified = match &expr_res {
-                    crate::ast::Expression::Number(_) => expr_res,
-                    _ => crate::simplify::simplify_ast(&expr_res, self),
-                };
-                match simplified {
-                    crate::ast::Expression::Number(num) => {
-                        if num.is_nan() {
-                            let has_calc_warning =
-                                self.messages.get_messages().iter().any(|m| {
-                                    m.stage() == crate::messages::MessageStage::Calculation
-                                });
-                            if !has_calc_warning {
-                                let msg = crate::messages::CalculatorMessage::new(
-                                    "Calculation resulted in NaN".to_string(),
-                                    crate::messages::MessageType::Warning,
-                                    crate::messages::MessageCategory::None,
-                                    crate::messages::MessageStage::Calculation,
-                                );
-                                self.messages.push(msg);
-                            }
-                        }
-                        Ok(num)
+        match self.parse_and_evaluate_expression(input)? {
+            crate::ast::Expression::Number(num) => {
+                if num.is_nan() {
+                    let has_calc_warning = self.messages.get_messages().iter().any(|message| {
+                        message.stage() == crate::messages::MessageStage::Calculation
+                    });
+                    if !has_calc_warning {
+                        self.messages.push(crate::messages::CalculatorMessage::new(
+                            "Calculation resulted in NaN".to_string(),
+                            crate::messages::MessageType::Warning,
+                            crate::messages::MessageCategory::None,
+                            crate::messages::MessageStage::Calculation,
+                        ));
                     }
-                    other => Err(format!("Symbolic result: {:?}", other)),
                 }
+                Ok(num)
             }
-            Err(err_str) => {
-                let msg = crate::messages::CalculatorMessage::new(
-                    err_str.clone(),
-                    crate::messages::MessageType::Error,
-                    crate::messages::MessageCategory::None,
-                    crate::messages::MessageStage::Calculation,
-                );
-                self.messages.push(msg);
-                Err(err_str)
-            }
+            other => Err(format!("Symbolic result: {:?}", other)),
         }
     }
 
@@ -336,7 +298,21 @@ impl CalculatorContext {
     ///
     /// This handles both numeric and symbolic results (e.g., from base conversions).
     pub fn parse_and_evaluate_to_string(&mut self, input: &str) -> Result<String, String> {
-        // 1. Parse stage
+        let simplified = self.parse_and_evaluate_expression(input)?;
+        if let Some(output) =
+            crate::text::format_result_with_numbers(&simplified, &|num| num.to_string())
+        {
+            Ok(output)
+        } else {
+            Err(format!("Unevaluated expression: {:?}", simplified))
+        }
+    }
+
+    /// Parse and evaluate an expression while retaining its structured result.
+    pub(crate) fn parse_and_evaluate_expression(
+        &mut self,
+        input: &str,
+    ) -> Result<crate::ast::Expression, String> {
         let expr = match crate::parser::operators::parse_expression(input) {
             Ok(expr) => expr,
             Err(err) => {
@@ -351,25 +327,15 @@ impl CalculatorContext {
             }
         };
 
-        // 2. Evaluation stage
         let res = crate::eval::evaluate_ast(&expr, self);
 
         match res {
-            Ok(expr_res) => {
-                let simplified = match &expr_res {
-                    crate::ast::Expression::Number(_) => expr_res,
-                    crate::ast::Expression::Text(_) => expr_res,
-                    crate::ast::Expression::Symbolic(_) => expr_res,
-                    _ => crate::simplify::simplify_ast(&expr_res, self),
-                };
-                if let Some(output) =
-                    crate::text::format_result_with_numbers(&simplified, &|num| num.to_string())
-                {
-                    Ok(output)
-                } else {
-                    Err(format!("Unevaluated expression: {:?}", simplified))
-                }
-            }
+            Ok(expr_res) => Ok(match &expr_res {
+                crate::ast::Expression::Number(_) => expr_res,
+                crate::ast::Expression::Text(_) => expr_res,
+                crate::ast::Expression::Symbolic(_) => expr_res,
+                _ => crate::simplify::simplify_ast(&expr_res, self),
+            }),
             Err(err_str) => {
                 let msg = crate::messages::CalculatorMessage::new(
                     err_str.clone(),
