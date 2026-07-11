@@ -148,6 +148,15 @@ fn main() {
                         })
                     })
                 }
+                cli::repl::ReplRequest::Delete(name) => {
+                    if calculator.delete_session_variable(&name) {
+                        Ok(None)
+                    } else {
+                        Err(format!(
+                            "no user-defined variable with the name '{name}' exists"
+                        ))
+                    }
+                }
                 cli::repl::ReplRequest::ReformatLastAnswer => {
                     reformat_session_answer(invocation, &mut calculator)
                 }
@@ -363,9 +372,12 @@ fn reformat_session_answer(
     let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
     let settings = evaluation_settings(invocation, fallback_disabled);
     let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
-    let result = calc
-        .reformat_session_answer_with_settings(&setting_refs)
-        .map_err(|error| format!("calculation failed: {error}"))?;
+    let result = match invocation.output_mode {
+        cli::OutputMode::Text => calc.reformat_session_answer_with_settings(&setting_refs),
+        cli::OutputMode::Latex => calc.reformat_session_answer_latex_with_settings(&setting_refs),
+        cli::OutputMode::Html => calc.reformat_session_answer_html_with_settings(&setting_refs),
+    }
+    .map_err(|error| format!("calculation failed: {error}"))?;
     if std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1") {
         if let Some(result) = result.as_ref() {
             eprintln!("[qalc-rs-metadata] {}", result.fallback_state.marker());

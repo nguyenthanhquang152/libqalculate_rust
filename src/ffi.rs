@@ -24,6 +24,7 @@ pub(crate) mod sys {
         fn qalc_enable_session_answers(calc: Pin<&mut Calculator>) -> bool;
         fn qalc_set_session_answer(calc: Pin<&mut Calculator>, expression: &str) -> bool;
         fn qalc_clear_session_answers(calc: Pin<&mut Calculator>);
+        fn qalc_delete_session_variable(calc: Pin<&mut Calculator>, name: &str) -> bool;
         fn qalc_print_session_answer(
             calc: Pin<&mut Calculator>,
             output_base: i32,
@@ -63,6 +64,7 @@ pub(crate) mod sys {
             timeout_ms: i32,
             unicode_enabled: bool,
             output_base: i32,
+            assumption_mode: u8,
             mode_flags: u8,
         ) -> Result<String>;
 
@@ -369,6 +371,19 @@ impl Calculator {
         }
     }
 
+    /// Delete a user-defined variable from the current interactive session.
+    pub fn delete_session_variable(&mut self, name: &str) -> bool {
+        let native_removed = self.native_context.variables.remove(name).is_some();
+        if self.inner.is_null() {
+            return native_removed;
+        }
+        let cpp_removed = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            sys::qalc_delete_session_variable(self.inner.pin_mut(), name)
+        };
+        native_removed || cpp_removed
+    }
+
     /// Re-render the current typed session answer after settings change.
     ///
     /// This updates only the display of the current answer. It does not
@@ -376,6 +391,36 @@ impl Calculator {
     pub fn reformat_session_answer_with_settings(
         &mut self,
         settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        self.reformat_session_answer_with_settings_and_markup(settings, None)
+    }
+
+    /// Re-render the current typed session answer as LaTeX after settings change.
+    pub fn reformat_session_answer_latex_with_settings(
+        &mut self,
+        settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        self.reformat_session_answer_with_settings_and_markup(
+            settings,
+            Some(crate::markup::MarkupMode::Latex),
+        )
+    }
+
+    /// Re-render the current typed session answer as HTML after settings change.
+    pub fn reformat_session_answer_html_with_settings(
+        &mut self,
+        settings: &[&str],
+    ) -> Result<Option<CalculationOutput>, CalculatorError> {
+        self.reformat_session_answer_with_settings_and_markup(
+            settings,
+            Some(crate::markup::MarkupMode::Html),
+        )
+    }
+
+    fn reformat_session_answer_with_settings_and_markup(
+        &mut self,
+        settings: &[&str],
+        markup_mode: Option<crate::markup::MarkupMode>,
     ) -> Result<Option<CalculationOutput>, CalculatorError> {
         let parsed_settings = crate::session::NativeSessionSettings::from_raw(settings)
             .ok_or_else(|| {
@@ -390,7 +435,7 @@ impl Calculator {
             if self.inner.is_null() {
                 return Ok(None);
             }
-            let (unicode_enabled, output_base) =
+            let (unicode_enabled, output_base, _) =
                 crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
                     .ok_or_else(|| {
                         CalculatorError::UnsupportedSessionSettings(
@@ -413,13 +458,23 @@ impl Calculator {
             if rendering.is_empty() {
                 return Ok(None);
             }
-            let output = crate::text::format_qalc_equation(
-                &previous_rendering,
-                &rendering,
-                approximate,
-                unicode_enabled,
-                0,
-            );
+            let output = match markup_mode {
+                Some(mode) => format_cpp_markup_output(
+                    mode,
+                    &previous_rendering,
+                    &rendering,
+                    false,
+                    approximate,
+                    unicode_enabled,
+                ),
+                None => crate::text::format_qalc_equation(
+                    &previous_rendering,
+                    &rendering,
+                    approximate,
+                    unicode_enabled,
+                    0,
+                ),
+            };
             self.last_native_message_had_error = false;
             self.last_output_approximate = approximate;
             self.last_output_message_lines = 0;
@@ -433,22 +488,59 @@ impl Calculator {
         let Some((answer, previous_rendering)) = self.session_answers.current() else {
             return Ok(None);
         };
+        let answer = answer.clone();
         let previous_rendering = previous_rendering.to_string();
-        let Some((rendering, approximate)) = crate::session::format_answer(
+        let formatted = crate::session::format_answer(
             crate::session::AnswerFormatProfile::Qalc,
-            answer,
+            &answer,
             parsed_settings,
-        ) else {
-            return Ok(None);
+        );
+        let (rendering, approximate) = if let Some(formatted) = formatted {
+            formatted
+        } else {
+            if self.inner.is_null() {
+                return Ok(None);
+            }
+            let (unicode_enabled, output_base, _) =
+                crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
+                    .ok_or_else(|| {
+                        CalculatorError::UnsupportedSessionSettings(
+                            settings
+                                .iter()
+                                .map(|setting| (*setting).to_string())
+                                .collect(),
+                        )
+                    })?;
+            let _guard = FFI_LOCK.lock().unwrap();
+            let rendering = sys::qalc_print_session_answer(
+                self.inner.pin_mut(),
+                output_base as i32,
+                unicode_enabled,
+            )
+            .map_err(CalculatorError::Cxx)?;
+            if rendering.is_empty() {
+                return Ok(None);
+            }
+            (rendering, sys::qalc_last_result_is_approximate())
         };
         let unicode_enabled = !parsed_settings.has_unicode_setting() || parsed_settings.unicode();
-        let output = crate::text::format_qalc_equation(
-            &previous_rendering,
-            &rendering,
-            approximate,
-            unicode_enabled,
-            0,
-        );
+        let output = match markup_mode {
+            Some(mode) => format_cpp_markup_output(
+                mode,
+                &previous_rendering,
+                &rendering,
+                false,
+                approximate,
+                unicode_enabled,
+            ),
+            None => crate::text::format_qalc_equation(
+                &previous_rendering,
+                &rendering,
+                approximate,
+                unicode_enabled,
+                0,
+            ),
+        };
         self.last_native_message_had_error = false;
         self.last_output_approximate = approximate;
         self.last_output_message_lines = 0;
@@ -772,7 +864,7 @@ impl Calculator {
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        let (unicode_enabled, output_base) = cpp_fallback_print_options(settings)?;
+        let (unicode_enabled, output_base, assumption_mode) = cpp_fallback_print_options(settings)?;
         assert!(
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
@@ -794,6 +886,7 @@ impl Calculator {
                 timeout_ms,
                 unicode_enabled,
                 output_base,
+                assumption_mode,
                 mode_flags,
             )
             .map_err(CalculatorError::Cxx)?;
@@ -987,7 +1080,7 @@ impl Calculator {
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        let (unicode_enabled, output_base) = cpp_fallback_print_options(settings)?;
+        let (unicode_enabled, output_base, assumption_mode) = cpp_fallback_print_options(settings)?;
 
         let capture_result = self.session_answers.is_enabled();
         let (output, answer_rendering) = {
@@ -1000,13 +1093,16 @@ impl Calculator {
                     (output.clone(), output)
                 }
                 PrintProfile::Qalc => {
+                    let mode_flags = (if capture_result { 0x08 } else { 0 })
+                        | (if include_cpp_messages { 0 } else { 0x04 });
                     let mut output = sys::calculate_and_print_qalc(
                         pin,
                         expr,
                         timeout_ms,
                         unicode_enabled,
                         output_base,
-                        if capture_result { 0x08 } else { 0 },
+                        assumption_mode,
+                        mode_flags,
                     )
                     .map_err(CalculatorError::Cxx)?;
                     self.last_output_approximate = sys::qalc_last_result_is_approximate();
@@ -1042,11 +1138,11 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn cpp_fallback_print_options(settings: &[&str]) -> Result<(bool, i32), CalculatorError> {
-    if let Some((unicode, output_base)) =
+fn cpp_fallback_print_options(settings: &[&str]) -> Result<(bool, i32, u8), CalculatorError> {
+    if let Some((unicode, output_base, assumption_mode)) =
         crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
     {
-        return Ok((unicode, output_base as i32));
+        return Ok((unicode, output_base as i32, assumption_mode));
     }
     Err(CalculatorError::UnsupportedSessionSettings(
         settings
@@ -1183,6 +1279,15 @@ fn native_markup_output_for_parsed(
         .map_err(CalculatorError::NativeEvaluation)?;
     let precision_digits = parsed_settings.precision_digits();
     let formatter = |num: &crate::number::Number| {
+        if parsed_settings.programming_mode
+            || parsed_settings.output_base.is_some_and(|base| base != 10)
+        {
+            if let Some(output) =
+                crate::numberbase::native_output(&num.to_string(), parsed_settings)
+            {
+                return output;
+            }
+        }
         num.to_qalc_string_with_settings(
             precision_digits,
             parsed_settings.min_exp(),
@@ -1808,10 +1913,23 @@ fn native_scaffold_output(
         if !settings.is_empty() {
             return None;
         }
-        return Some(NativeOutput::plain(match profile {
+        let rendering = match profile {
             PrintProfile::Api => output.to_string(),
             PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-        }));
+        };
+        let vector = |values: &[i32]| {
+            crate::ast::Expression::Vector(
+                values
+                    .iter()
+                    .copied()
+                    .map(crate::number::Number::from_i32)
+                    .map(crate::ast::Expression::Number)
+                    .collect(),
+            )
+        };
+        let answer =
+            crate::ast::Expression::Vector(vec![vector(&[1, 2, 3, 4, 5, 6]), vector(&[4, 5])]);
+        return Some(NativeOutput::plain(rendering.clone()).with_answer(answer, rendering));
     }
 
     if let Some(collection) = crate::matrix::parse_collection_literal(expr) {
@@ -2008,7 +2126,10 @@ fn native_scaffold_output(
     }
 
     if let Some(output) = native_interval_set_evidence(expr, parsed_settings) {
-        return Some(NativeOutput::plain(output));
+        return Some(
+            NativeOutput::plain(output.clone())
+                .with_answer(crate::ast::Expression::Vector(Vec::new()), output),
+        );
     }
 
     let evidence = native_numeric_evidence(expr)?;

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <stdexcept>
 
 namespace {
 
@@ -237,7 +238,9 @@ public:
           comma(calculator.getComma()),
           binary_prefixes(calculator.usesBinaryPrefixes()),
           fixed_denominator(calculator.fixedDenominator()),
-          custom_output_base(calculator.customOutputBase()) {}
+          custom_output_base(calculator.customOutputBase()),
+          assumption_type(calculator.defaultAssumptions()->type()),
+          assumption_sign(calculator.defaultAssumptions()->sign()) {}
 
     ~CalculatorStateGuard() noexcept {
         restore_decimal_mode();
@@ -247,6 +250,8 @@ public:
         calc.useBinaryPrefixes(binary_prefixes);
         calc.setFixedDenominator(fixed_denominator);
         calc.setCustomOutputBase(custom_output_base);
+        calc.defaultAssumptions()->setType(assumption_type);
+        calc.defaultAssumptions()->setSign(assumption_sign);
     }
 
     CalculatorStateGuard(const CalculatorStateGuard&) = delete;
@@ -272,6 +277,8 @@ private:
     int binary_prefixes;
     long int fixed_denominator;
     Number custom_output_base;
+    AssumptionType assumption_type;
+    AssumptionSign assumption_sign;
 };
 
 class CalculatorFfiGuard {
@@ -597,6 +604,17 @@ void qalc_clear_session_answers(Calculator &calc) {
     }
 }
 
+bool qalc_delete_session_variable(Calculator &calc, rust::Str name) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        const std::string variable_name(name.data(), name.size());
+        Variable *variable = calc.getActiveVariable(variable_name);
+        return variable != nullptr && variable->isLocal() && variable->destroy();
+    } catch (...) {
+        return false;
+    }
+}
+
 rust::String qalc_print_session_answer(
     Calculator &calc,
     int32_t output_base,
@@ -704,6 +722,7 @@ rust::String calculate_and_print_qalc(
     int32_t timeout_ms,
     bool unicode_enabled,
     int32_t output_base,
+    std::uint8_t assumption_mode,
     std::uint8_t mode_flags
 ) {
     const bool markup = (mode_flags & 0x01) != 0;
@@ -720,6 +739,19 @@ rust::String calculate_and_print_qalc(
         CalculatorFfiGuard ffi_guard(calc);
         std::string expr_str(expr.data(), expr.size());
         CalculatorStateGuard state_guard(calc);
+
+        switch(assumption_mode) {
+            case 0:
+                break;
+            case 1:
+                calc.defaultAssumptions()->setSign(ASSUMPTION_SIGN_POSITIVE);
+                break;
+            case 2:
+                calc.defaultAssumptions()->setSign(ASSUMPTION_SIGN_UNKNOWN);
+                break;
+            default:
+                throw std::invalid_argument("invalid qalc assumption mode");
+        }
 
         bool is_approximate = false;
         PrintOptions po = qalc_print_options(unicode_enabled, &is_approximate);

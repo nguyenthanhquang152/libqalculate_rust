@@ -219,10 +219,29 @@ fn assume_commands_do_not_block_later_cpp_fallback_evaluation() {
     session
         .command
         .args(["-i", "-c0"])
-        .write_stdin("assume positive\nEi(3)\nquit\n")
+        .write_stdin("assume positive\nsqrt(x^2)\nassume unknown\nsqrt(x^2)\nquit\n")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Ei(3) ≈ 9.933832571"))
+        .stdout(
+            predicate::str::contains("sqrt(x²) = x")
+                .and(predicate::str::contains("sqrt(x²) = |x|")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn deleting_a_session_variable_removes_it_from_info() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("myvar:=5\ndelete myvar\ninfo myvar\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("No matching item found.")
+                .and(predicate::str::contains("Variable: myvar").not()),
+        )
         .stderr("");
 }
 
@@ -455,6 +474,85 @@ fn cpp_markup_fallback_updates_the_typed_answer_state() {
         .success()
         .stdout(predicate::str::contains("10.93383257"))
         .stderr(predicate::str::contains("fallback=cpp-fallback-enabled"));
+}
+
+#[test]
+fn native_markup_honors_output_base_settings() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("set base 16\n10\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("10 = 0xA"))
+        .stderr("");
+}
+
+#[test]
+fn answer_reformat_uses_the_active_markup_mode() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--latex"])
+        .write_stdin("sin(1)\nset base 16\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("\\approx")
+                .and(predicate::str::contains("$"))
+                .and(predicate::str::contains("0x0.D76AA4")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn interactive_text_terse_cpp_fallback_matches_result_only_mode() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "-t"])
+        .write_stdin("Ei(3)\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("  9.933832571\n")
+                .and(predicate::str::contains("  10.93383257\n"))
+                .and(predicate::str::contains("≈").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_empty_interval_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin(
+            "set interval display 2\nset ic 2\nintersect(interval(1;2), interval(3;4))\nans\nquit\n",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans = []"))
+        .stderr("");
+}
+
+#[test]
+fn native_promoted_list_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("( 1; 2; 3, 4, 5, 6 ); (4; 5)\nans\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "ans = [[1  2  3  4  5  6]  [4  5]]",
+        ))
+        .stderr("");
 }
 
 #[test]

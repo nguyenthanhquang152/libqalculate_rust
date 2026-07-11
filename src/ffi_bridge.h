@@ -11,6 +11,7 @@ std::unique_ptr<Calculator> new_calculator();
 bool qalc_enable_session_answers(Calculator &calc);
 bool qalc_set_session_answer(Calculator &calc, rust::Str expression);
 void qalc_clear_session_answers(Calculator &calc);
+bool qalc_delete_session_variable(Calculator &calc, rust::Str name);
 rust::String qalc_print_session_answer(
     Calculator &calc,
     int32_t output_base,
@@ -43,6 +44,7 @@ rust::String calculate_and_print_qalc(
     int32_t timeout_ms,
     bool unicode_enabled,
     int32_t output_base,
+    std::uint8_t assumption_mode,
     std::uint8_t mode_flags
 );
 

@@ -1,4 +1,6 @@
-use crate::parser::commands::{parse_command, ApproximationMode, SessionCommand, SetSetting};
+use crate::parser::commands::{
+    parse_command, ApproximationMode, AssumeKind, SessionCommand, SetSetting,
+};
 use std::path::PathBuf;
 
 const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
@@ -40,6 +42,7 @@ pub(crate) struct NativeSessionSettings {
     exp_display: Option<u8>,
     min_decimals: Option<i32>,
     max_decimals: Option<i32>,
+    assumption: Option<AssumeKind>,
 }
 
 impl NativeSessionSettings {
@@ -129,7 +132,9 @@ impl NativeSessionSettings {
                     }
                     _ => return None,
                 },
-                SessionCommand::Assume(_) => {}
+                SessionCommand::Assume(command) => {
+                    state.assumption = Some(command.kind);
+                }
             }
         }
         Some(state)
@@ -158,9 +163,10 @@ impl NativeSessionSettings {
     /// Parse settings that the C++ qalc printer can apply without changing
     /// evaluation semantics. Input base is accepted only when it remains
     /// decimal; all other settings fail closed.
-    pub(crate) fn cpp_print_options_from_raw(settings: &[&str]) -> Option<(bool, u32)> {
+    pub(crate) fn cpp_print_options_from_raw(settings: &[&str]) -> Option<(bool, u32, u8)> {
         let mut unicode = true;
         let mut output_base = 10;
+        let mut assumption_mode = 0;
         for setting in settings {
             let trimmed = setting.trim();
             if let Some(base) = trimmed.strip_prefix("base ") {
@@ -185,10 +191,15 @@ impl NativeSessionSettings {
                     SetSetting::InputBase(10) => {}
                     _ => return None,
                 },
-                SessionCommand::Assume(_) => {}
+                SessionCommand::Assume(command) => {
+                    assumption_mode = match command.kind {
+                        AssumeKind::Positive => 1,
+                        AssumeKind::Unknown => 2,
+                    };
+                }
             }
         }
-        Some((unicode, output_base))
+        Some((unicode, output_base, assumption_mode))
     }
 
     pub(crate) const fn precision_digits(self) -> usize {
@@ -216,6 +227,7 @@ impl NativeSessionSettings {
             && self.exp_display.is_none()
             && self.min_decimals.is_none()
             && self.max_decimals.is_none()
+            && self.assumption.is_none()
     }
 
     /// Returns true when settings can be applied to the vetted numeric
@@ -622,6 +634,7 @@ mod tests {
                 exp_display: None,
                 min_decimals: None,
                 max_decimals: None,
+                assumption: None,
             })
         );
         assert_eq!(
@@ -644,6 +657,7 @@ mod tests {
                 exp_display: None,
                 min_decimals: None,
                 max_decimals: None,
+                assumption: None,
             })
         );
         assert_eq!(
@@ -671,6 +685,7 @@ mod tests {
                 exp_display: Some(2),
                 min_decimals: Some(2),
                 max_decimals: Some(4),
+                assumption: None,
             })
         );
     }
@@ -698,15 +713,22 @@ mod tests {
     fn accepts_only_cpp_print_settings_at_the_fallback_boundary() {
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0"]),
-            Some((false, 10))
+            Some((false, 10, 0))
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0", "output base 16"]),
-            Some((false, 16))
+            Some((false, 16, 0))
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["base 10 16"]),
-            Some((true, 16))
+            Some((true, 16, 0))
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_print_options_from_raw(&[
+                "assume positive",
+                "assume unknown",
+            ]),
+            Some((true, 10, 2))
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["base 2 16"]),

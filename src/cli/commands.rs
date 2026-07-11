@@ -18,6 +18,7 @@ pub(crate) enum InteractiveCommand {
         query: Option<String>,
     },
     Info(String),
+    Delete(String),
     Unknown,
     Expression(String),
 }
@@ -93,6 +94,13 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
 
     if command_name.eq_ignore_ascii_case("info") && !command_argument.is_empty() {
         return Ok(InteractiveCommand::Info(command_argument.to_string()));
+    }
+
+    if command_name.eq_ignore_ascii_case("delete") {
+        if command_argument.is_empty() {
+            return Err("No variable specified.".to_string());
+        }
+        return Ok(InteractiveCommand::Delete(command_argument.to_string()));
     }
 
     if command_name.eq_ignore_ascii_case("list") {
@@ -245,6 +253,10 @@ mod tests {
         assert_eq!(
             parse_interactive_command("InFo CaseSensitiveName"),
             Ok(InteractiveCommand::Info("CaseSensitiveName".to_string()))
+        );
+        assert_eq!(
+            parse_interactive_command("delete CaseSensitiveName"),
+            Ok(InteractiveCommand::Delete("CaseSensitiveName".to_string()))
         );
         assert_eq!(
             parse_interactive_command("LiSt functions CaseSensitiveName"),

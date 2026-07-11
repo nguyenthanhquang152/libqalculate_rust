@@ -16,6 +16,7 @@ pub(crate) struct ReplEvaluation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReplRequest {
     Evaluate(String),
+    Delete(String),
     ReformatLastAnswer,
 }
 
@@ -276,6 +277,19 @@ where
                         if write!(output, "{rendered}").is_err() {
                             return 2;
                         }
+                    }
+                    Err(message) => {
+                        if writeln!(error, "error: {message}").is_err() {
+                            return 2;
+                        }
+                    }
+                }
+            }
+            InteractiveCommand::Delete(name) => {
+                history.record(&line);
+                match evaluate(invocation, ReplRequest::Delete(name.clone())) {
+                    Ok(_) => {
+                        local_variables.remove(&name);
                     }
                     Err(message) => {
                         if writeln!(error, "error: {message}").is_err() {
