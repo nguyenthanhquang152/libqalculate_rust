@@ -2497,9 +2497,11 @@ fn cli_test_file_without_path_reports_upstream_diagnostic_before_handoff() {
     let mut cmd = qalc_rs_raw();
     cmd.arg("--test-file")
         .assert()
-        .code(2)
-        .stdout("No file specified.\n")
-        .stderr("error: Test file execution is not implemented (owner #63)\n");
+        .success()
+        .stdout(
+            "No file specified.\n> \x1B[31m\nWARNING: 0 tests were run (indentation needs to be tab-based)\n\n\x1B[0m",
+        )
+        .stderr("");
 }
 
 #[test]
@@ -2924,31 +2926,23 @@ fn cli_interactive_mode_continues_after_a_missing_command_file() {
 }
 
 #[test]
-fn test_batch_workflow_handoff_contract() {
-    let cases: &[(&[&str], &str)] = &[
-        (
-            &["--test-file", "dummy_test.batch"],
-            "error: Test file execution is not implemented (owner #63)\n",
-        ),
-        (
-            &[
-                "--test-file",
-                "dummy_test.batch",
-                "-i",
-                "-v",
-                "--help",
-                "1+1",
-            ],
-            "error: Test file execution is not implemented (owner #63)\n",
-        ),
-    ];
-
-    for (args, expected_stderr) in cases {
+fn test_batch_workflow_stops_parsing_after_test_file() {
+    for args in [
+        vec!["--test-file", "dummy_test.batch"],
+        vec![
+            "--test-file",
+            "dummy_test.batch",
+            "-i",
+            "-v",
+            "--help",
+            "1+1",
+        ],
+    ] {
         let mut cmd = qalc_rs_raw();
-        cmd.args(*args)
+        cmd.args(args)
             .assert()
-            .code(2)
-            .stdout("")
-            .stderr(*expected_stderr);
+            .code(1)
+            .stdout("Could not open \"dummy_test.batch\".\n")
+            .stderr("");
     }
 }

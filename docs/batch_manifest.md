@@ -673,6 +673,11 @@ Allowed `parity_status` values are `inventory-only`, `fallback-only`, `native-pa
 **Cases**: 27
 **Session commands**: 0
 
+**Focused native CLI evidence**: `tests/e2e_batch_runner.rs::test_qalc_rs_executes_upstream_parser_native_subset_without_fallback`
+extracts `parser.batch:1`, `:3`, `:5`, `:7`, and `:9` from the upstream fixture,
+executes the subset through both `qalc-rs --test-file` with C++ fallback disabled
+and upstream `qalc --test-file`, and requires exact status/stdout/stderr agreement.
+
 ### Test Cases
 
 | # | case_id | Expression | Expected | Settings | Status |

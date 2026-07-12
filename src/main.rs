@@ -108,9 +108,22 @@ fn main() {
         }
         return;
     }
-    if let Some(ref file) = invocation.command_file {
-        if file.mode == cli::CommandFileMode::Test {
-            exit_with_error("Test file execution is not implemented (owner #63)");
+
+    if let Some(command_file) = invocation
+        .command_file
+        .as_ref()
+        .filter(|file| file.mode == cli::CommandFileMode::Test)
+    {
+        // Batch-test mode is a native parity gate: unsupported rows must not be
+        // satisfied by the C++ evaluator even when the caller omitted the env gate.
+        std::env::set_var("QALCULATE_DISABLE_FALLBACK", "1");
+        if command_file.path.is_empty() {
+            print!("> \x1b[31m\nWARNING: 0 tests were run (indentation needs to be tab-based)\n\n\x1b[0m");
+            return;
+        }
+        if File::open(&command_file.path).is_err() {
+            println!("Could not open \"{}\".", command_file.path);
+            std::process::exit(1);
         }
     }
 
@@ -120,6 +133,19 @@ fn main() {
     };
 
     if let Some(command_file) = invocation.command_file.clone() {
+        if command_file.mode == cli::CommandFileMode::Test {
+            calculator.enable_session_mode();
+            let mut session = cli::repl::ReplSessionState::default();
+
+            let exit_code = run_test_file(
+                &mut invocation,
+                &mut calculator,
+                &mut session,
+                &command_file,
+            );
+            std::process::exit(exit_code);
+        }
+
         calculator.enable_session_mode();
         let mut session = cli::repl::ReplSessionState::default();
         match run_command_file(
@@ -404,7 +430,7 @@ fn evaluate_expression(
     calc: &mut Calculator,
     expression: &str,
 ) -> Result<EvaluationOutcome, String> {
-    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let fallback_disabled = fallback_disabled(invocation);
     let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
 
     let defs = &invocation.definitions;
@@ -520,7 +546,7 @@ fn reformat_session_answer(
     invocation: &cli::CliInvocation,
     calc: &mut Calculator,
 ) -> Result<Option<cli::repl::ReplEvaluation>, String> {
-    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let fallback_disabled = fallback_disabled(invocation);
     let settings = evaluation_settings(invocation, fallback_disabled);
     let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
     let result = match (invocation.output_mode, invocation.terse) {
@@ -585,7 +611,7 @@ fn evaluation_settings(invocation: &cli::CliInvocation, fallback_disabled: bool)
 }
 
 fn prepare_calculator(invocation: &cli::CliInvocation) -> Result<Calculator, String> {
-    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let fallback_disabled = fallback_disabled(invocation);
     let defs = &invocation.definitions;
     let mut calc = Calculator::new();
     if defs.global_defs && defs.currencies && !fallback_disabled && !calc.load_exchange_rates() {
@@ -604,6 +630,14 @@ fn prepare_calculator(invocation: &cli::CliInvocation) -> Result<Calculator, Str
         return Err("failed to load global definitions".to_owned());
     }
     Ok(calc)
+}
+
+fn fallback_disabled(invocation: &cli::CliInvocation) -> bool {
+    std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
+        || invocation
+            .command_file
+            .as_ref()
+            .is_some_and(|file| file.mode == cli::CommandFileMode::Test)
 }
 
 fn upstream_batch_files() -> Result<Vec<PathBuf>, String> {
@@ -625,4 +659,178 @@ fn upstream_batch_files() -> Result<Vec<PathBuf>, String> {
 fn exit_with_error(message: &str) -> ! {
     eprintln!("error: {message}");
     std::process::exit(2);
+}
+
+fn run_test_file(
+    invocation: &mut cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    command_file: &cli::CommandFile,
+) -> i32 {
+    let input = match std::fs::read_to_string(&command_file.path) {
+        Ok(input) => input,
+        Err(_) => {
+            println!("Could not open \"{}\".", command_file.path);
+            return 1;
+        }
+    };
+
+    let items = match libqalculate_rust::batch::parse_batch_items(&input) {
+        Ok(items) => items,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return 1;
+        }
+    };
+
+    let mut ntests = 0;
+
+    for item in items {
+        match item {
+            libqalculate_rust::batch::BatchItem::Command { command, .. } => match command {
+                SessionCommand::Set(cmd) => {
+                    invocation
+                        .interactive_settings
+                        .push(SessionCommand::Set(cmd));
+                }
+                SessionCommand::Assume(cmd) => {
+                    invocation
+                        .interactive_settings
+                        .push(SessionCommand::Assume(cmd));
+                }
+            },
+            libqalculate_rust::batch::BatchItem::Unasserted { expression, .. } => {
+                let _ = evaluate_batch_setup(invocation, calculator, session, &expression);
+            }
+            libqalculate_rust::batch::BatchItem::Case(case) => {
+                let output = match evaluate_batch_expression(
+                    invocation,
+                    calculator,
+                    session,
+                    &case.case.expression,
+                ) {
+                    Ok(Some(eval)) => eval.output,
+                    Ok(None) => String::new(),
+                    Err(err) => err,
+                };
+
+                let expected_text = case.case.expected.join("\n");
+
+                if output != expected_text {
+                    print!("\x1b[31m\nMismatch detected at line {}\n{}\nexpected '{}'\nreceived '{}'\n\n\x1b[0m",
+                        batch_mismatch_line(&case, &output),
+                        case.case.expression,
+                        expected_text,
+                        output
+                    );
+                    return 1;
+                }
+                ntests += 1;
+            }
+        }
+    }
+
+    if ntests == 0 {
+        print!(
+            "\x1b[31m\nWARNING: 0 tests were run (indentation needs to be tab-based)\n\n\x1b[0m"
+        );
+    } else {
+        print!(
+            "\x1b[32m\n{} - {} tests passed\n\n\x1b[0m",
+            command_file.path, ntests
+        );
+    }
+
+    0
+}
+
+fn batch_mismatch_line(case: &libqalculate_rust::batch::LocatedBatchCase, output: &str) -> usize {
+    let actual = output.split('\n').collect::<Vec<_>>();
+    let paired = case.case.expected.len().min(actual.len());
+    let mismatch_offset = case
+        .case
+        .expected
+        .iter()
+        .zip(&actual)
+        .position(|(expected, actual)| expected != actual)
+        .unwrap_or(paired)
+        .min(case.case.expected.len().saturating_sub(1));
+    case.source_line + mismatch_offset + 1
+}
+
+fn evaluate_batch_expression(
+    invocation: &cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    expression: &str,
+) -> Result<Option<cli::repl::ReplEvaluation>, String> {
+    let result = evaluate_repl_request(
+        invocation,
+        calculator,
+        cli::repl::ReplRequest::Evaluate(expression.to_string()),
+    )?;
+    if let Some(evaluation) = result.as_ref() {
+        session.record_evaluation(expression.to_string(), &evaluation.assignment_renderings);
+    }
+    Ok(result)
+}
+
+fn evaluate_batch_setup(
+    invocation: &mut cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    expression: &str,
+) -> Result<(), String> {
+    use cli::commands::InteractiveCommand;
+
+    match cli::commands::parse_interactive_command(expression)? {
+        InteractiveCommand::Settings(settings) => {
+            invocation.interactive_settings.extend(settings);
+            Ok(())
+        }
+        InteractiveCommand::DefineVariable { name, expression } => {
+            evaluate_repl_request(
+                invocation,
+                calculator,
+                cli::repl::ReplRequest::DefineVariable { name, expression },
+            )?;
+            Ok(())
+        }
+        InteractiveCommand::DefineFunction { name, expression } => {
+            evaluate_repl_request(
+                invocation,
+                calculator,
+                cli::repl::ReplRequest::DefineFunction { name, expression },
+            )?;
+            Ok(())
+        }
+        InteractiveCommand::Delete(name) => {
+            if evaluate_repl_request(
+                invocation,
+                calculator,
+                cli::repl::ReplRequest::DeleteVariable {
+                    name: name.clone(),
+                    allow_managed_alias: false,
+                },
+            )
+            .is_err()
+            {
+                evaluate_repl_request(
+                    invocation,
+                    calculator,
+                    cli::repl::ReplRequest::DeleteFunction(name),
+                )?;
+            }
+            Ok(())
+        }
+        InteractiveCommand::Expression(expression) => {
+            evaluate_batch_expression(invocation, calculator, session, &expression)?;
+            Ok(())
+        }
+        InteractiveCommand::Noop => Ok(()),
+        _ => {
+            evaluate_batch_expression(invocation, calculator, session, expression)?;
+            Ok(())
+        }
+    }
 }

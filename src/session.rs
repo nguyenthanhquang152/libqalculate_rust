@@ -899,7 +899,9 @@ mod tests {
         assert!(NativeSessionSettings::from_raw(&["base 16 99"]).is_none());
         assert!(NativeSessionSettings::from_raw(&["base 1 16"]).is_none());
         assert!(NativeSessionSettings::from_raw(&["base 10 37"]).is_none());
-        assert!(NativeSessionSettings::from_raw(&["set base 16"]).is_none());
-        assert!(NativeSessionSettings::from_raw(&["/set base 16"]).is_none());
+        for command in ["set base 16", "/set base 16"] {
+            let settings = NativeSessionSettings::from_raw(&[command]).unwrap();
+            assert_eq!(settings.output_base, Some(16));
+        }
     }
 }

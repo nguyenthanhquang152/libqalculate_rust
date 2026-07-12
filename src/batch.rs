@@ -95,13 +95,16 @@ pub fn parse_batch_cases_with_source_lines(
     input: &str,
 ) -> Result<Vec<LocatedBatchCase>, BatchError> {
     let items = parse_batch_items(input)?;
-    let cases = items
-        .into_iter()
-        .filter_map(|item| match item {
-            BatchItem::Case(case) => Some(case),
-            _ => None,
-        })
-        .collect();
+    let mut cases = Vec::new();
+    for item in items {
+        match item {
+            BatchItem::Case(case) => cases.push(case),
+            BatchItem::Unasserted { expression, .. } => {
+                return Err(BatchError::MissingExpected { expression });
+            }
+            BatchItem::Command { .. } => {}
+        }
+    }
     Ok(cases)
 }
 
@@ -120,6 +123,14 @@ pub fn batch_case_ids(batch_file: &str, input: &str) -> Result<Vec<String>, Batc
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let trimmed = line.trim();
 
+        if line.starts_with('\t') {
+            if current_expression_line.is_none() {
+                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            }
+            has_expected = true;
+            continue;
+        }
+
         if trimmed.is_empty() || trimmed.starts_with('#') || is_session_command(trimmed) {
             flush_case_id(
                 batch_file,
@@ -128,14 +139,6 @@ pub fn batch_case_ids(batch_file: &str, input: &str) -> Result<Vec<String>, Batc
                 has_expected,
             );
             has_expected = false;
-            continue;
-        }
-
-        if line.starts_with('\t') {
-            if current_expression_line.is_none() {
-                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
-            }
-            has_expected = true;
             continue;
         }
 
@@ -202,6 +205,13 @@ pub enum BatchItem {
     },
     /// A parsed located batch case.
     Case(LocatedBatchCase),
+    /// An expression without expected output.
+    Unasserted {
+        /// One-based source line where the expression appears.
+        source_line: usize,
+        /// The expression.
+        expression: String,
+    },
 }
 
 /// Parse a libqalculate `.batch` fixture into a sequence of commands and located cases.
@@ -215,6 +225,14 @@ pub fn parse_batch_items(input: &str) -> Result<Vec<BatchItem>, BatchError> {
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let trimmed = line.trim();
 
+        if let Some(expected) = line.strip_prefix('\t') {
+            if current_expression.is_none() {
+                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            }
+            current_expected.push(expected.to_owned());
+            continue;
+        }
+
         if trimmed.is_empty() || trimmed.starts_with('#') {
             flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
             continue;
@@ -222,20 +240,18 @@ pub fn parse_batch_items(input: &str) -> Result<Vec<BatchItem>, BatchError> {
 
         if is_session_command(trimmed) {
             flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
-            let cmd = crate::parser::commands::parse_command(trimmed)
-                .map_err(|_| BatchError::InvalidCommand { line: line_number })?;
-            items.push(BatchItem::Command {
-                source_line: line_number,
-                command: cmd,
-            });
-            continue;
-        }
-
-        if let Some(expected) = line.strip_prefix('\t') {
-            if current_expression.is_none() {
-                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            match crate::parser::commands::parse_commands(trimmed) {
+                Ok(commands) => {
+                    items.extend(commands.into_iter().map(|command| BatchItem::Command {
+                        source_line: line_number,
+                        command,
+                    }));
+                }
+                Err(_) => items.push(BatchItem::Unasserted {
+                    source_line: line_number,
+                    expression: line.to_owned(),
+                }),
             }
-            current_expected.push(expected.to_owned());
             continue;
         }
 
@@ -256,7 +272,11 @@ fn flush_batch_items(
         return Ok(());
     };
     if current_expected.is_empty() {
-        return Err(BatchError::MissingExpected { expression });
+        items.push(BatchItem::Unasserted {
+            source_line,
+            expression,
+        });
+        return Ok(());
     }
     items.push(BatchItem::Case(LocatedBatchCase {
         source_line,
@@ -268,31 +288,19 @@ fn flush_batch_items(
 /// Return true for upstream batch session commands that affect later cases.
 pub fn is_session_command(line: &str) -> bool {
     let line = line.trim_start();
-    if line
-        .get(..4)
-        .is_some_and(|p| p.eq_ignore_ascii_case("set "))
-    {
-        return true;
-    }
-    if line
-        .get(..5)
-        .is_some_and(|p| p.eq_ignore_ascii_case("/set "))
-    {
-        return true;
-    }
-    if line
-        .get(..7)
-        .is_some_and(|p| p.eq_ignore_ascii_case("assume "))
-    {
-        return true;
-    }
-    if line
-        .get(..8)
-        .is_some_and(|p| p.eq_ignore_ascii_case("/assume "))
-    {
-        return true;
-    }
-    false
+    [
+        "set ",
+        "/set ",
+        "assume ",
+        "/assume ",
+        "assumptions ",
+        "/assumptions ",
+    ]
+    .iter()
+    .any(|prefix| {
+        line.get(..prefix.len())
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
+    })
 }
 
 #[cfg(test)]
@@ -323,6 +331,86 @@ mod tests {
         assert_eq!(cases.len(), 2);
         assert_eq!(cases[0].expression, "sqrt(x)");
         assert_eq!(cases[1].expression, "x");
+    }
+
+    #[test]
+    fn recognizes_plural_assumption_commands() {
+        for command in ["assumptions positive", "/assumptions positive"] {
+            let input = format!("{command}\n1\n\t1\n");
+            let items = parse_batch_items(&input).expect("items should parse");
+            assert!(matches!(items[0], BatchItem::Command { .. }));
+        }
+    }
+
+    #[test]
+    fn preserves_unsupported_plural_assumptions_without_aborting() {
+        let items = parse_batch_items("/assumptions real\n1\n\t1\n").expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [
+                BatchItem::Unasserted {
+                    source_line: 1,
+                    expression,
+                },
+                BatchItem::Case(_)
+            ] if expression == "/assumptions real"
+        ));
+    }
+
+    #[test]
+    fn expected_output_that_looks_like_a_command_stays_expected() {
+        let input = "expression\n\t/set base 16\n";
+        let items = parse_batch_items(input).expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [BatchItem::Case(LocatedBatchCase { case, .. })]
+                if case.expected == ["/set base 16"]
+        ));
+        assert_eq!(
+            super::batch_case_ids("commands.batch", input).expect("case ids should parse"),
+            ["commands.batch:1"]
+        );
+    }
+
+    #[test]
+    fn invalid_late_session_commands_remain_deferred_setup_rows() {
+        let items =
+            parse_batch_items("1\n\t2\n/set base not-a-base\n").expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [
+                BatchItem::Case(_),
+                BatchItem::Unasserted {
+                    source_line: 3,
+                    expression,
+                }
+            ] if expression == "/set base not-a-base"
+        ));
+    }
+
+    #[test]
+    fn expands_two_argument_base_commands_in_source_order() {
+        let items = parse_batch_items("/set base 10 16\nFF\n\t255\n").expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [
+                BatchItem::Command {
+                    command: SessionCommand::Set(SetCommand {
+                        setting: SetSetting::OutputBase(10),
+                        ..
+                    }),
+                    ..
+                },
+                BatchItem::Command {
+                    command: SessionCommand::Set(SetCommand {
+                        setting: SetSetting::InputBase(16),
+                        ..
+                    }),
+                    ..
+                },
+                BatchItem::Case(_)
+            ]
+        ));
     }
 
     #[test]
@@ -417,5 +505,32 @@ mod tests {
             }
             _ => panic!("Expected Case item"),
         }
+    }
+
+    #[test]
+    fn parse_batch_items_preserves_unasserted_setup_and_cleanup() {
+        let input = "x:=2\nx+1\n\t3\ndelete x\n";
+        let items = parse_batch_items(input).expect("items should parse");
+
+        assert_eq!(items.len(), 3);
+        assert!(matches!(
+            &items[0],
+            BatchItem::Unasserted {
+                source_line: 1,
+                expression,
+            } if expression == "x:=2"
+        ));
+        assert!(matches!(
+            &items[1],
+            BatchItem::Case(LocatedBatchCase { source_line: 2, case })
+                if case.expression == "x+1" && case.expected == ["3"]
+        ));
+        assert!(matches!(
+            &items[2],
+            BatchItem::Unasserted {
+                source_line: 4,
+                expression,
+            } if expression == "delete x"
+        ));
     }
 }
