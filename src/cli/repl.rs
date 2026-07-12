@@ -116,12 +116,13 @@ where
     let mut local_variables = BTreeMap::new();
 
     if let Some(expression) = initial_expression {
-        let assignment = local_assignment(&expression);
+        let assignments = local_assignments(&expression);
         match evaluate(invocation, ReplRequest::Evaluate(expression)) {
             Ok(Some(evaluation)) => {
-                if let Some((name, value)) = assignment {
-                    local_variables
-                        .insert(name, evaluation.answer_rendering.clone().unwrap_or(value));
+                if let (Some(names), Some(value)) = (assignments, &evaluation.answer_rendering) {
+                    for name in names {
+                        local_variables.insert(name, value.clone());
+                    }
                 }
                 if render_evaluation(output, &evaluation).is_err() {
                     return 2;
@@ -314,12 +315,15 @@ where
             }
             InteractiveCommand::Expression(expression) => {
                 history.record(&line);
-                let assignment = local_assignment(&expression);
+                let assignments = local_assignments(&expression);
                 match evaluate(invocation, ReplRequest::Evaluate(expression)) {
                     Ok(Some(evaluation)) => {
-                        if let Some((name, value)) = assignment {
-                            local_variables
-                                .insert(name, evaluation.answer_rendering.clone().unwrap_or(value));
+                        if let (Some(names), Some(value)) =
+                            (assignments, &evaluation.answer_rendering)
+                        {
+                            for name in names {
+                                local_variables.insert(name, value.clone());
+                            }
                         }
                         if render_evaluation(output, &evaluation).is_err() {
                             return 2;
@@ -337,16 +341,18 @@ where
     }
 }
 
-fn local_assignment(expression: &str) -> Option<(String, String)> {
-    let Expression::Assignment { variable, .. } = parse_expression(expression).ok()? else {
+fn local_assignments(expression: &str) -> Option<Vec<String>> {
+    let parsed = parse_expression(expression).ok()?;
+    let mut variables = Vec::new();
+    let mut current = &parsed;
+    while let Expression::Assignment { variable, value } = current {
+        variables.push(variable.clone());
+        current = value;
+    }
+    if variables.is_empty() {
         return None;
-    };
-    let operator_index = [expression.find(":="), expression.find("=:")]
-        .into_iter()
-        .flatten()
-        .min()?;
-    let value = expression[operator_index + 2..].trim();
-    Some((variable, value.to_string()))
+    }
+    Some(variables)
 }
 
 fn render_evaluation<W: Write>(output: &mut W, evaluation: &ReplEvaluation) -> io::Result<()> {
@@ -402,18 +408,19 @@ fn finish_history<E: Write>(history: &History, _error: &mut E, success_code: i32
 
 #[cfg(test)]
 mod tests {
-    use super::local_assignment;
+    use super::local_assignments;
 
     #[test]
-    fn local_assignment_uses_the_parsed_assignment_target() {
+    fn local_assignments_use_the_parsed_assignment_targets() {
+        assert_eq!(local_assignments("x := 1"), Some(vec!["x".to_string()]));
         assert_eq!(
-            local_assignment("x := 1"),
-            Some(("x".to_string(), "1".to_string()))
+            local_assignments("x =: \"a:=b\""),
+            Some(vec!["x".to_string()])
         );
         assert_eq!(
-            local_assignment("x =: \"a:=b\""),
-            Some(("x".to_string(), "\"a:=b\"".to_string()))
+            local_assignments("x := y := 5"),
+            Some(vec!["x".to_string(), "y".to_string()])
         );
-        assert_eq!(local_assignment("\"x:=1\""), None);
+        assert_eq!(local_assignments("\"x:=1\""), None);
     }
 }

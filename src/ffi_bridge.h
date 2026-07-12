@@ -42,8 +42,8 @@ rust::String calculate_and_print_qalc(
     Calculator &calc,
     rust::Str expr,
     int32_t timeout_ms,
-    bool unicode_enabled,
     int32_t output_base,
+    int32_t input_base,
     std::uint8_t assumption_mode,
     std::uint8_t mode_flags
 );

@@ -7,6 +7,14 @@ use std::sync::Mutex;
 
 static FFI_LOCK: Mutex<()> = Mutex::new(());
 
+// Keep these bit assignments synchronized with the named constants in
+// `ffi_bridge.cc`; they are the compact options ABI for calculate_and_print_qalc.
+const QALC_MODE_MARKUP: u8 = 1 << 0;
+const QALC_MODE_LATEX: u8 = 1 << 1;
+const QALC_MODE_TERSE: u8 = 1 << 2;
+const QALC_MODE_CAPTURE_RESULT: u8 = 1 << 3;
+const QALC_MODE_UNICODE: u8 = 1 << 4;
+
 #[cxx::bridge]
 #[allow(missing_docs)]
 pub(crate) mod sys {
@@ -62,8 +70,8 @@ pub(crate) mod sys {
             calc: Pin<&mut Calculator>,
             expr: &str,
             timeout_ms: i32,
-            unicode_enabled: bool,
             output_base: i32,
+            input_base: i32,
             assumption_mode: u8,
             mode_flags: u8,
         ) -> Result<String>;
@@ -544,8 +552,8 @@ impl Calculator {
             if self.inner.is_null() {
                 return Ok(None);
             }
-            let (unicode_enabled, output_base, _) =
-                crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
+            let (unicode_enabled, output_base) =
+                crate::session::NativeSessionSettings::cpp_reformat_options_from_raw(settings)
                     .ok_or_else(|| {
                         CalculatorError::UnsupportedSessionSettings(
                             settings
@@ -876,10 +884,17 @@ impl Calculator {
         self.last_output_approximate = false;
         self.last_output_message_lines = 0;
         let fallback_disabled = fallback_disabled_by_env();
-        let uses_native_session_variable = crate::parser::operators::parse_expression(expr)
-            .ok()
-            .is_some_and(|parsed| expression_uses_context_variable(&parsed, &self.native_context));
-        if !self.session_answers.has_cpp_answer() || uses_native_session_variable {
+        let parsed = crate::parser::operators::parse_expression(expr).ok();
+        let uses_native_session_variable = parsed
+            .as_ref()
+            .is_some_and(|parsed| expression_uses_context_variable(parsed, &self.native_context));
+        let is_assignment = matches!(
+            parsed.as_ref(),
+            Some(crate::ast::Expression::Assignment { .. })
+        );
+        if (fallback_disabled || !is_assignment)
+            && (!self.session_answers.has_cpp_answer() || uses_native_session_variable)
+        {
             match native_markup_output(
                 mode,
                 expr,
@@ -901,7 +916,7 @@ impl Calculator {
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        let (unicode_enabled, output_base, assumption_mode) = cpp_fallback_print_options(settings)?;
+        let options = cpp_fallback_options(settings)?;
         assert!(
             !self.inner.is_null(),
             "BUG: Calculator inner pointer is null - possible use-after-move"
@@ -910,20 +925,30 @@ impl Calculator {
         let (mut output, messages, answer_rendering) = {
             let _guard = FFI_LOCK.lock().unwrap();
             let pin = self.inner.pin_mut();
-            let mode_flags =
-                0x01 | if mode == crate::markup::MarkupMode::Latex {
-                    0x02
+            let mode_flags = QALC_MODE_MARKUP
+                | if mode == crate::markup::MarkupMode::Latex {
+                    QALC_MODE_LATEX
                 } else {
                     0
-                } | if terse { 0x04 } else { 0 }
-                    | if capture_result { 0x08 } else { 0 };
+                }
+                | if terse { QALC_MODE_TERSE } else { 0 }
+                | if capture_result {
+                    QALC_MODE_CAPTURE_RESULT
+                } else {
+                    0
+                }
+                | if options.unicode {
+                    QALC_MODE_UNICODE
+                } else {
+                    0
+                };
             let output = sys::calculate_and_print_qalc(
                 pin,
                 expr,
                 timeout_ms,
-                unicode_enabled,
-                output_base,
-                assumption_mode,
+                options.output_base as i32,
+                options.input_base as i32,
+                options.assumption_mode,
                 mode_flags,
             )
             .map_err(CalculatorError::Cxx)?;
@@ -946,7 +971,7 @@ impl Calculator {
                     &output,
                     terse,
                     self.last_output_approximate,
-                    unicode_enabled,
+                    options.unicode,
                 )
             };
             (output, messages, answer_rendering)
@@ -1038,13 +1063,20 @@ impl Calculator {
         let Some(answer) = mirrored_answer else {
             return;
         };
-        let Ok(crate::ast::Expression::Assignment { variable, .. }) =
-            crate::parser::operators::parse_expression(expr)
-        else {
+        let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
             return;
         };
-        if !crate::session::SessionAnswerState::is_managed_alias(&variable) {
-            self.native_context.variables.insert(variable, answer);
+        // Only direct chains (`x := y := value`) share the final result. An
+        // assignment embedded in a larger expression can have a distinct value
+        // and remains C++-owned until that value can be mirrored explicitly.
+        let mut current = &parsed;
+        while let crate::ast::Expression::Assignment { variable, value } = current {
+            if !crate::session::SessionAnswerState::is_managed_alias(variable) {
+                self.native_context
+                    .variables
+                    .insert(variable.clone(), answer.clone());
+            }
+            current = value;
         }
     }
 
@@ -1108,7 +1140,7 @@ impl Calculator {
             }
             if settings.is_empty() {
                 if let Some(output) = native_data_output(profile, expr)? {
-                    return Ok(self.finish_native_string(output));
+                    return Ok(self.finish_native_output(output));
                 }
                 if let Some(output) =
                     native_statistics_output(profile, expr, &mut self.native_context)?
@@ -1133,7 +1165,7 @@ impl Calculator {
             return Err(CalculatorError::FallbackDisabled(expr.to_string()));
         }
 
-        let (unicode_enabled, output_base, assumption_mode) = cpp_fallback_print_options(settings)?;
+        let options = cpp_fallback_options(settings)?;
 
         let capture_result = self.session_answers.is_enabled();
         let (output, answer_rendering) = {
@@ -1152,15 +1184,26 @@ impl Calculator {
                     (output.clone(), output)
                 }
                 PrintProfile::Qalc => {
-                    let mode_flags = (if capture_result { 0x08 } else { 0 })
-                        | (if include_cpp_messages { 0 } else { 0x04 });
+                    let mode_flags = (if capture_result {
+                        QALC_MODE_CAPTURE_RESULT
+                    } else {
+                        0
+                    }) | (if include_cpp_messages {
+                        0
+                    } else {
+                        QALC_MODE_TERSE
+                    }) | (if options.unicode {
+                        QALC_MODE_UNICODE
+                    } else {
+                        0
+                    });
                     let mut output = sys::calculate_and_print_qalc(
                         pin,
                         expr,
                         timeout_ms,
-                        unicode_enabled,
-                        output_base,
-                        assumption_mode,
+                        options.output_base as i32,
+                        options.input_base as i32,
+                        options.assumption_mode,
                         mode_flags,
                     )
                     .map_err(CalculatorError::Cxx)?;
@@ -1196,11 +1239,13 @@ fn fallback_disabled_by_env() -> bool {
     std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
 }
 
-fn cpp_fallback_print_options(settings: &[&str]) -> Result<(bool, i32, u8), CalculatorError> {
-    if let Some((unicode, output_base, assumption_mode)) =
+fn cpp_fallback_options(
+    settings: &[&str],
+) -> Result<crate::session::CppFallbackOptions, CalculatorError> {
+    if let Some(options) =
         crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
     {
-        return Ok((unicode, output_base as i32, assumption_mode));
+        return Ok(options);
     }
     Err(CalculatorError::UnsupportedSessionSettings(
         settings
@@ -1719,17 +1764,24 @@ fn conversion_target_is_hex(expr: &crate::ast::Expression) -> bool {
 fn native_data_output(
     profile: PrintProfile,
     expr: &str,
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     let Some(output) = crate::data::native_output(expr)
         .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
     else {
         return Ok(None);
     };
 
-    Ok(Some(match profile {
+    let answer = output.parse::<crate::number::Number>().map_err(|error| {
+        CalculatorError::NativeEvaluation(format!("invalid native data count: {error}"))
+    })?;
+    let rendering = match profile {
         PrintProfile::Api => output,
         PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-    }))
+    };
+    Ok(Some(NativeOutput::plain(rendering.clone()).with_answer(
+        crate::ast::Expression::Number(answer),
+        rendering,
+    )))
 }
 
 fn native_statistics_output(

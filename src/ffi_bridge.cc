@@ -15,6 +15,14 @@ thread_local std::string last_qalc_parsed_expression;
 thread_local std::size_t last_qalc_messages_line_count = 0;
 thread_local bool last_qalc_message_had_error = false;
 
+// Keep these bit assignments synchronized with the named Rust constants in
+// `ffi.rs`; they are the compact options ABI for calculate_and_print_qalc.
+constexpr std::uint8_t QALC_MODE_MARKUP = 1 << 0;
+constexpr std::uint8_t QALC_MODE_LATEX = 1 << 1;
+constexpr std::uint8_t QALC_MODE_TERSE = 1 << 2;
+constexpr std::uint8_t QALC_MODE_CAPTURE_RESULT = 1 << 3;
+constexpr std::uint8_t QALC_MODE_UNICODE = 1 << 4;
+
 void replace_all(std::string &text, const std::string &from, const std::string &to) {
     std::size_t offset = 0;
     while((offset = text.find(from, offset)) != std::string::npos) {
@@ -720,15 +728,16 @@ rust::String calculate_and_print_qalc(
     Calculator &calc,
     rust::Str expr,
     int32_t timeout_ms,
-    bool unicode_enabled,
     int32_t output_base,
+    int32_t input_base,
     std::uint8_t assumption_mode,
     std::uint8_t mode_flags
 ) {
-    const bool markup = (mode_flags & 0x01) != 0;
-    const bool latex = (mode_flags & 0x02) != 0;
-    const bool terse = (mode_flags & 0x04) != 0;
-    const bool capture_result = (mode_flags & 0x08) != 0;
+    const bool markup = (mode_flags & QALC_MODE_MARKUP) != 0;
+    const bool latex = (mode_flags & QALC_MODE_LATEX) != 0;
+    const bool terse = (mode_flags & QALC_MODE_TERSE) != 0;
+    const bool capture_result = (mode_flags & QALC_MODE_CAPTURE_RESULT) != 0;
+    const bool unicode_enabled = (mode_flags & QALC_MODE_UNICODE) != 0;
     last_qalc_result_is_approximate = false;
     last_qalc_markup_output_complete = false;
     last_qalc_messages_text.clear();
@@ -763,7 +772,10 @@ rust::String calculate_and_print_qalc(
         eo.structuring = STRUCTURING_SIMPLIFY;
         eo.parse_options.unknowns_enabled = false;
         eo.parse_options.read_precision = DONT_READ_PRECISION;
-        eo.parse_options.base = BASE_DECIMAL;
+        if(input_base < 2 || input_base > 36) {
+            throw std::invalid_argument("invalid qalc input base");
+        }
+        eo.parse_options.base = input_base;
         eo.allow_complex = true;
         eo.allow_infinite = true;
         eo.auto_post_conversion = POST_CONVERSION_OPTIMAL;

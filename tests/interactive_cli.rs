@@ -120,6 +120,20 @@ fn native_boolean_results_update_the_typed_answer_state() {
 }
 
 #[test]
+fn native_data_counts_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("number(load(\"tests/vectordata.csv\"))\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans + 1 = 101"))
+        .stderr("");
+}
+
+#[test]
 fn cpp_fallback_results_update_the_typed_answer_state() {
     let mut session = isolated_session();
     session
@@ -209,6 +223,23 @@ fn session_defined_variables_are_visible_to_list_and_info() {
             predicate::str::contains("myvar\t")
                 .and(predicate::str::contains("Variable: myvar"))
                 .and(predicate::str::contains("Value: 5")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn nested_assignments_update_all_local_variable_info() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("x:=y:=5\ninfo y\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Variable: y")
+                .and(predicate::str::contains("Value: 5"))
+                .and(predicate::str::contains("Value: unknown").not()),
         )
         .stderr("");
 }
@@ -502,6 +533,19 @@ fn nondecimal_input_base_results_update_the_typed_answer_state() {
 }
 
 #[test]
+fn cpp_fallback_honors_nondecimal_input_base() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("set input base 16\nsin(A)\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0.5440211109"))
+        .stderr("");
+}
+
+#[test]
 fn unsupported_setting_is_rejected_without_poisoning_later_evaluations() {
     let mut session = isolated_session();
     session
@@ -617,6 +661,32 @@ fn native_markup_assignments_persist_in_the_session_context() {
         .assert()
         .success()
         .stdout(predicate::str::contains("<i>x</i> + 1 = 2"))
+        .stderr("");
+}
+
+#[test]
+fn native_markup_assignments_are_available_to_cpp_fallback() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=1\nEi(x)\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1.895117816"))
+        .stderr("");
+}
+
+#[test]
+fn nested_cpp_assignments_are_available_to_native_markup() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=y:=5\nx+y\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<i>x</i> + <i>y</i> = 10"))
         .stderr("");
 }
 

@@ -23,6 +23,14 @@ fn parse_standard_base(value: &str) -> Option<u32> {
     (2..=36).contains(&base).then_some(base)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CppFallbackOptions {
+    pub(crate) unicode: bool,
+    pub(crate) output_base: u32,
+    pub(crate) input_base: u32,
+    pub(crate) assumption_mode: u8,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct NativeSessionSettings {
     input_base: Option<u32>,
@@ -170,23 +178,23 @@ impl NativeSessionSettings {
         self.unicode_setting_seen
     }
 
-    /// Parse settings that the C++ qalc printer can apply without changing
-    /// evaluation semantics. Input base is accepted only when it remains
-    /// decimal; all other settings fail closed.
-    pub(crate) fn cpp_print_options_from_raw(settings: &[&str]) -> Option<(bool, u32, u8)> {
-        Self::cpp_options_from_raw(settings, false)
+    /// Parse settings that the C++ qalc evaluation and printer paths can
+    /// apply. All other settings fail closed.
+    pub(crate) fn cpp_print_options_from_raw(settings: &[&str]) -> Option<CppFallbackOptions> {
+        Self::cpp_options_from_raw(settings)
     }
 
     /// Parse settings used only to reprint an already-evaluated C++ answer.
     /// Input-base changes are validated but do not affect answer rendering.
     pub(crate) fn cpp_reformat_options_from_raw(settings: &[&str]) -> Option<(bool, u32)> {
-        let (unicode, output_base, _) = Self::cpp_options_from_raw(settings, true)?;
-        Some((unicode, output_base))
+        let options = Self::cpp_options_from_raw(settings)?;
+        Some((options.unicode, options.output_base))
     }
 
-    fn cpp_options_from_raw(settings: &[&str], ignore_input_base: bool) -> Option<(bool, u32, u8)> {
+    fn cpp_options_from_raw(settings: &[&str]) -> Option<CppFallbackOptions> {
         let mut unicode = true;
         let mut output_base = 10;
+        let mut input_base = 10;
         let mut assumption_mode = 0;
         for setting in settings {
             let trimmed = setting.trim();
@@ -195,10 +203,7 @@ impl NativeSessionSettings {
                 match parts.as_slice() {
                     [output] => output_base = parse_standard_base(output)?,
                     [output, input] => {
-                        let input_base = parse_standard_base(input)?;
-                        if !ignore_input_base && input_base != 10 {
-                            return None;
-                        }
+                        input_base = parse_standard_base(input)?;
                         output_base = parse_standard_base(output)?;
                     }
                     _ => return None,
@@ -213,8 +218,9 @@ impl NativeSessionSettings {
                     SetSetting::OutputBase(value) if (2..=36).contains(&value) => {
                         output_base = value;
                     }
-                    SetSetting::InputBase(value)
-                        if (2..=36).contains(&value) && (ignore_input_base || value == 10) => {}
+                    SetSetting::InputBase(value) if (2..=36).contains(&value) => {
+                        input_base = value;
+                    }
                     _ => return None,
                 },
                 SessionCommand::Assume(command) => {
@@ -225,7 +231,12 @@ impl NativeSessionSettings {
                 }
             }
         }
-        Some((unicode, output_base, assumption_mode))
+        Some(CppFallbackOptions {
+            unicode,
+            output_base,
+            input_base,
+            assumption_mode,
+        })
     }
 
     pub(crate) const fn precision_digits(self) -> usize {
@@ -767,21 +778,33 @@ mod tests {
 
     #[test]
     fn accepts_only_cpp_print_settings_at_the_fallback_boundary() {
+        let options = |unicode, output_base, input_base, assumption_mode| {
+            Some(CppFallbackOptions {
+                unicode,
+                output_base,
+                input_base,
+                assumption_mode,
+            })
+        };
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0"]),
-            Some((false, 10, 0))
+            options(false, 10, 10, 0)
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0", "output base 16"]),
-            Some((false, 16, 0))
+            options(false, 16, 10, 0)
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["base 16 10"]),
-            Some((true, 16, 0))
+            options(true, 16, 10, 0)
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["input base 16"]),
-            None
+            options(true, 10, 16, 0)
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_print_options_from_raw(&["base 10 16"]),
+            options(true, 10, 16, 0)
         );
         assert_eq!(
             NativeSessionSettings::cpp_reformat_options_from_raw(&["input base 16"]),
@@ -796,11 +819,11 @@ mod tests {
                 "assume positive",
                 "assume unknown",
             ]),
-            Some((true, 10, 2))
+            options(true, 10, 10, 2)
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["base 2 16"]),
-            None
+            options(true, 2, 16, 0)
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["unicode 0", "precision 10"]),
