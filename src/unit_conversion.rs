@@ -175,16 +175,11 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
 
 /// Evaluates a qalc unit expression with caller-owned definitions and session state.
 pub(crate) fn native_output_with_catalog(
-    expr: &str,
+    parsed: Expression,
     catalog: &PrefixUnitCatalog,
     context: &mut CalculatorContext,
     format_number: &dyn Fn(&Number) -> String,
 ) -> Result<Option<NativeUnitOutput>, String> {
-    let parsed = match parse_expression(expr) {
-        Ok(parsed) => parsed,
-        Err(_) => return Ok(None),
-    };
-
     native_output_for_parsed(parsed, catalog, context, format_number)
 }
 
@@ -197,13 +192,16 @@ fn native_output_for_parsed(
     match parsed {
         Expression::Conversion { expr, target } => {
             let evaluated_expr = crate::eval::evaluate_ast(&expr, context)?;
-            let evaluated_target = crate::eval::evaluate_ast(&target, context)?;
-            let mut source = reduce_quantity(&evaluated_expr, catalog)?;
+            let mut source = match reduce_quantity(&evaluated_expr, catalog) {
+                Ok(source) => source,
+                Err(_) => return Ok(None),
+            };
             if source.units.is_unitless()
-                && crate::eval::is_supported_number_conversion_target(&evaluated_target)
+                && crate::eval::is_supported_number_conversion_target(&target)
             {
                 return Ok(None);
             }
+            let evaluated_target = crate::eval::evaluate_ast(&target, context)?;
             let target = conversion_target(&evaluated_target, catalog, format_number)?;
             if source.units.is_unitless() {
                 let ConversionTarget::Unit { units, .. } = &target else {

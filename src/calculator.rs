@@ -60,11 +60,24 @@ impl std::error::Error for CalculatorError {}
 /// structured messages. Loaded XML catalogs are retained so callers can query
 /// the definitions used for evaluation and focused unit conversion. Dataset
 /// catalogs remain available through the independent [`crate::datasets`] API.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Calculator {
     context: CalculatorContext,
     definitions: Option<FunctionVariableCatalog>,
     units: Option<PrefixUnitCatalog>,
+}
+
+impl Default for Calculator {
+    fn default() -> Self {
+        Self {
+            context: CalculatorContext {
+                precision_digits: crate::session::DEFAULT_QALC_PRECISION_DIGITS,
+                ..CalculatorContext::default()
+            },
+            definitions: None,
+            units: None,
+        }
+    }
 }
 
 impl Calculator {
@@ -106,10 +119,15 @@ impl Calculator {
         let precision = self.context.precision_digits;
         let fraction_format = self.context.print_options.number_fraction_format;
         let approximation = self.context.evaluation_options.approximation;
-        crate::text::format_result_with_numbers(expression, &|number| {
+        let formatted = crate::text::format_result_with_numbers(expression, &|number| {
             number.to_string_with_options(precision, fraction_format, approximation)
         })
-        .ok_or_else(|| CalculatorError::new("expression cannot be formatted natively"))
+        .ok_or_else(|| CalculatorError::new("expression cannot be formatted natively"))?;
+        if matches!(expression, Expression::Unit { .. }) {
+            Ok(format!("1 {formatted}"))
+        } else {
+            Ok(formatted)
+        }
     }
 
     /// Parses, evaluates, and formats an expression using only native Rust code.
@@ -117,6 +135,11 @@ impl Calculator {
     /// When definition catalogs have been loaded, the focused native unit
     /// conversion engine is consulted before general expression evaluation.
     pub fn calculate_and_print(&mut self, input: &str) -> Result<String, CalculatorError> {
+        let expression = self.parse_for_calculation(input)?;
+        self.evaluate_and_print(expression)
+    }
+
+    fn evaluate_and_print(&mut self, expression: Expression) -> Result<String, CalculatorError> {
         if let Some(units) = &self.units {
             let mut probe_context = self.context.clone();
             let precision = self.context.precision_digits;
@@ -126,7 +149,7 @@ impl Calculator {
                 number.to_string_with_options(precision, fraction_format, approximation)
             };
             match crate::unit_conversion::native_output_with_catalog(
-                input,
+                expression.clone(),
                 units,
                 &mut probe_context,
                 &format_number,
@@ -140,7 +163,7 @@ impl Calculator {
             }
         }
 
-        let result = self.calculate(input)?;
+        let result = self.evaluate(&expression)?;
         self.print(&result)
     }
 
@@ -155,18 +178,26 @@ impl Calculator {
         input: &str,
         target: &str,
     ) -> Result<String, CalculatorError> {
-        let request = format!("{input} to {target}");
+        let request = Expression::Conversion {
+            expr: Box::new(self.parse_for_calculation(input)?),
+            target: Box::new(self.parse_for_calculation(target)?),
+        };
         if self.units.is_none() {
-            let result = self.calculate(&request)?;
+            let mut probe_context = self.context.clone();
+            let result = match probe_context.evaluate_expression(&request) {
+                Ok(result) => result,
+                Err(message) => return Err(self.record_calculation_error(message)),
+            };
             if matches!(result, Expression::Conversion { .. }) {
                 return Err(self.record_calculation_error(
                     "load definition catalogs before unit conversion by calling load_definitions_from_dir"
-                        .to_string(),
+                    .to_string(),
                 ));
             }
+            self.context = probe_context;
             return self.print(&result);
         }
-        self.calculate_and_print(&request)
+        self.evaluate_and_print(request)
     }
 
     /// Loads function, variable, prefix, unit, and currency XML catalogs.
@@ -262,6 +293,22 @@ impl Calculator {
     /// Clears all queued structured messages.
     pub fn clear_messages(&mut self) {
         self.context.clear_messages();
+    }
+
+    fn parse_for_calculation(&mut self, input: &str) -> Result<Expression, CalculatorError> {
+        match parse_expression(input) {
+            Ok(expression) => Ok(expression),
+            Err(error) => {
+                let message = error.to_string();
+                self.context.messages.push(CalculatorMessage::new(
+                    message.clone(),
+                    MessageType::Error,
+                    MessageCategory::Parsing,
+                    MessageStage::Parsing,
+                ));
+                Err(CalculatorError::new(message))
+            }
+        }
     }
 
     fn record_calculation_error(&mut self, message: String) -> CalculatorError {

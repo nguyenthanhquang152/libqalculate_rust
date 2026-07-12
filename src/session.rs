@@ -3,7 +3,7 @@ use crate::parser::commands::{
 };
 use std::path::PathBuf;
 
-const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
+pub(crate) const DEFAULT_QALC_PRECISION_DIGITS: usize = 10;
 // Native precision evidence is deliberately bounded so CLI settings cannot
 // request MPFR allocation through the fallback-disabled scaffold.
 const MAX_NATIVE_PRECISION_DIGITS: usize = 4096;
