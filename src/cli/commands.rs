@@ -19,6 +19,14 @@ pub(crate) enum InteractiveCommand {
     },
     Info(String),
     Delete(String),
+    DefineVariable {
+        name: String,
+        expression: String,
+    },
+    DefineFunction {
+        name: String,
+        expression: String,
+    },
     Unknown,
     Expression(String),
 }
@@ -49,12 +57,19 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
         };
     }
 
-    if let Some(rest) = lower.strip_prefix("set base ") {
+    let base_arguments = if matches!(lower.as_str(), "base" | "set base") {
+        Some("")
+    } else {
+        lower
+            .strip_prefix("set base ")
+            .or_else(|| lower.strip_prefix("base "))
+    };
+    if let Some(rest) = base_arguments {
         let bases = rest
             .split_whitespace()
             .map(parse_base)
             .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| "No base specified.".to_string())?;
+            .ok_or_else(|| "Illegal base.".to_string())?;
         let setting = |setting| {
             SessionCommand::Set(SetCommand {
                 setting,
@@ -86,6 +101,16 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
     let command_name = command_parts.next().unwrap_or_default();
     let command_argument = command_parts.next().map(str::trim).unwrap_or_default();
 
+    if command_name.eq_ignore_ascii_case("variable") {
+        let (name, expression) = parse_named_definition(command_argument)?;
+        return Ok(InteractiveCommand::DefineVariable { name, expression });
+    }
+
+    if command_name.eq_ignore_ascii_case("function") {
+        let (name, expression) = parse_named_definition(command_argument)?;
+        return Ok(InteractiveCommand::DefineFunction { name, expression });
+    }
+
     if command_name.eq_ignore_ascii_case("help") {
         return Ok(InteractiveCommand::Help(
             (!command_argument.is_empty()).then(|| command_argument.to_string()),
@@ -103,7 +128,7 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
         return Ok(InteractiveCommand::Delete(command_argument.to_string()));
     }
 
-    if command_name.eq_ignore_ascii_case("list") {
+    if command_name.eq_ignore_ascii_case("list") || command_name.eq_ignore_ascii_case("find") {
         if command_argument.is_empty() {
             return Ok(InteractiveCommand::List {
                 list_type: ListType::All,
@@ -114,6 +139,7 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
         let mut parts = rest.split_whitespace();
         let first = parts.next().unwrap_or_default();
         let (list_type, query_first) = match first.to_ascii_lowercase().as_str() {
+            "currencies" | "currency" => (ListType::Currencies, None),
             "functions" | "function" => (ListType::Functions, None),
             "units" | "unit" => (ListType::Units, None),
             "variables" | "variable" => (ListType::Variables, None),
@@ -149,6 +175,35 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
     }
 
     Ok(InteractiveCommand::Expression(trimmed.to_string()))
+}
+
+fn parse_named_definition(argument: &str) -> Result<(String, String), String> {
+    let argument = argument.trim();
+    if argument.is_empty() {
+        return Err("Illegal name.".to_string());
+    }
+
+    let (name, expression) = if let Some(quoted) = argument.strip_prefix('"') {
+        let Some(closing_quote) = quoted.find('"') else {
+            return Err("Illegal name.".to_string());
+        };
+        (&quoted[..closing_quote], quoted[closing_quote + 1..].trim())
+    } else {
+        argument
+            .find(char::is_whitespace)
+            .map_or((argument, ""), |separator| {
+                (&argument[..separator], argument[separator..].trim())
+            })
+    };
+
+    if name.is_empty() {
+        return Err("Illegal name.".to_string());
+    }
+    let expression = expression
+        .strip_prefix('"')
+        .and_then(|expression| expression.strip_suffix('"'))
+        .unwrap_or(expression);
+    Ok((name.to_string(), expression.to_string()))
 }
 
 pub(crate) fn serialize_setting(command: &SessionCommand) -> String {
@@ -232,6 +287,12 @@ mod tests {
                     && serialize_setting(&settings[0]) == "output base 10"
                     && serialize_setting(&settings[1]) == "input base 16"
         ));
+        assert!(matches!(
+            parse_interactive_command("base 16"),
+            Ok(InteractiveCommand::Settings(settings))
+                if settings.len() == 1
+                    && serialize_setting(&settings[0]) == "output base 16"
+        ));
         let unicode = parse_interactive_command("/set unicode off").expect("Unicode command");
         let InteractiveCommand::Settings(mut unicode) = unicode else {
             panic!("expected typed Unicode setting");
@@ -266,6 +327,27 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_interactive_command("FiNd variables CaseSensitiveName"),
+            Ok(InteractiveCommand::List {
+                list_type: super::ListType::Variables,
+                query: Some("CaseSensitiveName".to_string()),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("FiNd currencies USD"),
+            Ok(InteractiveCommand::List {
+                list_type: super::ListType::Currencies,
+                query: Some("USD".to_string()),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("find currencies"),
+            Ok(InteractiveCommand::List {
+                list_type: super::ListType::Currencies,
+                query: None,
+            })
+        );
+        assert_eq!(
             parse_interactive_command("to cm"),
             Ok(InteractiveCommand::Expression("ans to cm".to_string()))
         );
@@ -276,6 +358,52 @@ mod tests {
         assert_eq!(
             parse_interactive_command("/typo"),
             Ok(InteractiveCommand::Unknown)
+        );
+    }
+
+    #[test]
+    fn parses_variable_and_function_definition_commands() {
+        assert_eq!(
+            parse_interactive_command("variable rate 5"),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "rate".to_string(),
+                expression: "5".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command(r#"function "twice" "2*\x""#),
+            Ok(InteractiveCommand::DefineFunction {
+                name: "twice".to_string(),
+                expression: r"2*\x".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("variable zero"),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "zero".to_string(),
+                expression: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command(r#"variable date "2024-01-01""#),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "date".to_string(),
+                expression: "2024-01-01".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command(r#"variable label "green apples""#),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "label".to_string(),
+                expression: "green apples".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("function empty"),
+            Ok(InteractiveCommand::DefineFunction {
+                name: "empty".to_string(),
+                expression: String::new(),
+            })
         );
     }
 }

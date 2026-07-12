@@ -247,9 +247,28 @@ pub(crate) fn render_local_variable_list(
     if !matches!(request.list_type, ListType::All | ListType::Variables) {
         return None;
     }
+    render_local_name_list(request, variables, include_footer)
+}
+
+pub(crate) fn render_local_function_list(
+    request: &ListRequest,
+    functions: &BTreeMap<String, String>,
+    include_footer: bool,
+) -> Option<String> {
+    if !matches!(request.list_type, ListType::All | ListType::Functions) {
+        return None;
+    }
+    render_local_name_list(request, functions, include_footer)
+}
+
+fn render_local_name_list(
+    request: &ListRequest,
+    definitions: &BTreeMap<String, String>,
+    include_footer: bool,
+) -> Option<String> {
     let query = request.search_term.as_deref().unwrap_or_default();
     let query_lower = query.to_ascii_lowercase();
-    let matches = variables
+    let matches = definitions
         .keys()
         .filter(|name| query.is_empty() || name.to_ascii_lowercase().starts_with(&query_lower))
         .map(|name| format!("{name}\t"))
@@ -287,6 +306,21 @@ pub(crate) fn render_local_variable_info(
     Some(format!(
         "\nVariable: {name}\nNames: {name}\nValue: {value}\n\n"
     ))
+}
+
+pub(crate) fn render_local_function_info(
+    query: &str,
+    functions: &BTreeMap<String, String>,
+) -> Option<String> {
+    functions
+        .get(query)
+        .or_else(|| {
+            functions
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(query))
+                .map(|(_, info)| info)
+        })
+        .cloned()
 }
 
 pub(crate) fn render_info(
@@ -414,7 +448,10 @@ pub(crate) fn render_list(
         || request.list_type == ListType::Units
         || list_all)
         && units_enabled)
-        || ((request.list_type == ListType::Units || list_all) && currencies_enabled)
+        || ((request.list_type == ListType::Currencies
+            || request.list_type == ListType::Units
+            || list_all)
+            && currencies_enabled)
     {
         let mut docs = Vec::new();
         if (request.list_type == ListType::Prefixes
@@ -437,7 +474,11 @@ pub(crate) fn render_list(
                 );
             }
         }
-        if (request.list_type == ListType::Units || list_all) && currencies_enabled {
+        if (request.list_type == ListType::Currencies
+            || request.list_type == ListType::Units
+            || list_all)
+            && currencies_enabled
+        {
             let currencies_path = data_dir.join("currencies.xml.in");
             docs.push(
                 load_definition_xml_file(currencies_path)
@@ -572,7 +613,8 @@ pub(crate) fn render_list(
         }
     }
 
-    if request.list_type == ListType::Units || list_all {
+    if request.list_type == ListType::Currencies || request.list_type == ListType::Units || list_all
+    {
         if let Some(cat) = &prefix_unit_catalog {
             for unit in &cat.units().units {
                 if unit.active() {
@@ -583,13 +625,16 @@ pub(crate) fn render_list(
                     let is_enabled = if is_currency {
                         currencies_enabled
                     } else {
-                        units_enabled
+                        units_enabled && request.list_type != ListType::Currencies
                     };
 
                     if is_enabled {
                         let is_composite = unit.kind() == UnitType::Composite;
-                        let should_include =
-                            !is_composite && (has_search || list_all || !is_currency);
+                        let should_include = !is_composite
+                            && (has_search
+                                || list_all
+                                || !is_currency
+                                || request.list_type == ListType::Currencies);
 
                         if should_include {
                             let is_match = search_str.is_empty()

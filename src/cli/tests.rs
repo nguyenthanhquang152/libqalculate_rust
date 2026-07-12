@@ -96,6 +96,13 @@ fn test_test_file_without_path_records_diagnostic() {
 }
 
 #[test]
+fn command_file_without_path_does_not_create_an_empty_request() {
+    let invocation = parse_args(vec!["qalc-rs", "-f"]);
+    assert_eq!(invocation.diagnostics, vec!["No file specified."]);
+    assert_eq!(invocation.command_file, None);
+}
+
+#[test]
 fn test_terminal_action_ordering() {
     let inv = parse_args(vec!["qalc-rs", "-v", "-h"]);
     assert_eq!(inv.immediate, Some(ImmediateAction::Version));

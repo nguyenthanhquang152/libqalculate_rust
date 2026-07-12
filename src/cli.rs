@@ -51,6 +51,7 @@ pub(crate) struct ListRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ListType {
     All,
+    Currencies,
     Functions,
     Units,
     Variables,
@@ -476,11 +477,12 @@ where
                 }
                 if file_path.is_empty() {
                     diagnostics.push("No file specified.".to_string());
+                } else {
+                    command_file = Some(CommandFile {
+                        path: file_path,
+                        mode: CommandFileMode::Commands,
+                    });
                 }
-                command_file = Some(CommandFile {
-                    path: file_path,
-                    mode: CommandFileMode::Commands,
-                });
             }
             "--test-file" => {
                 let mut file_path = String::new();

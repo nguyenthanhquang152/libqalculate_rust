@@ -50,6 +50,20 @@ fn no_arguments_start_an_interactive_session_and_quit_cleanly() {
 }
 
 #[test]
+fn interactive_hash_comments_are_ignored() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "-nodefs", "-t"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("# comment\nquit\n")
+        .assert()
+        .success()
+        .stdout("> # comment\n> quit\n")
+        .stderr("");
+}
+
+#[test]
 fn fresh_profile_uses_the_line_repl_without_autocalc_onboarding() {
     let mut session = isolated_session();
     std::fs::remove_file(session._config.path().join("qalculate/qalc.cfg"))
@@ -389,7 +403,7 @@ fn managed_answer_aliases_cannot_be_deleted_as_user_variables() {
         .success()
         .stdout(predicate::str::contains("ans + 1 = 2"))
         .stderr(predicate::str::contains(
-            "no user-defined variable with the name 'ans' exists",
+            "no user-defined variable or function with the name 'ans' exists",
         ));
 }
 

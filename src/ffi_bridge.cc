@@ -1,4 +1,6 @@
 #include "ffi_bridge.h"
+#include "Function.h"
+#include "MathStructure-support.h"
 #include "Variable.h"
 
 #include <algorithm>
@@ -189,6 +191,13 @@ PrintOptions qalc_print_options(bool unicode_enabled, bool *is_approximate) {
     po.spell_out_logical_operators = true;
     po.interval_display = INTERVAL_DISPLAY_SIGNIFICANT_DIGITS;
     return po;
+}
+
+bool is_qalc_session_answer_alias(const std::string &name) {
+    const std::array<std::string, 7> aliases = {
+        "ans", "answer", "ans1", "ans2", "ans3", "ans4", "ans5"
+    };
+    return std::find(aliases.begin(), aliases.end(), name) != aliases.end();
 }
 
 std::array<KnownVariable*, 5> ensure_qalc_session_answers(Calculator &calc) {
@@ -593,6 +602,15 @@ std::string calculate_qalc_structured(
     return result_output;
 }
 
+std::string session_function_name(rust::Str name) {
+    std::string function_name(name.data(), name.size());
+    if(function_name.size() > 2 &&
+        function_name.compare(function_name.size() - 2, 2, "()") == 0) {
+        function_name.resize(function_name.size() - 2);
+    }
+    return function_name;
+}
+
 } // namespace
 
 std::unique_ptr<Calculator> new_calculator() {
@@ -641,6 +659,176 @@ bool qalc_set_session_variable(
     }
 }
 
+bool qalc_define_session_variable(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        CalculatorMessageBlocker message_blocker(calc);
+        const std::string variable_name(name.data(), name.size());
+        if(!calc.variableNameIsValid(variable_name)) return false;
+
+        const std::string source(expression.data(), expression.size());
+        Variable *variable = calc.getActiveVariable(variable_name, true);
+        KnownVariable *known_variable = dynamic_cast<KnownVariable*>(variable);
+        if(known_variable != nullptr && known_variable->isLocal() &&
+            known_variable->category() == calc.temporaryCategory()) {
+            known_variable->set(source);
+            if(known_variable->countNames() == 0) {
+                ExpressionName expression_name(variable_name);
+                expression_name.reference = true;
+                known_variable->setName(expression_name, 1);
+            } else {
+                known_variable->setName(variable_name, 1);
+            }
+            variable = known_variable;
+        } else {
+            variable = calc.addVariable(new KnownVariable(
+                calc.temporaryCategory(),
+                variable_name,
+                source
+            ));
+            if(variable != nullptr) variable->setChanged(true);
+        }
+        known_variable = dynamic_cast<KnownVariable*>(variable);
+        return known_variable != nullptr && known_variable->isLocal();
+    } catch (...) {
+        return false;
+    }
+}
+
+bool qalc_set_session_function(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        CalculatorMessageBlocker message_blocker(calc);
+        const std::string function_name(name.data(), name.size());
+        if(!calc.functionNameIsValid(function_name)) return false;
+
+        std::string formula(expression.data(), expression.size());
+        const EvaluationOptions evaluation_options;
+        fix_user_function_expression(formula, evaluation_options);
+        if(calc.hasToExpression(formula)) return false;
+
+        MathFunction *function = calc.getActiveFunction(function_name, true);
+        UserFunction *user_function = dynamic_cast<UserFunction*>(function);
+        if(user_function != nullptr && user_function->isLocal() &&
+            user_function->category() == calc.temporaryCategory()) {
+            user_function->setFormula(formula);
+            if(user_function->countNames() == 0) {
+                ExpressionName expression_name(function_name);
+                expression_name.reference = true;
+                user_function->setName(expression_name, 1);
+            } else {
+                user_function->setName(function_name, 1);
+            }
+        } else {
+            function = calc.addFunction(new UserFunction(
+                calc.temporaryCategory(),
+                function_name,
+                formula
+            ));
+            if(function != nullptr) function->setChanged(true);
+        }
+        user_function = dynamic_cast<UserFunction*>(function);
+        return user_function != nullptr && user_function->isLocal();
+    } catch (...) {
+        return false;
+    }
+}
+
+rust::String qalc_render_session_function_info(Calculator &calc, rust::Str name) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        const std::string function_name = session_function_name(name);
+        auto *function = dynamic_cast<UserFunction*>(
+            calc.getActiveFunction(function_name)
+        );
+        if(function == nullptr || !function->isLocal()) return rust::String();
+
+        std::string rendered = "\nFunction";
+        if(!function->title(false).empty()) {
+            rendered += ": ";
+            rendered += function->title();
+        }
+        rendered += "\n\n";
+        rendered += function->referenceName();
+        rendered += '(';
+
+        int displayed_arguments = function->maxargs();
+        if(displayed_arguments < 0) {
+            displayed_arguments = function->minargs() + 1;
+            const int last_definition = static_cast<int>(
+                function->lastArgumentDefinitionIndex()
+            );
+            if(last_definition > displayed_arguments) {
+                displayed_arguments = last_definition;
+            }
+        }
+        for(int index = 1; index <= displayed_arguments; ++index) {
+            if(index > 1) rendered += ", ";
+            const bool optional = index > function->minargs();
+            if(optional) rendered += '[';
+            Argument *argument = function->getArgumentDefinition(index);
+            if(argument != nullptr && !argument->name().empty()) {
+                rendered += argument->name();
+            } else {
+                rendered += "argument";
+                if(index > 1 || function->maxargs() != 1) {
+                    rendered += ' ';
+                    rendered += std::to_string(index);
+                }
+            }
+            if(optional) rendered += ']';
+        }
+        if(function->maxargs() < 0) rendered += ", ...";
+        rendered += ")\n";
+
+        if(displayed_arguments > 0) {
+            rendered += "\nArguments\n";
+            Argument default_argument;
+            for(int index = 1; index <= displayed_arguments; ++index) {
+                Argument *argument = function->getArgumentDefinition(index);
+                rendered += argument != nullptr && !argument->name().empty()
+                    ? argument->name()
+                    : std::to_string(index);
+                rendered += ": ";
+                rendered += argument != nullptr
+                    ? argument->printlong()
+                    : default_argument.printlong();
+                if(index > function->minargs()) {
+                    rendered += " (optional";
+                    const std::string default_value = function->getDefaultValue(index);
+                    if(!default_value.empty() && default_value != "\"\"") {
+                        rendered += ", default: ";
+                        rendered += default_value;
+                    }
+                    rendered += ')';
+                }
+                rendered += '\n';
+            }
+        }
+
+        ParseOptions parse_options;
+        parse_options.base = 10;
+        rendered += "\nExpression: ";
+        rendered += calc.unlocalizeExpression(function->formula(), parse_options);
+        rendered += "\n\n";
+        return rust::String(rendered);
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error(
+            "unknown C++ exception while rendering session function info"
+        );
+    }
+}
+
 rust::String qalc_print_session_variable(Calculator &calc, rust::Str name) {
     try {
         CalculatorFfiGuard ffi_guard(calc);
@@ -673,7 +861,25 @@ bool qalc_delete_session_variable(Calculator &calc, rust::Str name) {
         CalculatorFfiGuard ffi_guard(calc);
         const std::string variable_name(name.data(), name.size());
         Variable *variable = calc.getActiveVariable(variable_name);
-        return variable != nullptr && variable->isLocal() && variable->destroy();
+        if(variable == nullptr || !variable->isLocal() || !variable->destroy()) return false;
+        if(is_qalc_session_answer_alias(variable_name)) {
+            try {
+                ensure_qalc_session_answers(calc);
+            } catch (...) {
+            }
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool qalc_delete_session_function(Calculator &calc, rust::Str name) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        const std::string function_name = session_function_name(name);
+        MathFunction *function = calc.getActiveFunction(function_name);
+        return function != nullptr && function->isLocal() && function->destroy();
     } catch (...) {
         return false;
     }

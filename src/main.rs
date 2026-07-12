@@ -3,7 +3,8 @@ mod cli;
 mod listing;
 
 use std::env;
-use std::io::{self, IsTerminal};
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, IsTerminal};
 use std::path::{Path, PathBuf};
 
 use libqalculate_rust::batch::read_batch_cases;
@@ -108,13 +109,8 @@ fn main() {
         return;
     }
     if let Some(ref file) = invocation.command_file {
-        match file.mode {
-            cli::CommandFileMode::Commands => {
-                exit_with_error("Command file execution is not implemented (owner #62)");
-            }
-            cli::CommandFileMode::Test => {
-                exit_with_error("Test file execution is not implemented (owner #63)");
-            }
+        if file.mode == cli::CommandFileMode::Test {
+            exit_with_error("Test file execution is not implemented (owner #63)");
         }
     }
 
@@ -123,49 +119,49 @@ fn main() {
         Err(error) => exit_with_error(&error),
     };
 
+    if let Some(command_file) = invocation.command_file.clone() {
+        calculator.enable_session_mode();
+        let mut session = cli::repl::ReplSessionState::default();
+        match run_command_file(
+            &mut invocation,
+            &mut calculator,
+            &mut session,
+            &command_file,
+        ) {
+            cli::repl::CommandStreamExit::Quit => return,
+            cli::repl::CommandStreamExit::Eof(exit_code)
+                if exit_code != 0 && !invocation.interactive =>
+            {
+                drop(calculator);
+                std::process::exit(exit_code);
+            }
+            cli::repl::CommandStreamExit::Eof(_) => {}
+        }
+
+        if let Some(expression) = invocation.expression.clone() {
+            run_trailing_expression(&invocation, &mut calculator, &mut session, &expression);
+        }
+
+        if invocation.interactive {
+            let exit_code =
+                run_interactive_session(&mut invocation, &mut calculator, &mut session, None);
+            drop(calculator);
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
+        }
+        return;
+    }
+
     if invocation.interactive || invocation.expression.is_none() {
         calculator.enable_session_mode();
+        let mut session = cli::repl::ReplSessionState::default();
         let initial_expression = invocation.expression.clone();
-        let echo_input = !io::stdin().is_terminal();
-        let stdin = io::stdin();
-        let stdout = io::stdout();
-        let stderr = io::stderr();
-        let mut input = stdin.lock();
-        let mut output = stdout.lock();
-        let mut error = stderr.lock();
-        let exit_code = cli::repl::run(
+        let exit_code = run_interactive_session(
             &mut invocation,
-            &mut input,
-            &mut output,
-            &mut error,
-            echo_input,
+            &mut calculator,
+            &mut session,
             initial_expression,
-            |invocation, request| match request {
-                cli::repl::ReplRequest::Evaluate(expression) => {
-                    evaluate_expression(invocation, &mut calculator, &expression).map(|outcome| {
-                        let answer_rendering = calculator.session_answer_rendering();
-                        let assignment_renderings =
-                            calculator.session_assignment_renderings(&expression);
-                        Some(cli::repl::ReplEvaluation {
-                            output: outcome.output,
-                            answer_rendering,
-                            assignment_renderings,
-                        })
-                    })
-                }
-                cli::repl::ReplRequest::Delete(name) => {
-                    if calculator.delete_session_variable(&name) {
-                        Ok(None)
-                    } else {
-                        Err(format!(
-                            "no user-defined variable with the name '{name}' exists"
-                        ))
-                    }
-                }
-                cli::repl::ReplRequest::ReformatLastAnswer => {
-                    reformat_session_answer(invocation, &mut calculator)
-                }
-            },
         );
         drop(calculator);
         if exit_code != 0 {
@@ -190,6 +186,158 @@ fn main() {
         Err(error) => {
             drop(calculator);
             exit_with_error(&error);
+        }
+    }
+}
+
+fn run_interactive_session(
+    invocation: &mut cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    initial_expression: Option<String>,
+) -> i32 {
+    let echo_input = !io::stdin().is_terminal();
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+    let mut input = stdin.lock();
+    let mut output = stdout.lock();
+    let mut error = stderr.lock();
+    cli::repl::run(
+        invocation,
+        session,
+        cli::repl::ReplIo::new(&mut input, &mut output, &mut error),
+        echo_input,
+        initial_expression,
+        |invocation, request| evaluate_repl_request(invocation, calculator, request),
+    )
+}
+
+fn run_command_file(
+    invocation: &mut cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    command_file: &cli::CommandFile,
+) -> cli::repl::CommandStreamExit {
+    if command_file.path == "-" {
+        let stdin = io::stdin();
+        let mut input = stdin.lock();
+        return run_command_input(invocation, calculator, session, &mut input);
+    }
+
+    let file = match File::open(&command_file.path) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("Could not open \"{}\".", command_file.path);
+            return cli::repl::CommandStreamExit::Eof(1);
+        }
+    };
+    let mut input = BufReader::new(file);
+    run_command_input(invocation, calculator, session, &mut input)
+}
+
+fn run_command_input<R: BufRead>(
+    invocation: &mut cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    input: &mut R,
+) -> cli::repl::CommandStreamExit {
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+    let mut output = stdout.lock();
+    let mut error = stderr.lock();
+    cli::repl::run_command_stream(
+        invocation,
+        session,
+        cli::repl::ReplIo::new(input, &mut output, &mut error),
+        |invocation, request| evaluate_repl_request(invocation, calculator, request),
+    )
+}
+
+fn run_trailing_expression(
+    invocation: &cli::CliInvocation,
+    calculator: &mut Calculator,
+    session: &mut cli::repl::ReplSessionState,
+    expression: &str,
+) {
+    match evaluate_expression(invocation, calculator, expression) {
+        Ok(outcome) => {
+            let assignment_renderings = calculator.session_assignment_renderings(expression);
+            session.record_evaluation(expression.to_string(), &assignment_renderings);
+            println!("{}", outcome.output);
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+        }
+    }
+}
+
+fn evaluate_repl_request(
+    invocation: &cli::CliInvocation,
+    calculator: &mut Calculator,
+    request: cli::repl::ReplRequest,
+) -> Result<Option<cli::repl::ReplEvaluation>, String> {
+    match request {
+        cli::repl::ReplRequest::Evaluate(expression) => {
+            evaluate_expression(invocation, calculator, &expression).map(|outcome| {
+                let answer_rendering = calculator.session_answer_rendering();
+                let assignment_renderings = calculator.session_assignment_renderings(&expression);
+                Some(cli::repl::ReplEvaluation {
+                    output: outcome.output,
+                    answer_rendering,
+                    assignment_renderings,
+                    function_info: None,
+                })
+            })
+        }
+        cli::repl::ReplRequest::DefineVariable { name, expression } => calculator
+            .define_session_variable(&name, &expression)
+            .map(|rendering| {
+                Some(cli::repl::ReplEvaluation {
+                    output: String::new(),
+                    answer_rendering: None,
+                    assignment_renderings: vec![(name, rendering)],
+                    function_info: None,
+                })
+            })
+            .ok_or_else(|| "Illegal name.".to_string()),
+        cli::repl::ReplRequest::DefineFunction { name, expression } => calculator
+            .define_session_function(&name, &expression)
+            .map(|function_info| {
+                Some(cli::repl::ReplEvaluation {
+                    output: String::new(),
+                    answer_rendering: None,
+                    assignment_renderings: Vec::new(),
+                    function_info: Some(function_info),
+                })
+            })
+            .ok_or_else(|| "Illegal name.".to_string()),
+        cli::repl::ReplRequest::DeleteVariable {
+            name,
+            allow_managed_alias,
+        } => {
+            let deleted = if allow_managed_alias {
+                calculator.delete_session_variable_override(&name)
+            } else {
+                calculator.delete_session_variable(&name)
+            };
+            if deleted {
+                Ok(None)
+            } else {
+                Err("no matching user-defined variable".to_string())
+            }
+        }
+        cli::repl::ReplRequest::DeleteFunction(name) => {
+            if calculator.delete_session_function(&name) {
+                Ok(None)
+            } else {
+                Err(format!(
+                    "no user-defined variable or function with the name '{name}' exists"
+                ))
+            }
+        }
+        cli::repl::ReplRequest::ReformatLastAnswer => {
+            reformat_session_answer(invocation, calculator)
         }
     }
 }
@@ -403,6 +551,7 @@ fn reformat_session_answer(
         output: result.output,
         answer_rendering: None,
         assignment_renderings: Vec::new(),
+        function_info: None,
     }))
 }
 
