@@ -174,6 +174,17 @@ impl NativeSessionSettings {
     /// evaluation semantics. Input base is accepted only when it remains
     /// decimal; all other settings fail closed.
     pub(crate) fn cpp_print_options_from_raw(settings: &[&str]) -> Option<(bool, u32, u8)> {
+        Self::cpp_options_from_raw(settings, false)
+    }
+
+    /// Parse settings used only to reprint an already-evaluated C++ answer.
+    /// Input-base changes are validated but do not affect answer rendering.
+    pub(crate) fn cpp_reformat_options_from_raw(settings: &[&str]) -> Option<(bool, u32)> {
+        let (unicode, output_base, _) = Self::cpp_options_from_raw(settings, true)?;
+        Some((unicode, output_base))
+    }
+
+    fn cpp_options_from_raw(settings: &[&str], ignore_input_base: bool) -> Option<(bool, u32, u8)> {
         let mut unicode = true;
         let mut output_base = 10;
         let mut assumption_mode = 0;
@@ -183,7 +194,11 @@ impl NativeSessionSettings {
                 let parts = base.split_whitespace().collect::<Vec<_>>();
                 match parts.as_slice() {
                     [output] => output_base = parse_standard_base(output)?,
-                    [output, input] if parse_standard_base(input)? == 10 => {
+                    [output, input] => {
+                        let input_base = parse_standard_base(input)?;
+                        if !ignore_input_base && input_base != 10 {
+                            return None;
+                        }
                         output_base = parse_standard_base(output)?;
                     }
                     _ => return None,
@@ -198,7 +213,8 @@ impl NativeSessionSettings {
                     SetSetting::OutputBase(value) if (2..=36).contains(&value) => {
                         output_base = value;
                     }
-                    SetSetting::InputBase(10) => {}
+                    SetSetting::InputBase(value)
+                        if (2..=36).contains(&value) && (ignore_input_base || value == 10) => {}
                     _ => return None,
                 },
                 SessionCommand::Assume(command) => {
@@ -368,7 +384,42 @@ impl SessionAnswerState {
         self.cpp_owned = false;
         self.answers.truncate(Self::MAX_ANSWERS);
         Self::remove_aliases(context);
-        for (index, answer) in self.answers.iter().enumerate() {
+        Self::install_aliases(context, &self.answers);
+        self.last_rendering = Some(rendering);
+    }
+
+    pub(crate) fn record_cpp(
+        &mut self,
+        context: &mut crate::context::CalculatorContext,
+        rendering: String,
+    ) -> Option<crate::ast::Expression> {
+        self.cpp_owned = true;
+        Self::remove_aliases(context);
+        let mirrored_answer = {
+            let mut mirror_context = context.clone();
+            mirror_context.input_base = 10;
+            mirror_context.parse_options.base = 10;
+            mirror_context.clear_messages();
+            mirror_context
+                .parse_and_evaluate_expression(&rendering)
+                .ok()
+        };
+        if let Some(answer) = &mirrored_answer {
+            self.answers.insert(0, answer.clone());
+            self.answers.truncate(Self::MAX_ANSWERS);
+            Self::install_aliases(context, &self.answers);
+        } else {
+            self.answers.clear();
+        }
+        self.last_rendering = Some(rendering);
+        mirrored_answer
+    }
+
+    fn install_aliases(
+        context: &mut crate::context::CalculatorContext,
+        answers: &[crate::ast::Expression],
+    ) {
+        for (index, answer) in answers.iter().enumerate() {
             context
                 .variables
                 .insert(format!("ans{}", index + 1), answer.clone());
@@ -379,18 +430,6 @@ impl SessionAnswerState {
                     .insert("answer".to_string(), answer.clone());
             }
         }
-        self.last_rendering = Some(rendering);
-    }
-
-    pub(crate) fn record_cpp(
-        &mut self,
-        context: &mut crate::context::CalculatorContext,
-        rendering: String,
-    ) {
-        self.answers.clear();
-        self.cpp_owned = true;
-        self.last_rendering = Some(rendering);
-        Self::remove_aliases(context);
     }
 
     pub(crate) fn invalidate(&mut self, context: &mut crate::context::CalculatorContext) {
@@ -739,6 +778,18 @@ mod tests {
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&["base 16 10"]),
             Some((true, 16, 0))
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_print_options_from_raw(&["input base 16"]),
+            None
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_reformat_options_from_raw(&["input base 16"]),
+            Some((true, 10))
+        );
+        assert_eq!(
+            NativeSessionSettings::cpp_reformat_options_from_raw(&["base 10 16"]),
+            Some((true, 10))
         );
         assert_eq!(
             NativeSessionSettings::cpp_print_options_from_raw(&[

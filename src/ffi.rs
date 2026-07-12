@@ -487,8 +487,8 @@ impl Calculator {
             if self.inner.is_null() {
                 return Ok(None);
             }
-            let (unicode_enabled, output_base, _) =
-                crate::session::NativeSessionSettings::cpp_print_options_from_raw(settings)
+            let (unicode_enabled, output_base) =
+                crate::session::NativeSessionSettings::cpp_reformat_options_from_raw(settings)
                     .ok_or_else(|| {
                         CalculatorError::UnsupportedSessionSettings(
                             settings
@@ -959,8 +959,7 @@ impl Calculator {
             };
         }
         if capture_result {
-            self.session_answers
-                .record_cpp(&mut self.native_context, answer_rendering);
+            self.record_cpp_session_answer(expr, answer_rendering);
         }
 
         Ok(CalculationOutput {
@@ -1030,6 +1029,23 @@ impl Calculator {
         }
         let _guard = FFI_LOCK.lock().unwrap();
         sys::qalc_clear_session_answers(self.inner.pin_mut());
+    }
+
+    fn record_cpp_session_answer(&mut self, expr: &str, rendering: String) {
+        let mirrored_answer = self
+            .session_answers
+            .record_cpp(&mut self.native_context, rendering);
+        let Some(answer) = mirrored_answer else {
+            return;
+        };
+        let Ok(crate::ast::Expression::Assignment { variable, .. }) =
+            crate::parser::operators::parse_expression(expr)
+        else {
+            return;
+        };
+        if !crate::session::SessionAnswerState::is_managed_alias(&variable) {
+            self.native_context.variables.insert(variable, answer);
+        }
     }
 
     fn calculate_with_profile(
@@ -1166,8 +1182,7 @@ impl Calculator {
         };
 
         if self.session_answers.is_enabled() {
-            self.session_answers
-                .record_cpp(&mut self.native_context, answer_rendering);
+            self.record_cpp_session_answer(expr, answer_rendering);
         }
 
         Ok(CalculationOutput {
@@ -1778,6 +1793,11 @@ fn native_session_context_output(
     crate::session::apply_raw_settings_to_context(context, settings)?;
     context.clear_messages();
     let answer = context.parse_and_evaluate_expression(expr).ok()?;
+    if expression_contains(&answer, &|node| {
+        matches!(node, crate::ast::Expression::FunctionCall { .. })
+    }) {
+        return None;
+    }
     if matches!(&answer, crate::ast::Expression::Conversion { .. }) {
         let substituted =
             crate::text::format_result_with_numbers(&answer, &crate::number::Number::to_string)?;

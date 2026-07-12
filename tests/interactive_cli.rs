@@ -634,6 +634,52 @@ fn native_markup_variables_survive_an_intervening_cpp_fallback() {
 }
 
 #[test]
+fn native_markup_can_combine_native_variables_with_cpp_answers() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=1\nEi(3)\nx+ans\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("<i>x</i> + <i>ans</i>")
+                .and(predicate::str::contains("10.933")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_markup_can_use_cpp_answer_history_with_native_variables() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=1\n2\nEi(3)\nx+ans2\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("<i>x</i> + <i>ans2</i>").and(predicate::str::contains("= 3")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_markup_can_use_cpp_assigned_variables() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=1\nz:=Ei(3)\nx+z\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("<i>x</i> + <i>z</i>").and(predicate::str::contains("10.933")),
+        )
+        .stderr("");
+}
+
+#[test]
 fn cpp_markup_fallback_updates_the_typed_answer_state() {
     let mut session = isolated_session();
     session
@@ -779,6 +825,32 @@ fn interactive_accepts_separate_input_and_output_bases() {
         .assert()
         .success()
         .stdout("> set base 10 16\n> 10\n\n  10 = 16\n\n> quit\n")
+        .stderr("");
+}
+
+#[test]
+fn input_base_changes_after_cpp_answers_apply_to_later_expressions() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("sin(1)\nset input base 16\nA\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("A = 10"))
+        .stderr("");
+}
+
+#[test]
+fn unsupported_native_session_calls_fall_back_to_cpp() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("set unicode off\n1/3\nEi(ans)\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-0.15809"))
         .stderr("");
 }
 
