@@ -2586,10 +2586,22 @@ fn cli_command_stream_definitions_are_silent_stateful_and_preserve_ans() {
     let mut cmd = qalc_rs_raw();
     cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
-        .write_stdin("1+1\nvariable ans 5\nans\nvariable rate 5\nans\nrate+1\nfunction twice 2*\\x\nans\ntwice(3)\nvariable zero\nzero\nfunction empty\nempty(3)\nset input base 16\nvariable based 15\nbased\nvariable malformed 5\nvariable malformed \"\nmalformed\n")
+        .write_stdin("1+1\nvariable ans 5\nans\nvariable rate 5\nans\nrate+1\nfunction twice 2*\\x\nans\ntwice(3)\nvariable zero\nzero\nfunction empty\nempty(3)\nset input base 16\nvariable based 15\nbased\nvariable malformed 5\nvariable malformed \"\nmalformed\nvariable quoted \"2024-01-01\"\nquoted\n")
         .assert()
         .success()
-        .stdout("2\n5\n5\n6\n5\n6\n0\n0\n15\n0\n")
+        .stdout("2\n5\n5\n6\n5\n6\n0\n0\n15\n0\n2022\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_command_stream_deletes_a_command_defined_ans_override() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("variable ans 5\ndelete ans\nans\n")
+        .assert()
+        .success()
+        .stdout("undefined\n")
         .stderr("");
 }
 
@@ -2599,7 +2611,7 @@ fn cli_command_stream_lists_inspects_and_deletes_user_functions() {
     cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .write_stdin(
-            "function Twice 2*\\x\nlist\nlist functions twice\ninfo twice\nTwice(3)\ndelete twice()\ninfo Twice\n",
+            "function Twice 2*\\x\nlist\nfind functions twice\ninfo twice\nTwice(3)\ndelete twice()\ninfo Twice\n",
         )
         .assert()
         .success()

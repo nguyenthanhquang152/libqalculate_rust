@@ -193,6 +193,13 @@ PrintOptions qalc_print_options(bool unicode_enabled, bool *is_approximate) {
     return po;
 }
 
+bool is_qalc_session_answer_alias(const std::string &name) {
+    const std::array<std::string, 7> aliases = {
+        "ans", "answer", "ans1", "ans2", "ans3", "ans4", "ans5"
+    };
+    return std::find(aliases.begin(), aliases.end(), name) != aliases.end();
+}
+
 std::array<KnownVariable*, 5> ensure_qalc_session_answers(Calculator &calc) {
     std::array<KnownVariable*, 5> answers{};
     const std::array<std::string, 5> names = {"ans", "ans2", "ans3", "ans4", "ans5"};
@@ -854,7 +861,14 @@ bool qalc_delete_session_variable(Calculator &calc, rust::Str name) {
         CalculatorFfiGuard ffi_guard(calc);
         const std::string variable_name(name.data(), name.size());
         Variable *variable = calc.getActiveVariable(variable_name);
-        return variable != nullptr && variable->isLocal() && variable->destroy();
+        if(variable == nullptr || !variable->isLocal() || !variable->destroy()) return false;
+        if(is_qalc_session_answer_alias(variable_name)) {
+            try {
+                ensure_qalc_session_answers(calc);
+            } catch (...) {
+            }
+        }
+        return true;
     } catch (...) {
         return false;
     }

@@ -556,6 +556,24 @@ impl Calculator {
         native_removed || cpp_removed
     }
 
+    /// Delete a command-defined variable that shadows a managed answer alias.
+    pub fn delete_session_variable_override(&mut self, name: &str) -> bool {
+        if !crate::session::SessionAnswerState::is_managed_alias(name) {
+            return self.delete_session_variable(name);
+        }
+        if self.inner.is_null() {
+            return false;
+        }
+        let cpp_removed = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            sys::qalc_delete_session_variable(self.inner.pin_mut(), name)
+        };
+        if cpp_removed {
+            self.session_answers.invalidate(&mut self.native_context);
+        }
+        cpp_removed
+    }
+
     /// Delete a user-defined function from the current interactive session.
     pub fn delete_session_function(&mut self, name: &str) -> bool {
         if self.inner.is_null() {

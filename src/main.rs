@@ -312,8 +312,16 @@ fn evaluate_repl_request(
                 })
             })
             .ok_or_else(|| "Illegal name.".to_string()),
-        cli::repl::ReplRequest::DeleteVariable(name) => {
-            if calculator.delete_session_variable(&name) {
+        cli::repl::ReplRequest::DeleteVariable {
+            name,
+            allow_managed_alias,
+        } => {
+            let deleted = if allow_managed_alias {
+                calculator.delete_session_variable_override(&name)
+            } else {
+                calculator.delete_session_variable(&name)
+            };
+            if deleted {
                 Ok(None)
             } else {
                 Err("no matching user-defined variable".to_string())

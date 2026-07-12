@@ -78,9 +78,18 @@ pub(crate) struct ReplEvaluation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReplRequest {
     Evaluate(String),
-    DefineVariable { name: String, expression: String },
-    DefineFunction { name: String, expression: String },
-    DeleteVariable(String),
+    DefineVariable {
+        name: String,
+        expression: String,
+    },
+    DefineFunction {
+        name: String,
+        expression: String,
+    },
+    DeleteVariable {
+        name: String,
+        allow_managed_alias: bool,
+    },
     DeleteFunction(String),
     ReformatLastAnswer,
 }
@@ -505,7 +514,14 @@ where
             }
             InteractiveCommand::Delete(name) => {
                 history.record(&line);
-                match evaluate(invocation, ReplRequest::DeleteVariable(name.clone())) {
+                let allow_managed_alias = session.local_variables.contains_key(&name);
+                match evaluate(
+                    invocation,
+                    ReplRequest::DeleteVariable {
+                        name: name.clone(),
+                        allow_managed_alias,
+                    },
+                ) {
                     Ok(_) => {
                         session.local_variables.remove(&name);
                     }

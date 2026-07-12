@@ -121,7 +121,7 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
         return Ok(InteractiveCommand::Delete(command_argument.to_string()));
     }
 
-    if command_name.eq_ignore_ascii_case("list") {
+    if command_name.eq_ignore_ascii_case("list") || command_name.eq_ignore_ascii_case("find") {
         if command_argument.is_empty() {
             return Ok(InteractiveCommand::List {
                 list_type: ListType::All,
@@ -313,6 +313,13 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_interactive_command("FiNd variables CaseSensitiveName"),
+            Ok(InteractiveCommand::List {
+                list_type: super::ListType::Variables,
+                query: Some("CaseSensitiveName".to_string()),
+            })
+        );
+        assert_eq!(
             parse_interactive_command("to cm"),
             Ok(InteractiveCommand::Expression("ans to cm".to_string()))
         );
@@ -347,6 +354,13 @@ mod tests {
             Ok(InteractiveCommand::DefineVariable {
                 name: "zero".to_string(),
                 expression: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command(r#"variable date "2024-01-01""#),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "date".to_string(),
+                expression: "2024-01-01".to_string(),
             })
         );
         assert_eq!(
