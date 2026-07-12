@@ -119,10 +119,17 @@ impl Calculator {
     pub fn calculate_and_print(&mut self, input: &str) -> Result<String, CalculatorError> {
         if let Some(units) = &self.units {
             let mut probe_context = self.context.clone();
+            let precision = self.context.precision_digits;
+            let fraction_format = self.context.print_options.number_fraction_format;
+            let approximation = self.context.evaluation_options.approximation;
+            let format_number = |number: &crate::number::Number| {
+                number.to_string_with_options(precision, fraction_format, approximation)
+            };
             match crate::unit_conversion::native_output_with_catalog(
                 input,
                 units,
                 &mut probe_context,
+                &format_number,
             ) {
                 Ok(Some(output)) => {
                     self.context = probe_context;
@@ -148,7 +155,18 @@ impl Calculator {
         input: &str,
         target: &str,
     ) -> Result<String, CalculatorError> {
-        self.calculate_and_print(&format!("{input} to {target}"))
+        let request = format!("{input} to {target}");
+        if self.units.is_none() {
+            let result = self.calculate(&request)?;
+            if matches!(result, Expression::Conversion { .. }) {
+                return Err(self.record_calculation_error(
+                    "load definition catalogs before unit conversion by calling load_definitions_from_dir"
+                        .to_string(),
+                ));
+            }
+            return self.print(&result);
+        }
+        self.calculate_and_print(&request)
     }
 
     /// Loads function, variable, prefix, unit, and currency XML catalogs.

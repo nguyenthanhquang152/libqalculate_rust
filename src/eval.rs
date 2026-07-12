@@ -916,6 +916,22 @@ fn extract_target_keyword(target: &Expression) -> Option<(String, Option<&Expres
     }
 }
 
+/// Returns whether a conversion target is handled by the native number-format
+/// conversion path rather than the unit conversion engine.
+pub(crate) fn is_supported_number_conversion_target(target: &Expression) -> bool {
+    extract_target_keyword(target)
+        .is_some_and(|(keyword, _)| is_supported_number_conversion_keyword(&keyword))
+}
+
+fn is_supported_number_conversion_keyword(keyword: &str) -> bool {
+    match keyword {
+        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float"
+        | "fp32" | "ieee754" | "sexa" | "sexagesimal" | "unicode" => true,
+        other if other.starts_with("bin") && other[3..].chars().all(|c| c.is_ascii_digit()) => true,
+        _ => false,
+    }
+}
+
 /// Evaluate a Conversion expression into a formatted result using numberbase.rs.
 fn evaluate_conversion(
     expr_eval: Expression,
@@ -944,12 +960,7 @@ fn evaluate_conversion(
     };
 
     // Only convert if it's a known keyword
-    let is_supported_keyword = match keyword.as_str() {
-        "bin" | "binary" | "oct" | "octal" | "hex" | "hexadecimal" | "roman" | "base" | "float"
-        | "fp32" | "ieee754" | "sexa" | "sexagesimal" | "unicode" => true,
-        other if other.starts_with("bin") && other[3..].chars().all(|c| c.is_ascii_digit()) => true,
-        _ => false,
-    };
+    let is_supported_keyword = is_supported_number_conversion_keyword(&keyword);
 
     if is_supported_keyword {
         if keyword == "unicode" {

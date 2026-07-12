@@ -140,6 +140,81 @@ fn native_calculator_loads_and_exposes_definition_catalogs_atomically() {
 }
 
 #[test]
+fn loaded_unit_probe_preserves_dimensionless_variable_base_conversion() {
+    let mut calculator = Calculator::new();
+    calculator
+        .load_definitions_from_dir(upstream_data_dir())
+        .expect("unit catalog loads");
+    calculator
+        .calculate("m := 52")
+        .expect("session variable assignment succeeds");
+
+    assert_eq!(
+        calculator
+            .convert_and_print("m", "hex")
+            .expect("dimensionless variable converts after unit loading"),
+        "34"
+    );
+}
+
+#[test]
+fn unit_conversion_without_loaded_definitions_fails_clearly() {
+    let mut calculator = Calculator::new();
+
+    assert_eq!(
+        calculator
+            .convert_and_print("52", "hex")
+            .expect("dimensionless base conversion does not require definitions"),
+        "34"
+    );
+    let error = calculator
+        .convert_and_print("1 m", "cm")
+        .expect_err("unit conversion requires a loaded catalog");
+    assert!(error.message().contains("load definition catalogs"));
+}
+
+#[test]
+fn unit_conversion_uses_session_number_formatting() {
+    let mut calculator = Calculator::new();
+    calculator
+        .load_definitions_from_dir(upstream_data_dir())
+        .expect("unit catalog loads");
+
+    calculator.set_formatting_approximation(ApproximationMode::Approximate);
+    calculator.set_precision(3);
+    assert_eq!(
+        calculator
+            .convert_and_print("1 m", "in")
+            .expect("unit conversion respects precision"),
+        "39.4 in"
+    );
+
+    calculator.set_formatting_approximation(ApproximationMode::TryExact);
+    calculator.set_fraction_format(NumberFractionFormat::Fractional);
+    assert_eq!(
+        calculator
+            .convert_and_print("1 m", "in")
+            .expect("unit conversion respects fraction format"),
+        "5000 / 127 in"
+    );
+}
+
+#[test]
+fn loaded_catalog_units_outside_the_legacy_prefilter_are_converted() {
+    let mut calculator = Calculator::new();
+    calculator
+        .load_definitions_from_dir(upstream_data_dir())
+        .expect("unit catalog loads");
+
+    assert_eq!(
+        calculator
+            .convert_and_print("1 mol", "mol")
+            .expect("loaded SI unit is handled by the unit engine"),
+        "1 mol"
+    );
+}
+
+#[test]
 fn unsupported_unit_probe_does_not_duplicate_session_messages() {
     let mut calculator = Calculator::new();
     calculator
