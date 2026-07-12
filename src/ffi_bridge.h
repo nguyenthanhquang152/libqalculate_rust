@@ -25,9 +25,11 @@ bool qalc_set_session_function(
     rust::Str name,
     rust::Str expression
 );
+rust::String qalc_render_session_function_info(Calculator &calc, rust::Str name);
 rust::String qalc_print_session_variable(Calculator &calc, rust::Str name);
 void qalc_clear_session_answers(Calculator &calc);
 bool qalc_delete_session_variable(Calculator &calc, rust::Str name);
+bool qalc_delete_session_function(Calculator &calc, rust::Str name);
 rust::String qalc_print_session_answer(
     Calculator &calc,
     int32_t output_base,

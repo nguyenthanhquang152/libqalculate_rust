@@ -247,9 +247,28 @@ pub(crate) fn render_local_variable_list(
     if !matches!(request.list_type, ListType::All | ListType::Variables) {
         return None;
     }
+    render_local_name_list(request, variables, include_footer)
+}
+
+pub(crate) fn render_local_function_list(
+    request: &ListRequest,
+    functions: &BTreeMap<String, String>,
+    include_footer: bool,
+) -> Option<String> {
+    if !matches!(request.list_type, ListType::All | ListType::Functions) {
+        return None;
+    }
+    render_local_name_list(request, functions, include_footer)
+}
+
+fn render_local_name_list(
+    request: &ListRequest,
+    definitions: &BTreeMap<String, String>,
+    include_footer: bool,
+) -> Option<String> {
     let query = request.search_term.as_deref().unwrap_or_default();
     let query_lower = query.to_ascii_lowercase();
-    let matches = variables
+    let matches = definitions
         .keys()
         .filter(|name| query.is_empty() || name.to_ascii_lowercase().starts_with(&query_lower))
         .map(|name| format!("{name}\t"))
@@ -287,6 +306,21 @@ pub(crate) fn render_local_variable_info(
     Some(format!(
         "\nVariable: {name}\nNames: {name}\nValue: {value}\n\n"
     ))
+}
+
+pub(crate) fn render_local_function_info(
+    query: &str,
+    functions: &BTreeMap<String, String>,
+) -> Option<String> {
+    functions
+        .get(query)
+        .or_else(|| {
+            functions
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(query))
+                .map(|(_, info)| info)
+        })
+        .cloned()
 }
 
 pub(crate) fn render_info(

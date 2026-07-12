@@ -129,7 +129,9 @@ fn main() {
             &command_file,
         ) {
             cli::repl::CommandStreamExit::Quit => return,
-            cli::repl::CommandStreamExit::Eof(exit_code) if exit_code != 0 => {
+            cli::repl::CommandStreamExit::Eof(exit_code)
+                if exit_code != 0 && !invocation.interactive =>
+            {
                 drop(calculator);
                 std::process::exit(exit_code);
             }
@@ -284,6 +286,7 @@ fn evaluate_repl_request(
                     output: outcome.output,
                     answer_rendering,
                     assignment_renderings,
+                    function_info: None,
                 })
             })
         }
@@ -294,19 +297,34 @@ fn evaluate_repl_request(
                     output: String::new(),
                     answer_rendering: None,
                     assignment_renderings: vec![(name, rendering)],
+                    function_info: None,
                 })
             })
             .ok_or_else(|| "Illegal name.".to_string()),
         cli::repl::ReplRequest::DefineFunction { name, expression } => calculator
             .define_session_function(&name, &expression)
-            .then_some(None)
+            .map(|function_info| {
+                Some(cli::repl::ReplEvaluation {
+                    output: String::new(),
+                    answer_rendering: None,
+                    assignment_renderings: Vec::new(),
+                    function_info: Some(function_info),
+                })
+            })
             .ok_or_else(|| "Illegal name.".to_string()),
-        cli::repl::ReplRequest::Delete(name) => {
+        cli::repl::ReplRequest::DeleteVariable(name) => {
             if calculator.delete_session_variable(&name) {
                 Ok(None)
             } else {
+                Err("no matching user-defined variable".to_string())
+            }
+        }
+        cli::repl::ReplRequest::DeleteFunction(name) => {
+            if calculator.delete_session_function(&name) {
+                Ok(None)
+            } else {
                 Err(format!(
-                    "no user-defined variable with the name '{name}' exists"
+                    "no user-defined variable or function with the name '{name}' exists"
                 ))
             }
         }
@@ -525,6 +543,7 @@ fn reformat_session_answer(
         output: result.output,
         answer_rendering: None,
         assignment_renderings: Vec::new(),
+        function_info: None,
     }))
 }
 

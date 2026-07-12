@@ -403,7 +403,7 @@ fn managed_answer_aliases_cannot_be_deleted_as_user_variables() {
         .success()
         .stdout(predicate::str::contains("ans + 1 = 2"))
         .stderr(predicate::str::contains(
-            "no user-defined variable with the name 'ans' exists",
+            "no user-defined variable or function with the name 'ans' exists",
         ));
 }
 

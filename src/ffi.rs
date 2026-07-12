@@ -56,9 +56,14 @@ pub(crate) mod sys {
             name: &str,
             expression: &str,
         ) -> bool;
+        fn qalc_render_session_function_info(
+            calc: Pin<&mut Calculator>,
+            name: &str,
+        ) -> Result<String>;
         fn qalc_print_session_variable(calc: Pin<&mut Calculator>, name: &str) -> Result<String>;
         fn qalc_clear_session_answers(calc: Pin<&mut Calculator>);
         fn qalc_delete_session_variable(calc: Pin<&mut Calculator>, name: &str) -> bool;
+        fn qalc_delete_session_function(calc: Pin<&mut Calculator>, name: &str) -> bool;
         fn qalc_print_session_answer(
             calc: Pin<&mut Calculator>,
             output_base: i32,
@@ -551,6 +556,15 @@ impl Calculator {
         native_removed || cpp_removed
     }
 
+    /// Delete a user-defined function from the current interactive session.
+    pub fn delete_session_function(&mut self, name: &str) -> bool {
+        if self.inner.is_null() {
+            return false;
+        }
+        let _guard = FFI_LOCK.lock().unwrap();
+        sys::qalc_delete_session_function(self.inner.pin_mut(), name)
+    }
+
     /// Define a variable without rotating the interactive answer history.
     pub fn define_session_variable(&mut self, name: &str, expression: &str) -> Option<String> {
         if self.inner.is_null() {
@@ -582,12 +596,18 @@ impl Calculator {
     }
 
     /// Define a user function without rotating the interactive answer history.
-    pub fn define_session_function(&mut self, name: &str, expression: &str) -> bool {
+    pub fn define_session_function(&mut self, name: &str, expression: &str) -> Option<String> {
         if self.inner.is_null() {
-            return false;
+            return None;
         }
-        let _guard = FFI_LOCK.lock().unwrap();
-        sys::qalc_set_session_function(self.inner.pin_mut(), name, expression)
+        let function_info = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            if !sys::qalc_set_session_function(self.inner.pin_mut(), name, expression) {
+                return None;
+            }
+            sys::qalc_render_session_function_info(self.inner.pin_mut(), name).ok()?
+        };
+        (!function_info.is_empty()).then_some(function_info)
     }
 
     /// Return the display rendering of the current typed session answer.

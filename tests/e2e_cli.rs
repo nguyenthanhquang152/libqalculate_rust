@@ -2594,6 +2594,27 @@ fn cli_command_stream_definitions_are_silent_stateful_and_preserve_ans() {
 }
 
 #[test]
+fn cli_command_stream_lists_inspects_and_deletes_user_functions() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin(
+            "function Twice 2*\\x\nlist\nlist functions twice\ninfo twice\nTwice(3)\ndelete twice()\ninfo Twice\n",
+        )
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Twice\t")
+                .count(2)
+                .and(predicate::str::contains("\nFunction\n\nTwice(argument)\n"))
+                .and(predicate::str::contains("Expression: 2*\\x"))
+                .and(predicate::str::contains("\n6\n"))
+                .and(predicate::str::ends_with("No matching item found.\n\n")),
+        )
+        .stderr("");
+}
+
+#[test]
 fn cli_command_stream_keeps_settings_after_reformat_failure() {
     let mut cmd = qalc_rs_raw();
     cmd.args(["-c0", "-t", "-f", "-"])
@@ -2770,6 +2791,27 @@ fn cli_missing_command_file_matches_upstream_exit_status() {
         .assert()
         .code(1)
         .stdout(format!("Could not open \"{}\".\n", missing.display()))
+        .stderr("");
+}
+
+#[test]
+fn cli_interactive_mode_continues_after_a_missing_command_file() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let missing = command_dir.path().join("missing.qalc");
+    let diagnostic = format!("Could not open \"{}\".\n", missing.display());
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-i", "-c0", "-t", "-f"])
+        .arg(&missing)
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("1+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::starts_with(diagnostic)
+                .and(predicate::str::contains("> 1+1\n"))
+                .and(predicate::str::contains("  2\n"))
+                .and(predicate::str::ends_with("> quit\n")),
+        )
         .stderr("");
 }
 

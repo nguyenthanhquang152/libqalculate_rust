@@ -35,6 +35,7 @@ pub(crate) enum CommandStreamExit {
 
 #[derive(Debug, Default)]
 pub(crate) struct ReplSessionState {
+    local_functions: BTreeMap<String, String>,
     local_variables: BTreeMap<String, String>,
     last_expression: Option<String>,
 }
@@ -71,6 +72,7 @@ pub(crate) struct ReplEvaluation {
     pub(crate) output: String,
     pub(crate) answer_rendering: Option<String>,
     pub(crate) assignment_renderings: Vec<(String, String)>,
+    pub(crate) function_info: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,7 +80,8 @@ pub(crate) enum ReplRequest {
     Evaluate(String),
     DefineVariable { name: String, expression: String },
     DefineFunction { name: String, expression: String },
-    Delete(String),
+    DeleteVariable(String),
+    DeleteFunction(String),
     ReformatLastAnswer,
 }
 
@@ -412,19 +415,32 @@ where
                 };
                 let local_can_be_authoritative =
                     request.list_type == ListType::All && request.search_term.is_none();
-                let local_rendering = crate::listing::render_local_variable_list(
-                    &request,
-                    &session.local_variables,
-                    local_can_be_authoritative,
-                );
-                let has_local_rendering = local_rendering.is_some();
+                let local_renderings = [
+                    crate::listing::render_local_variable_list(
+                        &request,
+                        &session.local_variables,
+                        false,
+                    ),
+                    crate::listing::render_local_function_list(
+                        &request,
+                        &session.local_functions,
+                        false,
+                    ),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+                let has_local_rendering = !local_renderings.is_empty();
                 let local_is_authoritative = has_local_rendering && local_can_be_authoritative;
-                if let Some(rendered) = local_rendering {
+                for rendered in local_renderings {
                     if write!(output, "{rendered}").is_err() {
                         return 2;
                     }
                 }
                 if local_is_authoritative {
+                    if writeln!(output, "\n{}\n", crate::listing::list_footer()).is_err() {
+                        return 2;
+                    }
                     continue;
                 }
                 let data_dir = libqalculate_rust::rates::definitions_dir();
@@ -454,9 +470,15 @@ where
             }
             InteractiveCommand::Info(query) => {
                 history.record(&line);
-                if let Some(rendered) =
+                let local_rendering =
                     crate::listing::render_local_variable_info(&query, &session.local_variables)
-                {
+                        .or_else(|| {
+                            crate::listing::render_local_function_info(
+                                &query,
+                                &session.local_functions,
+                            )
+                        });
+                if let Some(rendered) = local_rendering {
                     if write!(output, "{rendered}").is_err() {
                         return 2;
                     }
@@ -483,13 +505,23 @@ where
             }
             InteractiveCommand::Delete(name) => {
                 history.record(&line);
-                match evaluate(invocation, ReplRequest::Delete(name.clone())) {
+                match evaluate(invocation, ReplRequest::DeleteVariable(name.clone())) {
                     Ok(_) => {
                         session.local_variables.remove(&name);
                     }
-                    Err(message) => {
-                        if writeln!(error, "error: {message}").is_err() {
-                            return 2;
+                    Err(_) => {
+                        match evaluate(invocation, ReplRequest::DeleteFunction(name.clone())) {
+                            Ok(_) => {
+                                let function_name = name.strip_suffix("()").unwrap_or(&name);
+                                session.local_functions.retain(|defined_name, _| {
+                                    !defined_name.eq_ignore_ascii_case(function_name)
+                                });
+                            }
+                            Err(message) => {
+                                if writeln!(error, "error: {message}").is_err() {
+                                    return 2;
+                                }
+                            }
                         }
                     }
                 }
@@ -511,11 +543,21 @@ where
             }
             InteractiveCommand::DefineFunction { name, expression } => {
                 history.record(&line);
-                if let Err(message) =
-                    evaluate(invocation, ReplRequest::DefineFunction { name, expression })
-                {
-                    if writeln!(error, "error: {message}").is_err() {
-                        return 2;
+                let function_name = name.clone();
+                match evaluate(invocation, ReplRequest::DefineFunction { name, expression }) {
+                    Ok(Some(evaluation)) => {
+                        if let Some(function_info) = evaluation.function_info {
+                            session.local_functions.retain(|defined_name, _| {
+                                !defined_name.eq_ignore_ascii_case(&function_name)
+                            });
+                            session.local_functions.insert(function_name, function_info);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(message) => {
+                        if writeln!(error, "error: {message}").is_err() {
+                            return 2;
+                        }
                     }
                 }
             }
@@ -714,6 +756,7 @@ mod tests {
                     output: "2".to_string(),
                     answer_rendering: None,
                     assignment_renderings: Vec::new(),
+                    function_info: None,
                 }))
             },
         );
