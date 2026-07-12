@@ -46,6 +46,11 @@ pub(crate) mod sys {
             name: &str,
             expression: &str,
         ) -> bool;
+        fn qalc_define_session_variable(
+            calc: Pin<&mut Calculator>,
+            name: &str,
+            expression: &str,
+        ) -> bool;
         fn qalc_set_session_function(
             calc: Pin<&mut Calculator>,
             name: &str,
@@ -553,20 +558,27 @@ impl Calculator {
         }
         let defined = {
             let _guard = FFI_LOCK.lock().unwrap();
-            sys::qalc_set_session_variable(self.inner.pin_mut(), name, expression)
+            sys::qalc_define_session_variable(self.inner.pin_mut(), name, expression)
         };
         if !defined {
             return None;
         }
 
-        if let Ok(parsed) = crate::parser::operators::parse_expression(expression) {
-            if let Ok(value) = crate::eval::evaluate_ast(&parsed, &mut self.native_context) {
+        let rendering = self.cpp_session_variable_rendering(name)?;
+        match crate::parser::operators::parse_expression(&rendering)
+            .ok()
+            .and_then(|parsed| crate::eval::evaluate_ast(&parsed, &mut self.native_context).ok())
+        {
+            Some(value) => {
                 self.native_context
                     .variables
                     .insert(name.to_string(), value);
             }
+            None => {
+                self.native_context.variables.remove(name);
+            }
         }
-        self.cpp_session_variable_rendering(name)
+        Some(rendering)
     }
 
     /// Define a user function without rotating the interactive answer history.

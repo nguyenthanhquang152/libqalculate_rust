@@ -1,6 +1,6 @@
 use super::commands::{parse_interactive_command, InteractiveCommand};
 use super::{CliInvocation, ListRequest, ListType};
-use libqalculate_rust::parser::commands::SessionCommand;
+use libqalculate_rust::parser::commands::{SessionCommand, SetSetting};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -349,6 +349,13 @@ where
                 let recalculate_last_expression = settings
                     .iter()
                     .any(|setting| matches!(setting, SessionCommand::Assume(_)));
+                let reformat_last_answer = settings.iter().any(|setting| {
+                    !matches!(
+                        setting,
+                        SessionCommand::Set(command)
+                            if matches!(&command.setting, SetSetting::InputBase(_))
+                    )
+                });
                 let previous_len = invocation.interactive_settings.len();
                 invocation.interactive_settings.extend(settings);
                 history.record(&line);
@@ -360,6 +367,9 @@ where
                 } else {
                     None
                 };
+                if !recalculate_last_expression && !reformat_last_answer {
+                    continue;
+                }
                 let request = reevaluated_expression
                     .as_ref()
                     .map_or(ReplRequest::ReformatLastAnswer, |expression| {

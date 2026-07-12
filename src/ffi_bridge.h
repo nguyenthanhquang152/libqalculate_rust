@@ -15,6 +15,11 @@ bool qalc_set_session_variable(
     rust::Str name,
     rust::Str expression
 );
+bool qalc_define_session_variable(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+);
 bool qalc_set_session_function(
     Calculator &calc,
     rust::Str name,

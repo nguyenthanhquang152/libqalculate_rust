@@ -643,6 +643,46 @@ bool qalc_set_session_variable(
     }
 }
 
+bool qalc_define_session_variable(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        CalculatorMessageBlocker message_blocker(calc);
+        const std::string variable_name(name.data(), name.size());
+        if(!calc.variableNameIsValid(variable_name)) return false;
+
+        const std::string source(expression.data(), expression.size());
+        Variable *variable = calc.getActiveVariable(variable_name, true);
+        KnownVariable *known_variable = dynamic_cast<KnownVariable*>(variable);
+        if(known_variable != nullptr && known_variable->isLocal() &&
+            known_variable->category() == calc.temporaryCategory()) {
+            known_variable->set(source);
+            if(known_variable->countNames() == 0) {
+                ExpressionName expression_name(variable_name);
+                expression_name.reference = true;
+                known_variable->setName(expression_name, 1);
+            } else {
+                known_variable->setName(variable_name, 1);
+            }
+            variable = known_variable;
+        } else {
+            variable = calc.addVariable(new KnownVariable(
+                calc.temporaryCategory(),
+                variable_name,
+                source
+            ));
+            if(variable != nullptr) variable->setChanged(true);
+        }
+        known_variable = dynamic_cast<KnownVariable*>(variable);
+        return known_variable != nullptr && known_variable->isLocal();
+    } catch (...) {
+        return false;
+    }
+}
+
 bool qalc_set_session_function(
     Calculator &calc,
     rust::Str name,
