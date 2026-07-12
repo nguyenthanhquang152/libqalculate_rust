@@ -134,6 +134,7 @@ fn cli_native_expression_succeeds_when_fallback_disabled() {
         ("1e10", "10000000000"),
         ("1e303", "1E303"),
         ("1 + 1", "2"),
+        ("5+2", "7"),
         ("52 to bin", "0011 0100"),
         ("52 to bin16", "0000 0000 0011 0100"),
         ("52 to oct", "064"),

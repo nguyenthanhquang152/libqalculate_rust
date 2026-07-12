@@ -59,7 +59,7 @@ test-regression:
 test-property:
     cargo test --test property
 
-# Run oracle tests against upstream fixtures and qalc when available.
+# Run parity tests against upstream fixtures and a required executable qalc oracle.
 test-oracle:
     scripts/oracle.sh
 

@@ -3281,6 +3281,7 @@ const NATIVE_NUMERIC_EVIDENCE: &[(&str, NativeNumericEvidence)] = &[
     ("1+1", NativeNumericEvidence::DefaultOnly),
     ("1 + 1", NativeNumericEvidence::DefaultOnly),
     ("1 + 2", NativeNumericEvidence::DefaultOnly),
+    ("5+2", NativeNumericEvidence::DefaultOnly),
     ("5--2", NativeNumericEvidence::DefaultOnly),
     ("5---2", NativeNumericEvidence::DefaultOnly),
     ("-5-2", NativeNumericEvidence::DefaultOnly),
