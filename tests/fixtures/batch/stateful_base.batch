@@ -4,3 +4,6 @@
 /set base 10
 15
 	15
+/set base 10 16
+FF
+	255

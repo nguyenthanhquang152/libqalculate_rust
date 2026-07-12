@@ -107,7 +107,7 @@ fn test_qalc_rs_executes_stateful_batch_file_without_fallback() {
         .assert()
         .success()
         .stdout(format!(
-            "\x1B[32m\n{STATEFUL_BATCH} - 2 tests passed\n\n\x1B[0m"
+            "\x1B[32m\n{STATEFUL_BATCH} - 3 tests passed\n\n\x1B[0m"
         ))
         .stderr("");
 }
@@ -270,6 +270,44 @@ fn test_qalc_rs_executes_unasserted_setup_and_cleanup() {
             fixture.display()
         ))
         .stderr("");
+}
+
+#[test]
+fn test_qalc_rs_ignores_unasserted_setup_errors_like_upstream() {
+    let Some(qalc) = oracle_binary() else {
+        eprintln!("skipping setup-error differential; upstream qalc is unavailable");
+        return;
+    };
+
+    let fixture_dir = tempdir().expect("temporary fixture directory");
+    let fixture = fixture_dir.path().join("setup-error.batch");
+    std::fs::write(&fixture, "sqrt(\n1\n\t1\n").expect("write setup-error fixture");
+
+    let mut rust = CargoCommand::cargo_bin("qalc-rs").expect("qalc-rs binary should build");
+    let rust_output = rust
+        .arg("--test-file")
+        .arg(&fixture)
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data")
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .get_output()
+        .clone();
+
+    let home = tempdir().expect("isolated upstream home");
+    let upstream_output = Command::new(qalc)
+        .arg("--test-file")
+        .arg(&fixture)
+        .env("HOME", home.path())
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data")
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .output()
+        .expect("upstream qalc should run");
+
+    assert_eq!(rust_output.status.code(), upstream_output.status.code());
+    assert_eq!(rust_output.stdout, upstream_output.stdout);
+    assert_eq!(rust_output.stderr, upstream_output.stderr);
 }
 
 #[test]

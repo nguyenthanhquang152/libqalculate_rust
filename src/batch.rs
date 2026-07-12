@@ -232,12 +232,12 @@ pub fn parse_batch_items(input: &str) -> Result<Vec<BatchItem>, BatchError> {
 
         if is_session_command(trimmed) {
             flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
-            let cmd = crate::parser::commands::parse_command(trimmed)
+            let commands = crate::parser::commands::parse_commands(trimmed)
                 .map_err(|_| BatchError::InvalidCommand { line: line_number })?;
-            items.push(BatchItem::Command {
+            items.extend(commands.into_iter().map(|command| BatchItem::Command {
                 source_line: line_number,
-                command: cmd,
-            });
+                command,
+            }));
             continue;
         }
 
@@ -334,6 +334,31 @@ mod tests {
             let items = parse_batch_items(&input).expect("items should parse");
             assert!(matches!(items[0], BatchItem::Command { .. }));
         }
+    }
+
+    #[test]
+    fn expands_two_argument_base_commands_in_source_order() {
+        let items = parse_batch_items("/set base 10 16\nFF\n\t255\n").expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [
+                BatchItem::Command {
+                    command: SessionCommand::Set(SetCommand {
+                        setting: SetSetting::OutputBase(10),
+                        ..
+                    }),
+                    ..
+                },
+                BatchItem::Command {
+                    command: SessionCommand::Set(SetCommand {
+                        setting: SetSetting::InputBase(16),
+                        ..
+                    }),
+                    ..
+                },
+                BatchItem::Case(_)
+            ]
+        ));
     }
 
     #[test]

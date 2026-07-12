@@ -130,6 +130,42 @@ pub fn parse_command(input: &str) -> Result<SessionCommand, ParseError> {
     }
 }
 
+/// Parse a raw command line into one or more typed session commands.
+///
+/// Most qalc commands map to one [`SessionCommand`]. The `set base OUTPUT INPUT`
+/// form updates both bases and therefore expands to output- and input-base
+/// commands in source order.
+pub fn parse_commands(input: &str) -> Result<Vec<SessionCommand>, ParseError> {
+    let span = Span::new(0, input.len());
+    let trimmed = input.trim();
+    let command_line = trimmed.strip_prefix('/').unwrap_or(trimmed).trim();
+    let lower = command_line.to_ascii_lowercase();
+    let Some(args) = lower.strip_prefix("set ") else {
+        return parse_command(input).map(|command| vec![command]);
+    };
+    let Some(values) = strip_setting_prefix(args, &["base"]) else {
+        return parse_command(input).map(|command| vec![command]);
+    };
+
+    let bases = values
+        .split_whitespace()
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let command = |setting| SessionCommand::Set(SetCommand { setting, span });
+    match bases.as_slice() {
+        [output] => Ok(vec![command(SetSetting::OutputBase(*output))]),
+        [output, input] => Ok(vec![
+            command(SetSetting::OutputBase(*output)),
+            command(SetSetting::InputBase(*input)),
+        ]),
+        _ => Err(ParseError::new(ParseErrorKind::InvalidSettingValue, span)),
+    }
+}
+
 fn parse_set_setting(args: &str, span: Span) -> Result<SetSetting, ParseError> {
     let lower_args = args.to_ascii_lowercase();
 
@@ -269,7 +305,7 @@ fn parse_assume_kind(args: &str, span: Span) -> Result<AssumeKind, ParseError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_command, SessionCommand, SetSetting};
+    use super::{parse_command, parse_commands, SessionCommand, SetSetting};
 
     fn parsed_setting(input: &str) -> SetSetting {
         match parse_command(input).expect("command should parse") {
@@ -301,5 +337,23 @@ mod tests {
     #[test]
     fn parses_batch_output_base_alias() {
         assert_eq!(parsed_setting("/set base 16"), SetSetting::OutputBase(16));
+    }
+
+    #[test]
+    fn parses_two_argument_batch_base_alias() {
+        let commands = parse_commands("/set base 10 16").expect("commands should parse");
+        assert!(matches!(
+            &commands[..],
+            [
+                SessionCommand::Set(super::SetCommand {
+                    setting: SetSetting::OutputBase(10),
+                    ..
+                }),
+                SessionCommand::Set(super::SetCommand {
+                    setting: SetSetting::InputBase(16),
+                    ..
+                })
+            ]
+        ));
     }
 }
