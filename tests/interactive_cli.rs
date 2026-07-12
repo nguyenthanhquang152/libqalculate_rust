@@ -245,6 +245,23 @@ fn nested_assignments_update_all_local_variable_info() {
 }
 
 #[test]
+fn native_load_assignments_are_visible_to_local_info() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("x = load(\"tests/vectordata.csv\")\ninfo x\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Variable: x")
+                .and(predicate::str::contains("Value: unknown").not()),
+        )
+        .stderr("");
+}
+
+#[test]
 fn local_variable_searches_include_matching_global_definitions() {
     let mut session = isolated_session();
     session
@@ -503,6 +520,21 @@ fn interactive_settings_recalculate_and_persist() {
 }
 
 #[test]
+fn assumption_changes_recalculate_the_last_expression() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("assume positive\nsqrt(x^2)\nassume unknown\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("sqrt(x²) = |x|").and(predicate::str::contains("x = x").not()),
+        )
+        .stderr("");
+}
+
+#[test]
 fn stored_answer_reformat_uses_the_evaluated_value_with_a_new_input_base() {
     let mut session = isolated_session();
     session
@@ -542,6 +574,31 @@ fn cpp_fallback_honors_nondecimal_input_base() {
         .assert()
         .success()
         .stdout(predicate::str::contains("0.5440211109"))
+        .stderr("");
+}
+
+#[test]
+fn native_noninteger_base_conversions_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("set unicode on\n52.34 to sexa\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans + 1 = 53.34"))
+        .stderr("");
+
+    let mut float_session = isolated_session();
+    float_session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("float(01000010010100010110000101001000)\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans + 1 ≈ 53.34500122"))
         .stderr("");
 }
 
@@ -687,6 +744,38 @@ fn nested_cpp_assignments_are_available_to_native_markup() {
         .assert()
         .success()
         .stdout(predicate::str::contains("<i>x</i> + <i>y</i> = 10"))
+        .stderr("");
+}
+
+#[test]
+fn embedded_markup_assignments_persist_with_cpp_fallback_enabled() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("(x:=5)+1\ninfo x\nx+1\nEi(x)\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("<i>x</i> + 1 = 6")
+                .and(predicate::str::contains("Variable: x"))
+                .and(predicate::str::contains("Value: 5"))
+                .and(predicate::str::contains("40.18527536")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn chained_markup_assignments_persist_with_cpp_fallback_disabled() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("x:=y:=5\ny+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<i>y</i> + 1 = 6"))
         .stderr("");
 }
 

@@ -604,6 +604,25 @@ bool qalc_set_session_answer(Calculator &calc, rust::Str expression) {
     }
 }
 
+bool qalc_set_session_variable(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        const std::string variable_name(name.data(), name.size());
+        if(!calc.variableNameIsValid(variable_name)) return false;
+
+        const std::string source(expression.data(), expression.size());
+        calc.calculate(variable_name + ":=(" + source + ")");
+        Variable *variable = calc.getActiveVariable(variable_name);
+        return variable != nullptr && variable->isLocal();
+    } catch (...) {
+        return false;
+    }
+}
+
 void qalc_clear_session_answers(Calculator &calc) {
     try {
         CalculatorFfiGuard ffi_guard(calc);

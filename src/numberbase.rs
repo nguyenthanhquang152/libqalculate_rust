@@ -369,6 +369,32 @@ pub(crate) fn native_integer_value(
     decimal.parse().ok()
 }
 
+/// Return the numeric value represented by a successful native number-base
+/// rendering so interactive answer history retains conversions whose display
+/// is not itself a parseable number.
+pub(crate) fn native_answer_value(
+    expr: &str,
+    settings: NativeSessionSettings,
+) -> Option<crate::number::Number> {
+    if let Some(inner) = strip_function_call(expr.trim(), "float") {
+        let bits = parse_bit_string_u32(inner)?;
+        return Some(crate::number::Number::from_f64(f64::from(f32::from_bits(
+            bits,
+        ))));
+    }
+    if let Some(value) = native_integer_value(expr, settings) {
+        return Some(value);
+    }
+
+    let rendering = native_output(expr, settings)?;
+    if let Ok(value) = rendering.replace('−', "-").parse() {
+        return Some(value);
+    }
+
+    let (source, _) = expr.trim().split_once(" to ")?;
+    crate::number::evaluate_expr(source.trim()).ok()
+}
+
 fn native_session_numberbase_output(expr: &str, state: NativeSessionSettings) -> Option<String> {
     let trimmed = expr.trim();
 

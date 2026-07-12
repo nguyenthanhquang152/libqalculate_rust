@@ -10,6 +10,11 @@
 std::unique_ptr<Calculator> new_calculator();
 bool qalc_enable_session_answers(Calculator &calc);
 bool qalc_set_session_answer(Calculator &calc, rust::Str expression);
+bool qalc_set_session_variable(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+);
 void qalc_clear_session_answers(Calculator &calc);
 bool qalc_delete_session_variable(Calculator &calc, rust::Str name);
 rust::String qalc_print_session_answer(

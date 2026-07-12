@@ -1,7 +1,6 @@
 use super::commands::{parse_interactive_command, InteractiveCommand};
 use super::{CliInvocation, ListRequest, ListType};
-use libqalculate_rust::ast::Expression;
-use libqalculate_rust::parser::operators::parse_expression;
+use libqalculate_rust::parser::commands::SessionCommand;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -14,6 +13,7 @@ const MAX_HISTORY_ENTRIES: usize = 100;
 pub(crate) struct ReplEvaluation {
     pub(crate) output: String,
     pub(crate) answer_rendering: Option<String>,
+    pub(crate) assignment_renderings: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,16 +114,14 @@ where
 {
     let mut history = History::load();
     let mut local_variables = BTreeMap::new();
+    let mut last_expression = None;
 
     if let Some(expression) = initial_expression {
-        let assignments = local_assignments(&expression);
+        let evaluated_expression = expression.clone();
         match evaluate(invocation, ReplRequest::Evaluate(expression)) {
             Ok(Some(evaluation)) => {
-                if let (Some(names), Some(value)) = (assignments, &evaluation.answer_rendering) {
-                    for name in names {
-                        local_variables.insert(name, value.clone());
-                    }
-                }
+                update_local_variables(&mut local_variables, &evaluation.assignment_renderings);
+                last_expression = Some(evaluated_expression);
                 if render_evaluation(output, &evaluation).is_err() {
                     return 2;
                 }
@@ -199,11 +197,33 @@ where
                 }
             }
             InteractiveCommand::Settings(settings) => {
+                let recalculate_last_expression = settings
+                    .iter()
+                    .any(|setting| matches!(setting, SessionCommand::Assume(_)));
                 let previous_len = invocation.interactive_settings.len();
                 invocation.interactive_settings.extend(settings);
                 history.record(&line);
-                match evaluate(invocation, ReplRequest::ReformatLastAnswer) {
+                let reevaluated_expression = if recalculate_last_expression {
+                    let Some(expression) = last_expression.clone() else {
+                        continue;
+                    };
+                    Some(expression)
+                } else {
+                    None
+                };
+                let request = reevaluated_expression
+                    .as_ref()
+                    .map_or(ReplRequest::ReformatLastAnswer, |expression| {
+                        ReplRequest::Evaluate(expression.clone())
+                    });
+                match evaluate(invocation, request) {
                     Ok(Some(evaluation)) => {
+                        if reevaluated_expression.is_some() {
+                            update_local_variables(
+                                &mut local_variables,
+                                &evaluation.assignment_renderings,
+                            );
+                        }
                         if render_evaluation(output, &evaluation).is_err() {
                             return 2;
                         }
@@ -315,16 +335,14 @@ where
             }
             InteractiveCommand::Expression(expression) => {
                 history.record(&line);
-                let assignments = local_assignments(&expression);
+                let evaluated_expression = expression.clone();
                 match evaluate(invocation, ReplRequest::Evaluate(expression)) {
                     Ok(Some(evaluation)) => {
-                        if let (Some(names), Some(value)) =
-                            (assignments, &evaluation.answer_rendering)
-                        {
-                            for name in names {
-                                local_variables.insert(name, value.clone());
-                            }
-                        }
+                        update_local_variables(
+                            &mut local_variables,
+                            &evaluation.assignment_renderings,
+                        );
+                        last_expression = Some(evaluated_expression);
                         if render_evaluation(output, &evaluation).is_err() {
                             return 2;
                         }
@@ -341,18 +359,13 @@ where
     }
 }
 
-fn local_assignments(expression: &str) -> Option<Vec<String>> {
-    let parsed = parse_expression(expression).ok()?;
-    let mut variables = Vec::new();
-    let mut current = &parsed;
-    while let Expression::Assignment { variable, value } = current {
-        variables.push(variable.clone());
-        current = value;
+fn update_local_variables(
+    local_variables: &mut BTreeMap<String, String>,
+    assignment_renderings: &[(String, String)],
+) {
+    for (name, value) in assignment_renderings {
+        local_variables.insert(name.clone(), value.clone());
     }
-    if variables.is_empty() {
-        return None;
-    }
-    Some(variables)
 }
 
 fn render_evaluation<W: Write>(output: &mut W, evaluation: &ReplEvaluation) -> io::Result<()> {
@@ -404,23 +417,4 @@ fn finish_history<E: Write>(history: &History, _error: &mut E, success_code: i32
     // while a failed final write must not change the calculator's exit status.
     let _ = history.save();
     success_code
-}
-
-#[cfg(test)]
-mod tests {
-    use super::local_assignments;
-
-    #[test]
-    fn local_assignments_use_the_parsed_assignment_targets() {
-        assert_eq!(local_assignments("x := 1"), Some(vec!["x".to_string()]));
-        assert_eq!(
-            local_assignments("x =: \"a:=b\""),
-            Some(vec!["x".to_string()])
-        );
-        assert_eq!(
-            local_assignments("x := y := 5"),
-            Some(vec!["x".to_string(), "y".to_string()])
-        );
-        assert_eq!(local_assignments("\"x:=1\""), None);
-    }
 }

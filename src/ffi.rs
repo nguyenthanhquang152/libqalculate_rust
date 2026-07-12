@@ -31,6 +31,11 @@ pub(crate) mod sys {
         fn new_calculator() -> UniquePtr<Calculator>;
         fn qalc_enable_session_answers(calc: Pin<&mut Calculator>) -> bool;
         fn qalc_set_session_answer(calc: Pin<&mut Calculator>, expression: &str) -> bool;
+        fn qalc_set_session_variable(
+            calc: Pin<&mut Calculator>,
+            name: &str,
+            expression: &str,
+        ) -> bool;
         fn qalc_clear_session_answers(calc: Pin<&mut Calculator>);
         fn qalc_delete_session_variable(calc: Pin<&mut Calculator>, name: &str) -> bool;
         fn qalc_print_session_answer(
@@ -407,6 +412,41 @@ impl Calculator {
                     .map(|(_, rendering)| rendering)
             })
             .map(str::to_string)
+    }
+
+    /// Return values for variables assigned by an interactive expression.
+    pub fn session_assignment_renderings(&self, expr: &str) -> Vec<(String, String)> {
+        let mut names = Vec::new();
+        if let Ok(parsed) = crate::parser::operators::parse_expression(expr) {
+            collect_assignment_names(&parsed, &mut names);
+        }
+        if let Some((variable, _)) = crate::session::parse_load_assignment(expr) {
+            names.push(variable.to_string());
+        }
+        names.sort();
+        names.dedup();
+
+        let fallback = self.session_answer_rendering();
+        names
+            .into_iter()
+            .filter(|name| !crate::session::SessionAnswerState::is_managed_alias(name))
+            .filter_map(|name| {
+                let rendering = self
+                    .native_context
+                    .variables
+                    .get(&name)
+                    .and_then(|value| {
+                        crate::session::format_answer(
+                            crate::session::AnswerFormatProfile::Qalc,
+                            value,
+                            crate::session::NativeSessionSettings::default(),
+                        )
+                        .map(|(rendering, _)| rendering)
+                    })
+                    .or_else(|| fallback.clone())?;
+                Some((name, rendering))
+            })
+            .collect()
     }
 
     /// Re-render the current typed session answer after settings change.
@@ -888,12 +928,24 @@ impl Calculator {
         let uses_native_session_variable = parsed
             .as_ref()
             .is_some_and(|parsed| expression_uses_context_variable(parsed, &self.native_context));
-        let is_assignment = matches!(
+        let contains_assignment = parsed.as_ref().is_some_and(|parsed| {
+            expression_contains(parsed, &|node| {
+                matches!(node, crate::ast::Expression::Assignment { .. })
+            })
+        });
+        let is_top_level_assignment = matches!(
             parsed.as_ref(),
             Some(crate::ast::Expression::Assignment { .. })
         );
-        if (fallback_disabled || !is_assignment)
+        let uses_unmirrored_managed_alias = self.session_answers.has_cpp_answer()
+            && parsed.as_ref().is_some_and(|parsed| {
+                expression_uses_unmirrored_managed_alias(parsed, &self.native_context)
+            });
+        let native_variables_before = (!fallback_disabled && contains_assignment)
+            .then(|| self.native_context.variables.clone());
+        if (fallback_disabled || !is_top_level_assignment)
             && (!self.session_answers.has_cpp_answer() || uses_native_session_variable)
+            && !uses_unmirrored_managed_alias
         {
             match native_markup_output(
                 mode,
@@ -904,6 +956,9 @@ impl Calculator {
                 &mut self.native_context,
             ) {
                 Ok(Some(output)) => {
+                    if let Some(before) = &native_variables_before {
+                        self.synchronize_native_variables_to_cpp(before)?;
+                    }
                     return Ok(self.finish_native_output(output));
                 }
                 Ok(None) => {}
@@ -1019,17 +1074,6 @@ impl Calculator {
         }
     }
 
-    fn finish_native_string(&mut self, output: String) -> CalculationOutput {
-        if self.session_answers.is_enabled() {
-            self.session_answers.invalidate(&mut self.native_context);
-            self.clear_cpp_session_answers();
-        }
-        CalculationOutput {
-            output,
-            fallback_state: FallbackState::Native,
-        }
-    }
-
     fn set_cpp_session_answer(&mut self, answer: &crate::ast::Expression) -> bool {
         let Some(expression) =
             crate::text::format_result_with_numbers(answer, &crate::number::Number::to_string)
@@ -1054,6 +1098,39 @@ impl Calculator {
         }
         let _guard = FFI_LOCK.lock().unwrap();
         sys::qalc_clear_session_answers(self.inner.pin_mut());
+    }
+
+    fn synchronize_native_variables_to_cpp(
+        &mut self,
+        before: &std::collections::HashMap<String, crate::ast::Expression>,
+    ) -> Result<(), CalculatorError> {
+        let variables = self
+            .native_context
+            .variables
+            .iter()
+            .filter(|(name, value)| {
+                !crate::session::SessionAnswerState::is_managed_alias(name)
+                    && before.get(*name) != Some(*value)
+            })
+            .filter_map(|(name, value)| {
+                crate::text::format_result_with_numbers(value, &crate::number::Number::to_string)
+                    .map(|expression| (name.clone(), expression))
+            })
+            .collect::<Vec<_>>();
+        if variables.is_empty() {
+            return Ok(());
+        }
+
+        let _guard = FFI_LOCK.lock().unwrap();
+        let mut pin = self.inner.pin_mut();
+        for (name, expression) in variables {
+            if !sys::qalc_set_session_variable(pin.as_mut(), &name, &expression) {
+                return Err(CalculatorError::NativeEvaluation(format!(
+                    "failed to synchronize native session variable '{name}'"
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn record_cpp_session_answer(&mut self, expr: &str, rendering: String) {
@@ -1150,7 +1227,7 @@ impl Calculator {
                 if let Some(output) =
                     native_session_output(profile, expr, &mut self.native_context)?
                 {
-                    return Ok(self.finish_native_string(output));
+                    return Ok(self.finish_native_output(output));
                 }
                 if let Some(output) = native_datetime_output(profile, expr)? {
                     return Ok(self.finish_native_output(output));
@@ -1405,17 +1482,11 @@ fn native_markup_output_for_parsed(
     crate::session::apply_raw_settings_to_context(&mut markup_context, settings)
         .ok_or_else(|| CalculatorError::NativeEvaluation("invalid native setting".to_string()))?;
     markup_context.precision_digits = parsed_settings.precision_digits();
+    let contains_assignment = expression_contains(parsed, &|node| {
+        matches!(node, crate::ast::Expression::Assignment { .. })
+    });
     let evaluated = crate::eval::evaluate_ast(parsed, &mut markup_context)
         .map_err(CalculatorError::NativeEvaluation)?;
-    let assignment = if let crate::ast::Expression::Assignment { variable, .. } = parsed {
-        markup_context
-            .variables
-            .get(variable)
-            .cloned()
-            .map(|value| (variable.clone(), value))
-    } else {
-        None
-    };
     let precision_digits = parsed_settings.precision_digits();
     let formatter = |num: &crate::number::Number| {
         if parsed_settings.programming_mode
@@ -1453,8 +1524,8 @@ fn native_markup_output_for_parsed(
     };
     let mut output = NativeOutput::plain(output).with_answer(evaluated, answer_rendering);
     output.approximate = approximate;
-    if let Some((variable, value)) = assignment {
-        context.variables.insert(variable, value);
+    if contains_assignment {
+        context.variables = markup_context.variables;
     }
     Ok(Some(output))
 }
@@ -1616,6 +1687,32 @@ fn expression_uses_context_variable(
         crate::ast::Expression::Symbolic(symbol) => context.variables.contains_key(symbol.name()),
         crate::ast::Expression::Variable(variable) => context.variables.contains_key(variable.id()),
         _ => false,
+    })
+}
+
+fn collect_assignment_names(expr: &crate::ast::Expression, names: &mut Vec<String>) {
+    if let crate::ast::Expression::Assignment { variable, .. } = expr {
+        names.push(variable.clone());
+    }
+    for index in 0..expr.child_count() {
+        if let Some(child) = expr.child(index) {
+            collect_assignment_names(child, names);
+        }
+    }
+}
+
+fn expression_uses_unmirrored_managed_alias(
+    expr: &crate::ast::Expression,
+    context: &crate::context::CalculatorContext,
+) -> bool {
+    expression_contains(expr, &|node| {
+        let name = match node {
+            crate::ast::Expression::Symbolic(symbol) => symbol.name(),
+            crate::ast::Expression::Variable(variable) => variable.id(),
+            _ => return false,
+        };
+        crate::session::SessionAnswerState::is_managed_alias(name)
+            && !context.variables.contains_key(name)
     })
 }
 
@@ -1812,17 +1909,39 @@ fn native_session_output(
     profile: PrintProfile,
     expr: &str,
     context: &mut crate::context::CalculatorContext,
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
+    let load_variable =
+        crate::session::parse_load_assignment(expr).map(|(variable, _)| variable.to_string());
     let Some(output) = crate::session::native_output(expr, context)
         .map_err(|error| CalculatorError::NativeEvaluation(error.to_string()))?
     else {
         return Ok(None);
     };
 
-    Ok(Some(match profile {
+    let rendering = match profile {
         PrintProfile::Api => output,
         PrintProfile::Qalc => output.replace('-', "\u{2212}"),
-    }))
+    };
+    let mut native_output = NativeOutput::plain(rendering);
+    if let Some(answer) = load_variable
+        .as_ref()
+        .and_then(|variable| context.variables.get(variable))
+        .cloned()
+    {
+        let answer_profile = match profile {
+            PrintProfile::Api => crate::session::AnswerFormatProfile::Api,
+            PrintProfile::Qalc => crate::session::AnswerFormatProfile::Qalc,
+        };
+        if let Some((answer_rendering, approximate)) = crate::session::format_answer(
+            answer_profile,
+            &answer,
+            crate::session::NativeSessionSettings::default(),
+        ) {
+            native_output = native_output.with_answer(answer, answer_rendering);
+            native_output.approximate = approximate;
+        }
+    }
+    Ok(Some(native_output))
 }
 
 fn native_session_context_output(
@@ -2388,7 +2507,7 @@ fn native_numberbase_output_with_answer(
 ) -> Option<NativeOutput> {
     let rendering = crate::numberbase::native_output(expr, settings)?;
     let answer =
-        crate::numberbase::native_integer_value(expr, settings).map(crate::ast::Expression::Number);
+        crate::numberbase::native_answer_value(expr, settings).map(crate::ast::Expression::Number);
     Some(match answer {
         Some(answer) => NativeOutput::plain(rendering.clone()).with_answer(answer, rendering),
         None => NativeOutput::plain(rendering),
@@ -2949,6 +3068,23 @@ mod tests {
 
     fn configure_definitions_dir() {
         std::env::set_var(DEFINITIONS_DIR_ENV, definitions_dir());
+    }
+
+    #[test]
+    fn managed_alias_routing_detects_an_unmirrored_cpp_answer() {
+        let parsed = crate::parser::operators::parse_expression("a + ans").unwrap();
+        let mut context = crate::context::CalculatorContext::default();
+        context.variables.insert(
+            "a".to_string(),
+            crate::ast::Expression::Number(crate::number::Number::from_i32(1)),
+        );
+        assert!(expression_uses_unmirrored_managed_alias(&parsed, &context));
+
+        context.variables.insert(
+            "ans".to_string(),
+            crate::ast::Expression::Number(crate::number::Number::from_i32(2)),
+        );
+        assert!(!expression_uses_unmirrored_managed_alias(&parsed, &context));
     }
 
     #[test]

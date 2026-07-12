@@ -144,9 +144,12 @@ fn main() {
                 cli::repl::ReplRequest::Evaluate(expression) => {
                     evaluate_expression(invocation, &mut calculator, &expression).map(|outcome| {
                         let answer_rendering = calculator.session_answer_rendering();
+                        let assignment_renderings =
+                            calculator.session_assignment_renderings(&expression);
                         Some(cli::repl::ReplEvaluation {
                             output: outcome.output,
                             answer_rendering,
+                            assignment_renderings,
                         })
                     })
                 }
@@ -401,6 +404,7 @@ fn reformat_session_answer(
     Ok(result.map(|result| cli::repl::ReplEvaluation {
         output: result.output,
         answer_rendering: None,
+        assignment_renderings: Vec::new(),
     }))
 }
 

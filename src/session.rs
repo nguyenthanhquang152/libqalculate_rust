@@ -619,7 +619,7 @@ pub(crate) fn native_output(
     crate::statistics::native_context_output(trimmed, context)
 }
 
-fn parse_load_assignment(expr: &str) -> Option<(&str, PathBuf)> {
+pub(crate) fn parse_load_assignment(expr: &str) -> Option<(&str, PathBuf)> {
     if expr.contains(":=") || expr.contains("=:") {
         return None;
     }
