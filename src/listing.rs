@@ -1,8 +1,11 @@
 use crate::cli::{DefinitionSelection, ListRequest, ListType};
 use libqalculate_rust::datasets::load_dataset_catalog_from_dir;
 use libqalculate_rust::definitions::load_definition_xml_file;
-use libqalculate_rust::definitions_catalog::FunctionVariableCatalog;
-use libqalculate_rust::units::{DefinitionName, PrefixUnitCatalog, UnitType};
+use libqalculate_rust::definitions_catalog::{FunctionVariableCatalog, VariableKind};
+use libqalculate_rust::units::{
+    DefinitionName, PrefixDefinition, PrefixKind, PrefixUnitCatalog, UnitDefinition, UnitType,
+};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const LIST_FOOTER: &str = "For more information about a specific function, variable, unit, or prefix, please use the info command (in interactive mode).";
@@ -133,6 +136,257 @@ fn format_names(names: &[DefinitionName], unicode_enabled: bool, is_currency: bo
         }
     }
     name_str
+}
+
+fn name_equals(name: &DefinitionName, query: &str) -> bool {
+    if name.case_sensitive {
+        name.name() == query
+    } else {
+        name.name().eq_ignore_ascii_case(query)
+    }
+}
+
+fn render_variable_details(
+    variable: &libqalculate_rust::definitions_catalog::VariableDefinition,
+    unicode_enabled: bool,
+) -> String {
+    let names = format_names(variable.names(), unicode_enabled, false);
+    let title = variable.title().unwrap_or(&names);
+    let mut value = variable
+        .value()
+        .map(str::to_string)
+        .unwrap_or_else(|| match variable.kind() {
+            VariableKind::Builtin => "built-in".to_string(),
+            VariableKind::Unknown => "unknown".to_string(),
+            VariableKind::Known => "undefined".to_string(),
+        });
+    if let Some(unit) = variable.unit() {
+        value.push(' ');
+        value.push_str(unit);
+    }
+    if variable.approximate() {
+        value = format!("≈ {value}");
+    }
+
+    let mut rendered = format!("\nVariable: {title}\nNames: {names}\nValue: {value}\n");
+    if let Some(uncertainty) = variable.uncertainty() {
+        let label = if variable.uncertainty_is_relative() {
+            "Relative uncertainty"
+        } else {
+            "Uncertainty"
+        };
+        rendered.push_str(&format!("{label}: {uncertainty}\n"));
+    }
+    if let Some(description) = variable.description() {
+        rendered.push('\n');
+        rendered.push_str(description);
+        rendered.push('\n');
+    }
+    rendered.push('\n');
+    rendered
+}
+
+fn render_unit_details(unit: &UnitDefinition, unicode_enabled: bool) -> String {
+    let is_currency = unit.category_path() == ["Currency"];
+    let names = format_names(unit.names(), unicode_enabled, is_currency);
+    let title = unit.title().unwrap_or(&names);
+    let mut rendered = format!("\nUnit: {title}\nNames: {names}\n");
+    if let Some(system) = unit.system() {
+        rendered.push_str(&format!("System: {system}\n"));
+    }
+    if !unit.countries().is_empty() {
+        rendered.push_str(&format!("Countries: {}\n", unit.countries().join(", ")));
+    }
+    if let Some(base) = unit.base() {
+        rendered.push_str(&format!("Base Unit: {}\n", base.unit()));
+        if let Some(relation) = base.relation() {
+            rendered.push_str(&format!("Relation: {relation}\n"));
+        }
+    } else if unit.kind() == UnitType::Composite && !unit.parts().is_empty() {
+        let parts = unit
+            .parts()
+            .iter()
+            .map(|part| {
+                let mut value = part.unit().to_string();
+                if let Some(prefix) = part.prefix() {
+                    value = format!("{prefix}:{value}");
+                }
+                if part.exponent() != 1 {
+                    value.push('^');
+                    value.push_str(&part.exponent().to_string());
+                }
+                value
+            })
+            .collect::<Vec<_>>()
+            .join(" · ");
+        rendered.push_str(&format!("Base Units: {parts}\n"));
+    }
+    if let Some(description) = unit.description() {
+        rendered.push('\n');
+        rendered.push_str(description);
+        rendered.push('\n');
+    }
+    rendered.push('\n');
+    rendered
+}
+
+fn render_prefix_details(prefix: &PrefixDefinition, unicode_enabled: bool) -> String {
+    let names = format_names(prefix.names(), unicode_enabled, false);
+    let value = match prefix.kind() {
+        PrefixKind::Decimal => format!("10^{}", prefix.exponent()),
+        PrefixKind::Binary => format!("2^{}", prefix.exponent()),
+    };
+    format!("\nPrefix\nNames: {names}\nValue: {value}\n\n")
+}
+
+pub(crate) fn render_local_variable_list(
+    request: &ListRequest,
+    variables: &BTreeMap<String, String>,
+    include_footer: bool,
+) -> Option<String> {
+    if !matches!(request.list_type, ListType::All | ListType::Variables) {
+        return None;
+    }
+    let query = request.search_term.as_deref().unwrap_or_default();
+    let query_lower = query.to_ascii_lowercase();
+    let matches = variables
+        .keys()
+        .filter(|name| query.is_empty() || name.to_ascii_lowercase().starts_with(&query_lower))
+        .map(|name| format!("{name}\t"))
+        .collect::<Vec<_>>();
+    if matches.is_empty() {
+        return None;
+    }
+    let mut rendered = matches.join("\n");
+    rendered.push('\n');
+    if include_footer {
+        rendered.push('\n');
+        rendered.push_str(LIST_FOOTER);
+        rendered.push_str("\n\n");
+    }
+    Some(rendered)
+}
+
+pub(crate) fn is_no_match_rendering(rendering: &str) -> bool {
+    rendering == NO_MATCH
+}
+
+pub(crate) const fn list_footer() -> &'static str {
+    LIST_FOOTER
+}
+
+pub(crate) fn render_local_variable_info(
+    query: &str,
+    variables: &BTreeMap<String, String>,
+) -> Option<String> {
+    let (name, value) = variables.get_key_value(query).or_else(|| {
+        variables
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(query))
+    })?;
+    Some(format!(
+        "\nVariable: {name}\nNames: {name}\nValue: {value}\n\n"
+    ))
+}
+
+pub(crate) fn render_info(
+    data_dir: &Path,
+    query: &str,
+    selection: &DefinitionSelection,
+    unicode_enabled: bool,
+) -> Result<String, String> {
+    if !selection.global_defs || query.trim().is_empty() {
+        return Ok(NO_MATCH.to_string());
+    }
+
+    if selection.functions {
+        let document = load_definition_xml_file(data_dir.join("functions.xml.in"))
+            .map_err(|error| format!("failed to load functions.xml.in: {error}"))?;
+        let catalog = FunctionVariableCatalog::from_documents(vec![document]);
+        if let Some(function) = catalog.functions().functions().iter().find(|function| {
+            function.active()
+                && !function.hidden()
+                && function.names().iter().any(|name| name_equals(name, query))
+        }) {
+            let name = format_names(function.names(), unicode_enabled, false);
+            let title = function.title().unwrap_or(&name);
+            let arguments = function
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    argument
+                        .title()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("Argument {}", argument.index()))
+                })
+                .collect::<Vec<_>>();
+            let mut rendered = format!("\nFunction: {title}\n\n{name}({})\n", arguments.join("; "));
+            if !arguments.is_empty() {
+                rendered.push_str("\nArguments\n");
+                for (argument, title) in function.arguments().iter().zip(&arguments) {
+                    let description = argument.argument_type().unwrap_or("value");
+                    rendered.push_str(&format!("{title}: {description}\n"));
+                }
+            }
+            if let Some(description) = function.description() {
+                rendered.push('\n');
+                rendered.push_str(description);
+                rendered.push('\n');
+            }
+            rendered.push('\n');
+            return Ok(rendered);
+        }
+    }
+
+    if selection.variables {
+        let document = load_definition_xml_file(data_dir.join("variables.xml.in"))
+            .map_err(|error| format!("failed to load variables.xml.in: {error}"))?;
+        let catalog = FunctionVariableCatalog::from_documents(vec![document]);
+        if let Some(variable) = catalog.variables().variables().iter().find(|variable| {
+            variable.active()
+                && !variable.hidden()
+                && variable.names().iter().any(|name| name_equals(name, query))
+        }) {
+            return Ok(render_variable_details(variable, unicode_enabled));
+        }
+    }
+
+    if selection.units || selection.currencies {
+        let mut documents = Vec::new();
+        if selection.units {
+            documents.push(
+                load_definition_xml_file(data_dir.join("prefixes.xml.in"))
+                    .map_err(|error| format!("failed to load prefixes.xml.in: {error}"))?,
+            );
+            documents.push(
+                load_definition_xml_file(data_dir.join("units.xml.in"))
+                    .map_err(|error| format!("failed to load units.xml.in: {error}"))?,
+            );
+        }
+        if selection.currencies {
+            documents.push(
+                load_definition_xml_file(data_dir.join("currencies.xml.in"))
+                    .map_err(|error| format!("failed to load currencies.xml.in: {error}"))?,
+            );
+        }
+        let catalog = PrefixUnitCatalog::from_documents(documents);
+        if let Some(unit) =
+            catalog.units().units.iter().find(|unit| {
+                unit.active() && unit.names().iter().any(|name| name_equals(name, query))
+            })
+        {
+            return Ok(render_unit_details(unit, unicode_enabled));
+        }
+        if selection.units {
+            if let Some(prefix) = catalog.prefixes().prefixes.iter().find(|prefix| {
+                prefix.active() && prefix.names().iter().any(|name| name_equals(name, query))
+            }) {
+                return Ok(render_prefix_details(prefix, unicode_enabled));
+            }
+        }
+    }
+
+    Ok(NO_MATCH.to_string())
 }
 
 pub(crate) fn render_list(

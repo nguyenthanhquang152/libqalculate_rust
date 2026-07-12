@@ -350,6 +350,51 @@ pub(crate) fn native_output(expr: &str, settings: NativeSessionSettings) -> Opti
     native_session_numberbase_output(expr, settings)
 }
 
+/// Evaluate the integer subset accepted by [`native_output`] into its decimal
+/// value so interactive answer state does not depend on the active input base.
+pub(crate) fn native_integer_value(
+    expr: &str,
+    settings: NativeSessionSettings,
+) -> Option<crate::number::Number> {
+    let value = parse_or_evaluate_integer(
+        expr.trim(),
+        settings.input_base().unwrap_or(10),
+        settings.caret_is_xor(),
+        settings.has_invalid_programming_base(),
+    )?;
+    let mut decimal = value.magnitude.to_string();
+    if value.negative {
+        decimal.insert(0, '-');
+    }
+    decimal.parse().ok()
+}
+
+/// Return the numeric value represented by a successful native number-base
+/// rendering so interactive answer history retains conversions whose display
+/// is not itself a parseable number.
+pub(crate) fn native_answer_value(
+    expr: &str,
+    settings: NativeSessionSettings,
+) -> Option<crate::number::Number> {
+    if let Some(inner) = strip_function_call(expr.trim(), "float") {
+        let bits = parse_bit_string_u32(inner)?;
+        return Some(crate::number::Number::from_f64(f64::from(f32::from_bits(
+            bits,
+        ))));
+    }
+    if let Some(value) = native_integer_value(expr, settings) {
+        return Some(value);
+    }
+
+    let rendering = native_output(expr, settings)?;
+    if let Ok(value) = rendering.replace('−', "-").parse() {
+        return Some(value);
+    }
+
+    let (source, _) = expr.trim().split_once(" to ")?;
+    crate::number::evaluate_expr(source.trim()).ok()
+}
+
 fn native_session_numberbase_output(expr: &str, state: NativeSessionSettings) -> Option<String> {
     let trimmed = expr.trim();
 
@@ -1124,6 +1169,12 @@ mod tests {
         assert_eq!(native_output("A mod 3", input_only).as_deref(), Some("1"));
         assert_eq!(native_output("A div 3", input_only).as_deref(), Some("3"));
         assert_eq!(native_output("A rem 3", input_only).as_deref(), Some("1"));
+        assert_eq!(
+            native_integer_value("A+1", input_only)
+                .expect("hex expression should retain a decimal value")
+                .to_string(),
+            "11"
+        );
 
         let programming =
             NativeSessionSettings::from_raw(&["programming mode 1", "base 16 16"]).unwrap();

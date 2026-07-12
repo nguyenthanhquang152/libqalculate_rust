@@ -2,11 +2,27 @@
 #include "Calculator.h"
 #include "rust/cxx.h"
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
 // Factory function to instantiate Calculator on the heap
 std::unique_ptr<Calculator> new_calculator();
+bool qalc_enable_session_answers(Calculator &calc);
+bool qalc_set_session_answer(Calculator &calc, rust::Str expression);
+bool qalc_set_session_variable(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+);
+rust::String qalc_print_session_variable(Calculator &calc, rust::Str name);
+void qalc_clear_session_answers(Calculator &calc);
+bool qalc_delete_session_variable(Calculator &calc, rust::Str name);
+rust::String qalc_print_session_answer(
+    Calculator &calc,
+    int32_t output_base,
+    bool unicode_enabled
+);
 
 // Wrapper methods for loading definitions
 bool load_exchange_rates(Calculator &calc);
@@ -32,10 +48,10 @@ rust::String calculate_and_print_qalc(
     Calculator &calc,
     rust::Str expr,
     int32_t timeout_ms,
-    bool unicode_enabled,
-    bool markup,
-    bool latex,
-    bool terse
+    int32_t output_base,
+    int32_t input_base,
+    std::uint8_t assumption_mode,
+    std::uint8_t mode_flags
 );
 
 bool qalc_last_result_is_approximate();

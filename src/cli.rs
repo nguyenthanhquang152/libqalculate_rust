@@ -1,5 +1,8 @@
 pub(crate) const HELP_TEXT: &str = concat!(include_str!("cli/help.txt"), "\n");
 
+pub(crate) mod commands;
+pub(crate) mod repl;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CliInvocation {
     pub(crate) immediate: Option<ImmediateAction>,
@@ -10,6 +13,7 @@ pub(crate) struct CliInvocation {
     pub(crate) unicode: Option<bool>,
     pub(crate) expression: Option<String>,
     pub(crate) settings: Vec<String>,
+    pub(crate) interactive_settings: Vec<libqalculate_rust::parser::commands::SessionCommand>,
     pub(crate) terse: bool,
     pub(crate) timeout_ms: i32,
     pub(crate) output_mode: OutputMode,
@@ -544,6 +548,7 @@ where
         unicode,
         expression,
         settings,
+        interactive_settings: Vec::new(),
         terse,
         timeout_ms,
         output_mode,
