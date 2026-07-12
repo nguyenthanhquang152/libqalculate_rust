@@ -58,8 +58,8 @@ impl NativeSessionSettings {
                 if parts.len() == 1 {
                     state.output_base = Some(parse_standard_base(parts[0])?);
                 } else if parts.len() == 2 {
-                    state.input_base = Some(parse_standard_base(parts[0])?);
-                    state.output_base = Some(parse_standard_base(parts[1])?);
+                    state.output_base = Some(parse_standard_base(parts[0])?);
+                    state.input_base = Some(parse_standard_base(parts[1])?);
                 } else {
                     return None;
                 }
@@ -183,7 +183,7 @@ impl NativeSessionSettings {
                 let parts = base.split_whitespace().collect::<Vec<_>>();
                 match parts.as_slice() {
                     [output] => output_base = parse_standard_base(output)?,
-                    [input, output] if parse_standard_base(input)? == 10 => {
+                    [output, input] if parse_standard_base(input)? == 10 => {
                         output_base = parse_standard_base(output)?;
                     }
                     _ => return None,
@@ -323,6 +323,10 @@ impl SessionAnswerState {
 
     pub(crate) fn enable(&mut self) {
         self.enabled = true;
+    }
+
+    pub(crate) fn is_managed_alias(name: &str) -> bool {
+        Self::ALIASES.contains(&name)
     }
 
     pub(crate) const fn is_enabled(&self) -> bool {
@@ -521,9 +525,9 @@ pub(crate) fn apply_raw_settings_to_context(
                     context.output_base = output;
                     context.print_options.base = i32::try_from(output).ok()?;
                 }
-                [input, output] => {
-                    let input = parse_standard_base(input)?;
+                [output, input] => {
                     let output = parse_standard_base(output)?;
+                    let input = parse_standard_base(input)?;
                     context.input_base = input;
                     context.parse_options.base = i32::try_from(input).ok()?;
                     context.output_base = output;
@@ -733,7 +737,7 @@ mod tests {
             Some((false, 16, 0))
         );
         assert_eq!(
-            NativeSessionSettings::cpp_print_options_from_raw(&["base 10 16"]),
+            NativeSessionSettings::cpp_print_options_from_raw(&["base 16 10"]),
             Some((true, 16, 0))
         );
         assert_eq!(
@@ -789,8 +793,9 @@ mod tests {
         let base_16 = NativeSessionSettings::from_raw(&["base 16"]).unwrap();
         assert_eq!(base_16.input_base(), None);
 
-        let prog_10_16 = NativeSessionSettings::from_raw(&["base 10 16"]).unwrap();
-        assert_eq!(prog_10_16.input_base(), Some(10));
+        let decimal_output_hex_input = NativeSessionSettings::from_raw(&["base 10 16"]).unwrap();
+        assert_eq!(decimal_output_hex_input.input_base(), Some(16));
+        assert_eq!(decimal_output_hex_input.output_base, Some(10));
 
         for (name, expected) in [
             ("bin", 2),

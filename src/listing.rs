@@ -271,13 +271,19 @@ pub(crate) fn is_no_match_rendering(rendering: &str) -> bool {
     rendering == NO_MATCH
 }
 
+pub(crate) const fn list_footer() -> &'static str {
+    LIST_FOOTER
+}
+
 pub(crate) fn render_local_variable_info(
     query: &str,
     variables: &BTreeMap<String, String>,
 ) -> Option<String> {
-    let (name, value) = variables
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(query))?;
+    let (name, value) = variables.get_key_value(query).or_else(|| {
+        variables
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(query))
+    })?;
     Some(format!(
         "\nVariable: {name}\nNames: {name}\nValue: {value}\n\n"
     ))

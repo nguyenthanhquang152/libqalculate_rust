@@ -1,5 +1,7 @@
 use super::commands::{parse_interactive_command, InteractiveCommand};
 use super::{CliInvocation, ListRequest, ListType};
+use libqalculate_rust::ast::Expression;
+use libqalculate_rust::parser::operators::parse_expression;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -32,16 +34,15 @@ impl History {
     fn load() -> Self {
         let path = history_path();
         let entries = match fs::read_to_string(&path) {
-            Ok(contents) => contents
-                .lines()
-                .filter(|line| !line.trim().is_empty())
-                .map(str::to_string)
-                .rev()
-                .take(MAX_HISTORY_ENTRIES)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect(),
+            Ok(contents) => {
+                let mut entries = contents
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                entries.drain(..entries.len().saturating_sub(MAX_HISTORY_ENTRIES));
+                entries
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
             Err(_) => {
                 return Self {
@@ -227,9 +228,8 @@ where
                     list_type,
                     search_term: query,
                 };
-                let local_can_be_authoritative = (request.list_type == ListType::Variables
-                    && request.search_term.is_some())
-                    || (request.list_type == ListType::All && request.search_term.is_none());
+                let local_can_be_authoritative =
+                    request.list_type == ListType::All && request.search_term.is_none();
                 let local_rendering = crate::listing::render_local_variable_list(
                     &request,
                     &local_variables,
@@ -254,6 +254,9 @@ where
                 ) {
                     Ok(rendered) => {
                         if has_local_rendering && crate::listing::is_no_match_rendering(&rendered) {
+                            if writeln!(output, "\n{}\n", crate::listing::list_footer()).is_err() {
+                                return 2;
+                            }
                             continue;
                         }
                         if write!(output, "{rendered}").is_err() {
@@ -335,18 +338,15 @@ where
 }
 
 fn local_assignment(expression: &str) -> Option<(String, String)> {
-    let (name, value) = expression.split_once(":=")?;
-    let name = name.trim();
-    let value = value.trim();
-    if name.is_empty()
-        || value.is_empty()
-        || !name
-            .chars()
-            .all(|character| character == '_' || character.is_alphanumeric())
-    {
+    let Expression::Assignment { variable, .. } = parse_expression(expression).ok()? else {
         return None;
-    }
-    Some((name.to_string(), value.to_string()))
+    };
+    let operator_index = [expression.find(":="), expression.find("=:")]
+        .into_iter()
+        .flatten()
+        .min()?;
+    let value = expression[operator_index + 2..].trim();
+    Some((variable, value.to_string()))
 }
 
 fn render_evaluation<W: Write>(output: &mut W, evaluation: &ReplEvaluation) -> io::Result<()> {
@@ -398,4 +398,22 @@ fn finish_history<E: Write>(history: &History, _error: &mut E, success_code: i32
     // while a failed final write must not change the calculator's exit status.
     let _ = history.save();
     success_code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::local_assignment;
+
+    #[test]
+    fn local_assignment_uses_the_parsed_assignment_target() {
+        assert_eq!(
+            local_assignment("x := 1"),
+            Some(("x".to_string(), "1".to_string()))
+        );
+        assert_eq!(
+            local_assignment("x =: \"a:=b\""),
+            Some(("x".to_string(), "\"a:=b\"".to_string()))
+        );
+        assert_eq!(local_assignment("\"x:=1\""), None);
+    }
 }

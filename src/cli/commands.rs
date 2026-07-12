@@ -65,9 +65,9 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
             [output] => Ok(InteractiveCommand::Settings(vec![setting(
                 SetSetting::OutputBase(*output),
             )])),
-            [input, output] => Ok(InteractiveCommand::Settings(vec![
-                setting(SetSetting::InputBase(*input)),
+            [output, input] => Ok(InteractiveCommand::Settings(vec![
                 setting(SetSetting::OutputBase(*output)),
+                setting(SetSetting::InputBase(*input)),
             ])),
             _ => Err("No base specified.".to_string()),
         };
@@ -229,8 +229,8 @@ mod tests {
             parse_interactive_command("set base 10 16"),
             Ok(InteractiveCommand::Settings(settings))
                 if settings.len() == 2
-                    && serialize_setting(&settings[0]) == "input base 10"
-                    && serialize_setting(&settings[1]) == "output base 16"
+                    && serialize_setting(&settings[0]) == "output base 10"
+                    && serialize_setting(&settings[1]) == "input base 16"
         ));
         let unicode = parse_interactive_command("/set unicode off").expect("Unicode command");
         let InteractiveCommand::Settings(mut unicode) = unicode else {

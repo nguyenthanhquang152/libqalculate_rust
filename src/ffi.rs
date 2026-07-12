@@ -373,6 +373,11 @@ impl Calculator {
 
     /// Delete a user-defined variable from the current interactive session.
     pub fn delete_session_variable(&mut self, name: &str) -> bool {
+        if self.session_answers.is_enabled()
+            && crate::session::SessionAnswerState::is_managed_alias(name)
+        {
+            return false;
+        }
         let native_removed = self.native_context.variables.remove(name).is_some();
         if self.inner.is_null() {
             return native_removed;
@@ -871,7 +876,10 @@ impl Calculator {
         self.last_output_approximate = false;
         self.last_output_message_lines = 0;
         let fallback_disabled = fallback_disabled_by_env();
-        if !self.session_answers.has_cpp_answer() {
+        let uses_native_session_variable = crate::parser::operators::parse_expression(expr)
+            .ok()
+            .is_some_and(|parsed| expression_uses_context_variable(&parsed, &self.native_context));
+        if !self.session_answers.has_cpp_answer() || uses_native_session_variable {
             match native_markup_output(
                 mode,
                 expr,
@@ -1077,7 +1085,7 @@ impl Calculator {
             if let Some(output) =
                 native_markup_conversion_output(expr, settings, &mut self.native_context)?
             {
-                return Ok(self.finish_native_string(output));
+                return Ok(self.finish_native_output(output));
             }
             if let Some(output) = native_currency_conversion_output(profile, expr, settings)? {
                 return Ok(self.finish_native_output(output));
@@ -1114,11 +1122,17 @@ impl Calculator {
         let capture_result = self.session_answers.is_enabled();
         let (output, answer_rendering) = {
             let _guard = FFI_LOCK.lock().unwrap();
-            let pin = self.inner.pin_mut();
+            let mut pin = self.inner.pin_mut();
             match profile {
                 PrintProfile::Api => {
-                    let output = sys::calculate_and_print(pin, expr, timeout_ms)
+                    let output = sys::calculate_and_print(pin.as_mut(), expr, timeout_ms)
                         .map_err(CalculatorError::Cxx)?;
+                    if capture_result && !sys::qalc_set_session_answer(pin.as_mut(), &output) {
+                        sys::qalc_clear_session_answers(pin);
+                        return Err(CalculatorError::NativeEvaluation(
+                            "failed to synchronize C++ session answer".to_string(),
+                        ));
+                    }
                     (output.clone(), output)
                 }
                 PrintProfile::Qalc => {
@@ -1250,7 +1264,7 @@ fn native_markup_conversion_output(
     expr: &str,
     settings: &[&str],
     context: &mut crate::context::CalculatorContext,
-) -> Result<Option<String>, CalculatorError> {
+) -> Result<Option<NativeOutput>, CalculatorError> {
     let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
         return Ok(None);
     };
@@ -1259,7 +1273,6 @@ fn native_markup_conversion_output(
     };
 
     native_markup_output_for_parsed(mode, &inner, settings, false, false, context)
-        .map(|output| output.map(|output| output.output))
 }
 
 fn native_markup_output(
@@ -1535,6 +1548,17 @@ fn expression_contains(
     }
 }
 
+fn expression_uses_context_variable(
+    expr: &crate::ast::Expression,
+    context: &crate::context::CalculatorContext,
+) -> bool {
+    expression_contains(expr, &|node| match node {
+        crate::ast::Expression::Symbolic(symbol) => context.variables.contains_key(symbol.name()),
+        crate::ast::Expression::Variable(variable) => context.variables.contains_key(variable.id()),
+        _ => false,
+    })
+}
+
 fn contains_bitwise_ops(expr: &crate::ast::Expression) -> bool {
     expression_contains(expr, &|expr| {
         use crate::ast::Expression;
@@ -1746,11 +1770,7 @@ fn native_session_context_output(
     if is_assignment && !allow_assignment {
         return None;
     }
-    let uses_session_variable = expression_contains(&parsed, &|node| match node {
-        crate::ast::Expression::Symbolic(symbol) => context.variables.contains_key(symbol.name()),
-        crate::ast::Expression::Variable(variable) => context.variables.contains_key(variable.id()),
-        _ => false,
-    });
+    let uses_session_variable = expression_uses_context_variable(&parsed, context);
     if !is_assignment && !uses_session_variable {
         return None;
     }
@@ -1790,12 +1810,9 @@ fn native_datetime_output(
     else {
         return Ok(None);
     };
-    let answer = crate::datetime::native_answer(expr).map_err(CalculatorError::NativeEvaluation)?;
-    let native = match answer {
-        Some(answer) => NativeOutput::plain(output.clone()).with_answer(answer, output),
-        None => NativeOutput::plain(output),
-    };
-    Ok(Some(native))
+    Ok(Some(
+        NativeOutput::plain(output.output.clone()).with_answer(output.answer, output.output),
+    ))
 }
 
 fn native_currency_conversion_output(

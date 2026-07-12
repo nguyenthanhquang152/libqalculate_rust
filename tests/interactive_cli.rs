@@ -227,6 +227,19 @@ fn local_variable_searches_include_matching_global_definitions() {
 }
 
 #[test]
+fn filtered_local_variable_searches_include_matching_global_variables() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("s:=1\nlist variables s\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("s\t").and(predicate::str::contains("speed_of_light / c")))
+        .stderr("");
+}
+
+#[test]
 fn local_variable_info_uses_the_evaluated_assignment_value() {
     let mut session = isolated_session();
     session
@@ -251,6 +264,36 @@ fn local_variable_info_uses_plain_values_after_markup_fallback_assignments() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Value: 9.933832571"))
+        .stderr("");
+}
+
+#[test]
+fn reverse_assignments_update_local_variable_info() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("rev =: 2\ninfo rev\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Variable: rev").and(predicate::str::contains("Value: 2")))
+        .stderr("");
+}
+
+#[test]
+fn local_variable_info_prefers_an_exact_case_match() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("X:=1\nx:=2\ninfo x\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Variable: x")
+                .and(predicate::str::contains("Value: 2"))
+                .and(predicate::str::contains("Variable: X").not()),
+        )
         .stderr("");
 }
 
@@ -284,6 +327,22 @@ fn deleting_a_session_variable_removes_it_from_info() {
                 .and(predicate::str::contains("Variable: myvar").not()),
         )
         .stderr("");
+}
+
+#[test]
+fn managed_answer_aliases_cannot_be_deleted_as_user_variables() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("set base 10 10\n1\ndelete ans\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans + 1 = 2"))
+        .stderr(predicate::str::contains(
+            "no user-defined variable with the name 'ans' exists",
+        ));
 }
 
 #[test]
@@ -534,6 +593,20 @@ fn native_markup_updates_the_typed_answer_state() {
 }
 
 #[test]
+fn native_markup_conversion_results_update_the_typed_answer_state() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1/2 to latex\nans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ans + 1 = 1.5"))
+        .stderr("");
+}
+
+#[test]
 fn native_markup_assignments_persist_in_the_session_context() {
     let mut session = isolated_session();
     session
@@ -541,6 +614,19 @@ fn native_markup_assignments_persist_in_the_session_context() {
         .args(["-i", "-c0", "--html"])
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .write_stdin("x:=1\nx+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<i>x</i> + 1 = 2"))
+        .stderr("");
+}
+
+#[test]
+fn native_markup_variables_survive_an_intervening_cpp_fallback() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "--html"])
+        .write_stdin("x:=1\nEi(3)\nx+1\nquit\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("<i>x</i> + 1 = 2"))
@@ -692,7 +778,7 @@ fn interactive_accepts_separate_input_and_output_bases() {
         .write_stdin("set base 10 16\n10\nquit\n")
         .assert()
         .success()
-        .stdout("> set base 10 16\n> 10\n\n  10 = 0xA\n\n> quit\n")
+        .stdout("> set base 10 16\n> 10\n\n  10 = 16\n\n> quit\n")
         .stderr("");
 }
 

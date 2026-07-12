@@ -113,6 +113,26 @@ fn test_exception_safety_invalid_inputs() {
 }
 
 #[test]
+fn api_profile_session_results_update_cpp_answer_aliases() {
+    if std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1") {
+        return;
+    }
+    let _guard = TEST_MUTEX.lock().unwrap();
+    configure_definitions_dir();
+
+    let mut calc = Calculator::new();
+    calc.enable_session_mode();
+    let first = calc
+        .calculate_and_print_with_fallback_state("1+1", 1000)
+        .expect("first API calculation should succeed");
+    assert_eq!(first.output, "2");
+    let second = calc
+        .calculate_and_print_with_fallback_state("ans+1", 1000)
+        .expect("API answer alias should remain synchronized");
+    assert_eq!(second.output, "3");
+}
+
+#[test]
 fn test_thread_safety_compile_fail_checks() {
     let _guard = TEST_MUTEX.lock().unwrap();
     let temp_dir = tempdir().expect("Failed to create temp dir");

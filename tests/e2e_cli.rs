@@ -240,6 +240,19 @@ fn cli_applies_input_base_only_to_integer_and_word_operator_expressions() {
 }
 
 #[test]
+fn cli_two_part_base_uses_upstream_output_then_input_order() {
+    let invalid_defs = tempdir().expect("temp dir should be created");
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-t", "-b", "10 16", "10"])
+        .env("QALCULATE_DEFINITIONS_DIR", invalid_defs.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("16\n")
+        .stderr("");
+}
+
+#[test]
 fn cli_applies_unicode_on_setting_for_native_sexagesimal_output() {
     let invalid_defs = tempdir().expect("temp dir should be created");
     let mut cmd = qalc_rs();
