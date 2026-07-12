@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 use libqalculate_rust::UPSTREAM_LIBQALCULATE_VERSION;
 use predicates::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 #[test]
@@ -2945,4 +2945,62 @@ fn test_batch_workflow_stops_parsing_after_test_file() {
             .stdout("Could not open \"dummy_test.batch\".\n")
             .stderr("");
     }
+}
+
+fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
+    let upstream = std::env::var_os("QALCULATE_ORACLE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("../libqalculate/src/qalc"));
+    assert!(
+        upstream.exists(),
+        "docs example parity requires an upstream qalc binary at {}",
+        upstream.display()
+    );
+
+    let rust_home = tempdir().expect("Rust CLI home");
+    let mut rust = qalc_rs_raw();
+    let rust_output = rust
+        .args(args)
+        .env("HOME", rust_home.path())
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert!(
+        String::from_utf8_lossy(&rust_output.stderr).contains("[qalc-rs-metadata] fallback=native")
+    );
+
+    let upstream_home = tempdir().expect("upstream home");
+    let mut oracle = Command::new(&upstream);
+    let oracle_output = oracle
+        .args(args)
+        .env("HOME", upstream_home.path())
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    assert_eq!(rust_output.stdout, oracle_output.stdout);
+}
+
+#[test]
+fn docs_example_readme_cli_arithmetic_matches_upstream() {
+    assert_docs_cli_example_matches_upstream(&["-c0", "-t", "--", "5+2"]);
+}
+
+#[test]
+fn docs_example_man_set_base_16_matches_upstream() {
+    assert_docs_cli_example_matches_upstream(&["-c0", "-t", "-s", "base 16", "--", "52"]);
+}
+
+#[test]
+fn docs_example_readme_number_base_matches_upstream() {
+    assert_docs_cli_example_matches_upstream(&["-c0", "-t", "--", "52 to bin"]);
 }

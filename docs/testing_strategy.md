@@ -88,6 +88,11 @@ Rules:
 - `out-of-scope` requires a reason and reviewer approval. It cannot be used for ordinary
   upstream behavior that the final 100% port is expected to support.
 
+Selected README, man-page, and public API examples are tracked separately in
+`docs/examples_manifest.md`. Its `native-pass` rows require fallback-disabled
+executable evidence, while pending example families retain an issue owner and
+must not be replaced by easier examples.
+
 ## 5. Fixture and Normalization Policy
 
 Default policy is exact UTF-8 byte-for-byte comparison after stable line-ending handling.
