@@ -57,7 +57,14 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
         };
     }
 
-    if let Some(rest) = lower.strip_prefix("set base ") {
+    let base_arguments = if matches!(lower.as_str(), "base" | "set base") {
+        Some("")
+    } else {
+        lower
+            .strip_prefix("set base ")
+            .or_else(|| lower.strip_prefix("base "))
+    };
+    if let Some(rest) = base_arguments {
         let bases = rest
             .split_whitespace()
             .map(parse_base)
@@ -132,6 +139,7 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
         let mut parts = rest.split_whitespace();
         let first = parts.next().unwrap_or_default();
         let (list_type, query_first) = match first.to_ascii_lowercase().as_str() {
+            "currencies" | "currency" => (ListType::Currencies, None),
             "functions" | "function" => (ListType::Functions, None),
             "units" | "unit" => (ListType::Units, None),
             "variables" | "variable" => (ListType::Variables, None),
@@ -279,6 +287,12 @@ mod tests {
                     && serialize_setting(&settings[0]) == "output base 10"
                     && serialize_setting(&settings[1]) == "input base 16"
         ));
+        assert!(matches!(
+            parse_interactive_command("base 16"),
+            Ok(InteractiveCommand::Settings(settings))
+                if settings.len() == 1
+                    && serialize_setting(&settings[0]) == "output base 16"
+        ));
         let unicode = parse_interactive_command("/set unicode off").expect("Unicode command");
         let InteractiveCommand::Settings(mut unicode) = unicode else {
             panic!("expected typed Unicode setting");
@@ -317,6 +331,20 @@ mod tests {
             Ok(InteractiveCommand::List {
                 list_type: super::ListType::Variables,
                 query: Some("CaseSensitiveName".to_string()),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("FiNd currencies USD"),
+            Ok(InteractiveCommand::List {
+                list_type: super::ListType::Currencies,
+                query: Some("USD".to_string()),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("find currencies"),
+            Ok(InteractiveCommand::List {
+                list_type: super::ListType::Currencies,
+                query: None,
             })
         );
         assert_eq!(
@@ -361,6 +389,13 @@ mod tests {
             Ok(InteractiveCommand::DefineVariable {
                 name: "date".to_string(),
                 expression: "2024-01-01".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command(r#"variable label "green apples""#),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "label".to_string(),
+                expression: "green apples".to_string(),
             })
         );
         assert_eq!(

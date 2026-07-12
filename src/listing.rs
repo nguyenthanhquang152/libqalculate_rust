@@ -448,7 +448,10 @@ pub(crate) fn render_list(
         || request.list_type == ListType::Units
         || list_all)
         && units_enabled)
-        || ((request.list_type == ListType::Units || list_all) && currencies_enabled)
+        || ((request.list_type == ListType::Currencies
+            || request.list_type == ListType::Units
+            || list_all)
+            && currencies_enabled)
     {
         let mut docs = Vec::new();
         if (request.list_type == ListType::Prefixes
@@ -471,7 +474,11 @@ pub(crate) fn render_list(
                 );
             }
         }
-        if (request.list_type == ListType::Units || list_all) && currencies_enabled {
+        if (request.list_type == ListType::Currencies
+            || request.list_type == ListType::Units
+            || list_all)
+            && currencies_enabled
+        {
             let currencies_path = data_dir.join("currencies.xml.in");
             docs.push(
                 load_definition_xml_file(currencies_path)
@@ -606,7 +613,8 @@ pub(crate) fn render_list(
         }
     }
 
-    if request.list_type == ListType::Units || list_all {
+    if request.list_type == ListType::Currencies || request.list_type == ListType::Units || list_all
+    {
         if let Some(cat) = &prefix_unit_catalog {
             for unit in &cat.units().units {
                 if unit.active() {
@@ -617,13 +625,16 @@ pub(crate) fn render_list(
                     let is_enabled = if is_currency {
                         currencies_enabled
                     } else {
-                        units_enabled
+                        units_enabled && request.list_type != ListType::Currencies
                     };
 
                     if is_enabled {
                         let is_composite = unit.kind() == UnitType::Composite;
-                        let should_include =
-                            !is_composite && (has_search || list_all || !is_currency);
+                        let should_include = !is_composite
+                            && (has_search
+                                || list_all
+                                || !is_currency
+                                || request.list_type == ListType::Currencies);
 
                         if should_include {
                             let is_match = search_str.is_empty()

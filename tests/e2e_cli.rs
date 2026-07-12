@@ -2582,6 +2582,102 @@ fn cli_stdin_command_stream_reports_invalid_commands_and_continues() {
 }
 
 #[test]
+fn cli_command_stream_accepts_bare_base_command() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("base 16\n15\n")
+        .assert()
+        .success()
+        .stdout("0xF\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_command_stream_keeps_command_variables_cpp_owned() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .write_stdin("set base 10\n1+1\nvariable x 1/3\nx+1\n")
+        .assert()
+        .success()
+        .stdout("2\n1.333333333\n")
+        .stderr(
+            "[qalc-rs-metadata] fallback=native\n\
+             [qalc-rs-metadata] fallback=cpp-fallback-enabled\n",
+        );
+}
+
+#[test]
+fn cli_command_stream_cpp_local_shadows_disabled_global_definition() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-nounits", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("variable m 1±0.1\nm\n")
+        .assert()
+        .success()
+        .stdout("1.00±0.10\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_command_stream_finds_currencies_explicitly() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("find currencies\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("cent / ¢ (Cent (USD))")
+                .and(predicate::str::contains("dollar"))
+                .and(predicate::str::contains("USD"))
+                .and(predicate::str::contains("metre / meter").not())
+                .and(predicate::str::contains("No matching item found.").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn cli_quoted_command_definition_matches_upstream_semantics() {
+    let upstream = Path::new("../libqalculate/src/qalc");
+    if !upstream.exists() {
+        return;
+    }
+    let input = "variable label \"green apples\"\nlabel\n";
+
+    let mut rust = qalc_rs_raw();
+    let rust_output = rust
+        .args(["-c0", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let upstream_home = tempdir().expect("upstream home");
+    let mut oracle = Command::new(upstream);
+    let oracle_output = oracle
+        .args(["-c0", "-t", "-set", "save definitions off", "-f", "-"])
+        .env("HOME", upstream_home.path())
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    assert_eq!(rust_output.stdout, oracle_output.stdout);
+    assert_eq!(rust_output.stderr, oracle_output.stderr);
+}
+
+#[test]
 fn cli_command_stream_definitions_are_silent_stateful_and_preserve_ans() {
     let mut cmd = qalc_rs_raw();
     cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])

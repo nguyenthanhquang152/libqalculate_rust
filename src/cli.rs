@@ -51,6 +51,7 @@ pub(crate) struct ListRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ListType {
     All,
+    Currencies,
     Functions,
     Units,
     Variables,

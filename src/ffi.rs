@@ -2,7 +2,7 @@
 //! Safe Rust wrapper and FFI bindings for C++ libqalculate's Calculator.
 
 use cxx::UniquePtr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -120,6 +120,7 @@ pub(crate) mod sys {
 pub struct Calculator {
     inner: UniquePtr<sys::Calculator>,
     native_context: crate::context::CalculatorContext,
+    cpp_session_variables: HashSet<String>,
     session_answers: crate::session::SessionAnswerState,
     last_native_message_had_error: bool,
     last_output_approximate: bool,
@@ -472,6 +473,7 @@ impl Calculator {
         Self {
             inner,
             native_context: crate::context::CalculatorContext::default(),
+            cpp_session_variables: HashSet::new(),
             session_answers: crate::session::SessionAnswerState::default(),
             last_native_message_had_error: false,
             last_output_approximate: false,
@@ -507,6 +509,7 @@ impl Calculator {
         };
         let usage = native_definition_usage_with_locals(&parsed, &|name| {
             self.native_context.variables.contains_key(name)
+                || self.cpp_session_variables.contains(name)
         });
         definition_usage_uses_global_definitions(&usage)
     }
@@ -527,6 +530,7 @@ impl Calculator {
         };
         let usage = native_definition_usage_with_locals(&parsed, &|name| {
             self.native_context.variables.contains_key(name)
+                || self.cpp_session_variables.contains(name)
         });
         definition_usage_uses_disabled_family(
             &usage,
@@ -553,6 +557,9 @@ impl Calculator {
             let _guard = FFI_LOCK.lock().unwrap();
             sys::qalc_delete_session_variable(self.inner.pin_mut(), name)
         };
+        if cpp_removed {
+            self.cpp_session_variables.remove(name);
+        }
         native_removed || cpp_removed
     }
 
@@ -569,6 +576,7 @@ impl Calculator {
             sys::qalc_delete_session_variable(self.inner.pin_mut(), name)
         };
         if cpp_removed {
+            self.cpp_session_variables.remove(name);
             self.session_answers.invalidate(&mut self.native_context);
         }
         cpp_removed
@@ -596,21 +604,9 @@ impl Calculator {
             return None;
         }
 
-        let rendering = self.cpp_session_variable_rendering(name)?;
-        match crate::parser::operators::parse_expression(&rendering)
-            .ok()
-            .and_then(|parsed| crate::eval::evaluate_ast(&parsed, &mut self.native_context).ok())
-        {
-            Some(value) => {
-                self.native_context
-                    .variables
-                    .insert(name.to_string(), value);
-            }
-            None => {
-                self.native_context.variables.remove(name);
-            }
-        }
-        Some(rendering)
+        self.native_context.variables.remove(name);
+        self.cpp_session_variables.insert(name.to_string());
+        self.cpp_session_variable_rendering(name)
     }
 
     /// Define a user function without rotating the interactive answer history.
@@ -1171,6 +1167,9 @@ impl Calculator {
         let uses_native_session_variable = parsed
             .as_ref()
             .is_some_and(|parsed| expression_uses_context_variable(parsed, &self.native_context));
+        let uses_cpp_session_variable = parsed.as_ref().is_some_and(|parsed| {
+            expression_uses_cpp_session_variable(parsed, &self.cpp_session_variables)
+        });
         let contains_assignment = parsed.as_ref().is_some_and(|parsed| {
             expression_contains(parsed, &|node| {
                 matches!(node, crate::ast::Expression::Assignment { .. })
@@ -1189,6 +1188,7 @@ impl Calculator {
         if (fallback_disabled || !is_top_level_assignment)
             && (!self.session_answers.has_cpp_answer() || uses_native_session_variable)
             && !uses_unmirrored_managed_alias
+            && !uses_cpp_session_variable
         {
             match native_markup_output(
                 mode,
@@ -1429,6 +1429,9 @@ impl Calculator {
                 "failed to synchronize native session variable '{name}'{rollback_detail}"
             )));
         }
+        for (name, _, _) in &variables {
+            self.cpp_session_variables.remove(name);
+        }
         Ok(())
     }
 
@@ -1481,18 +1484,21 @@ impl Calculator {
             "BUG: Calculator inner pointer is null - possible use-after-move"
         );
         let fallback_disabled = fallback_disabled_by_env();
+        let parsed = crate::parser::operators::parse_expression(expr).ok();
+        let uses_cpp_session_variable = parsed.as_ref().is_some_and(|parsed| {
+            expression_uses_cpp_session_variable(parsed, &self.cpp_session_variables)
+        });
 
         if self.session_answers.is_enabled()
             && (fallback_disabled || self.session_answers.has_native_answer())
+            && !uses_cpp_session_variable
         {
             let native_variables_before = (!fallback_disabled
-                && crate::parser::operators::parse_expression(expr)
-                    .ok()
-                    .is_some_and(|parsed| {
-                        expression_contains(&parsed, &|node| {
-                            matches!(node, crate::ast::Expression::Assignment { .. })
-                        })
-                    }))
+                && parsed.as_ref().is_some_and(|parsed| {
+                    expression_contains(parsed, &|node| {
+                        matches!(node, crate::ast::Expression::Assignment { .. })
+                    })
+                }))
             .then(|| self.native_context.variables.clone());
             if let Some(output) = native_session_context_output(
                 profile,
@@ -1511,13 +1517,16 @@ impl Calculator {
         // CLI/session settings are implemented by the native scaffold. Try that
         // evidence-backed path even when the C++ fallback is available so normal
         // CLI invocations do not reject supported settings before evaluation.
-        if !settings.is_empty() {
+        if !uses_cpp_session_variable && !settings.is_empty() {
             if let Some(output) = native_scaffold_output(profile, expr, settings) {
                 return Ok(self.finish_native_output(output));
             }
         }
 
         if fallback_disabled {
+            if uses_cpp_session_variable {
+                return Err(CalculatorError::FallbackDisabled(expr.to_string()));
+            }
             if let Some(output) =
                 native_markup_conversion_output(expr, settings, &mut self.native_context)?
             {
@@ -2003,6 +2012,18 @@ fn expression_uses_context_variable(
     expression_contains(expr, &|node| match node {
         crate::ast::Expression::Symbolic(symbol) => context.variables.contains_key(symbol.name()),
         crate::ast::Expression::Variable(variable) => context.variables.contains_key(variable.id()),
+        _ => false,
+    })
+}
+
+fn expression_uses_cpp_session_variable(
+    expr: &crate::ast::Expression,
+    variables: &HashSet<String>,
+) -> bool {
+    expression_contains(expr, &|node| match node {
+        crate::ast::Expression::Symbolic(symbol) => variables.contains(symbol.name()),
+        crate::ast::Expression::Variable(variable) => variables.contains(variable.id()),
+        crate::ast::Expression::Assignment { variable, .. } => variables.contains(variable),
         _ => false,
     })
 }
