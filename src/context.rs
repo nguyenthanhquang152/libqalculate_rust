@@ -327,7 +327,15 @@ impl CalculatorContext {
             }
         };
 
-        let res = crate::eval::evaluate_ast(&expr, self);
+        self.evaluate_expression(&expr)
+    }
+
+    /// Evaluates and simplifies an already parsed expression, recording errors.
+    pub(crate) fn evaluate_expression(
+        &mut self,
+        expr: &crate::ast::Expression,
+    ) -> Result<crate::ast::Expression, String> {
+        let res = crate::eval::evaluate_ast(expr, self);
 
         match res {
             Ok(expr_res) => Ok(match &expr_res {

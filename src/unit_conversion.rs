@@ -170,12 +170,37 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
     let mut context = CalculatorContext::default();
     catalog.register_into(&mut context.definitions);
 
+    native_output_for_parsed(parsed, &catalog, &mut context)
+}
+
+/// Evaluates a qalc unit expression with caller-owned definitions and session state.
+pub(crate) fn native_output_with_catalog(
+    expr: &str,
+    catalog: &PrefixUnitCatalog,
+    context: &mut CalculatorContext,
+) -> Result<Option<NativeUnitOutput>, String> {
+    let parsed = match parse_expression(expr) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(None),
+    };
+    if !may_contain_unit_candidate(&parsed) {
+        return Ok(None);
+    }
+
+    native_output_for_parsed(parsed, catalog, context)
+}
+
+fn native_output_for_parsed(
+    parsed: Expression,
+    catalog: &PrefixUnitCatalog,
+    context: &mut CalculatorContext,
+) -> Result<Option<NativeUnitOutput>, String> {
     match parsed {
         Expression::Conversion { expr, target } => {
-            let evaluated_expr = crate::eval::evaluate_ast(&expr, &mut context)?;
-            let evaluated_target = crate::eval::evaluate_ast(&target, &mut context)?;
-            let target = conversion_target(&evaluated_target, &catalog)?;
-            let mut source = reduce_quantity(&evaluated_expr, &catalog)?;
+            let evaluated_expr = crate::eval::evaluate_ast(&expr, context)?;
+            let evaluated_target = crate::eval::evaluate_ast(&target, context)?;
+            let target = conversion_target(&evaluated_target, catalog)?;
+            let mut source = reduce_quantity(&evaluated_expr, catalog)?;
             if source.units.is_unitless() {
                 let ConversionTarget::Unit { units, .. } = &target else {
                     return Ok(None);
@@ -186,13 +211,13 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
                 };
             }
             Ok(Some(NativeUnitOutput {
-                output: format_conversion(&source, target, &catalog)?,
+                output: format_conversion(&source, target, catalog)?,
                 answer: evaluated_expr,
             }))
         }
         other => {
-            let evaluated = crate::eval::evaluate_ast(&other, &mut context)?;
-            let quantity = match reduce_quantity(&evaluated, &catalog) {
+            let evaluated = crate::eval::evaluate_ast(&other, context)?;
+            let quantity = match reduce_quantity(&evaluated, catalog) {
                 Ok(quantity) => quantity,
                 Err(_) => return Ok(None),
             };
@@ -200,7 +225,7 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
                 return Ok(None);
             }
             Ok(
-                format_automatic_quantity(&quantity, &catalog).map(|output| NativeUnitOutput {
+                format_automatic_quantity(&quantity, catalog).map(|output| NativeUnitOutput {
                     output,
                     answer: evaluated,
                 }),
