@@ -4,6 +4,6 @@
 /set base 10
 15
 	15
-/set base 10 16
+/set base dec hex
 FF
 	255

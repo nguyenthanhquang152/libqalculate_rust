@@ -123,6 +123,14 @@ pub fn batch_case_ids(batch_file: &str, input: &str) -> Result<Vec<String>, Batc
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let trimmed = line.trim();
 
+        if line.starts_with('\t') {
+            if current_expression_line.is_none() {
+                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            }
+            has_expected = true;
+            continue;
+        }
+
         if trimmed.is_empty() || trimmed.starts_with('#') || is_session_command(trimmed) {
             flush_case_id(
                 batch_file,
@@ -131,14 +139,6 @@ pub fn batch_case_ids(batch_file: &str, input: &str) -> Result<Vec<String>, Batc
                 has_expected,
             );
             has_expected = false;
-            continue;
-        }
-
-        if line.starts_with('\t') {
-            if current_expression_line.is_none() {
-                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
-            }
-            has_expected = true;
             continue;
         }
 
@@ -225,6 +225,14 @@ pub fn parse_batch_items(input: &str) -> Result<Vec<BatchItem>, BatchError> {
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let trimmed = line.trim();
 
+        if let Some(expected) = line.strip_prefix('\t') {
+            if current_expression.is_none() {
+                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            }
+            current_expected.push(expected.to_owned());
+            continue;
+        }
+
         if trimmed.is_empty() || trimmed.starts_with('#') {
             flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
             continue;
@@ -232,20 +240,18 @@ pub fn parse_batch_items(input: &str) -> Result<Vec<BatchItem>, BatchError> {
 
         if is_session_command(trimmed) {
             flush_batch_items(&mut items, &mut current_expression, &mut current_expected)?;
-            let commands = crate::parser::commands::parse_commands(trimmed)
-                .map_err(|_| BatchError::InvalidCommand { line: line_number })?;
-            items.extend(commands.into_iter().map(|command| BatchItem::Command {
-                source_line: line_number,
-                command,
-            }));
-            continue;
-        }
-
-        if let Some(expected) = line.strip_prefix('\t') {
-            if current_expression.is_none() {
-                return Err(BatchError::ExpectedWithoutExpression { line: line_number });
+            match crate::parser::commands::parse_commands(trimmed) {
+                Ok(commands) => {
+                    items.extend(commands.into_iter().map(|command| BatchItem::Command {
+                        source_line: line_number,
+                        command,
+                    }));
+                }
+                Err(_) => items.push(BatchItem::Unasserted {
+                    source_line: line_number,
+                    expression: line.to_owned(),
+                }),
             }
-            current_expected.push(expected.to_owned());
             continue;
         }
 
@@ -334,6 +340,52 @@ mod tests {
             let items = parse_batch_items(&input).expect("items should parse");
             assert!(matches!(items[0], BatchItem::Command { .. }));
         }
+    }
+
+    #[test]
+    fn preserves_unsupported_plural_assumptions_without_aborting() {
+        let items = parse_batch_items("/assumptions real\n1\n\t1\n").expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [
+                BatchItem::Unasserted {
+                    source_line: 1,
+                    expression,
+                },
+                BatchItem::Case(_)
+            ] if expression == "/assumptions real"
+        ));
+    }
+
+    #[test]
+    fn expected_output_that_looks_like_a_command_stays_expected() {
+        let input = "expression\n\t/set base 16\n";
+        let items = parse_batch_items(input).expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [BatchItem::Case(LocatedBatchCase { case, .. })]
+                if case.expected == ["/set base 16"]
+        ));
+        assert_eq!(
+            super::batch_case_ids("commands.batch", input).expect("case ids should parse"),
+            ["commands.batch:1"]
+        );
+    }
+
+    #[test]
+    fn invalid_late_session_commands_remain_deferred_setup_rows() {
+        let items =
+            parse_batch_items("1\n\t2\n/set base not-a-base\n").expect("items should parse");
+        assert!(matches!(
+            &items[..],
+            [
+                BatchItem::Case(_),
+                BatchItem::Unasserted {
+                    source_line: 3,
+                    expression,
+                }
+            ] if expression == "/set base not-a-base"
+        ));
     }
 
     #[test]

@@ -150,9 +150,8 @@ pub fn parse_commands(input: &str) -> Result<Vec<SessionCommand>, ParseError> {
     let bases = values
         .split_whitespace()
         .map(|value| {
-            value
-                .parse::<u32>()
-                .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))
+            parse_base(value)
+                .ok_or_else(|| ParseError::new(ParseErrorKind::InvalidSettingValue, span))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let command = |setting| SessionCommand::Set(SetCommand { setting, span });
@@ -192,15 +191,13 @@ fn parse_set_setting(args: &str, span: Span) -> Result<SetSetting, ParseError> {
             .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
         Ok(SetSetting::IntervalCalculation(num))
     } else if let Some(val) = strip_setting_prefix(&lower_args, &["input base", "inbase"]) {
-        let num = val
-            .parse::<u32>()
-            .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
+        let num = parse_base(val)
+            .ok_or_else(|| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
         Ok(SetSetting::InputBase(num))
     } else if let Some(val) = strip_setting_prefix(&lower_args, &["output base", "outbase", "base"])
     {
-        let num = val
-            .parse::<u32>()
-            .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
+        let num = parse_base(val)
+            .ok_or_else(|| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
         Ok(SetSetting::OutputBase(num))
     } else if let Some(val) = strip_setting_prefix(&lower_args, &["precision"]) {
         let digits = val
@@ -294,6 +291,18 @@ fn parse_bool(val: &str) -> Option<bool> {
     }
 }
 
+/// Parse a numeric or named qalc base in the supported 2–36 range.
+pub fn parse_base(value: &str) -> Option<u32> {
+    let base = match value.to_ascii_lowercase().as_str() {
+        "bin" | "binary" => 2,
+        "oct" | "octal" => 8,
+        "dec" | "decimal" => 10,
+        "hex" | "hexadecimal" => 16,
+        other => other.parse().ok()?,
+    };
+    (2..=36).contains(&base).then_some(base)
+}
+
 fn parse_assume_kind(args: &str, span: Span) -> Result<AssumeKind, ParseError> {
     let trimmed = args.trim().to_ascii_lowercase();
     match trimmed.as_str() {
@@ -342,6 +351,25 @@ mod tests {
     #[test]
     fn parses_two_argument_batch_base_alias() {
         let commands = parse_commands("/set base 10 16").expect("commands should parse");
+        assert!(matches!(
+            &commands[..],
+            [
+                SessionCommand::Set(super::SetCommand {
+                    setting: SetSetting::OutputBase(10),
+                    ..
+                }),
+                SessionCommand::Set(super::SetCommand {
+                    setting: SetSetting::InputBase(16),
+                    ..
+                })
+            ]
+        ));
+    }
+
+    #[test]
+    fn parses_named_batch_base_aliases() {
+        assert_eq!(parsed_setting("/set base hex"), SetSetting::OutputBase(16));
+        let commands = parse_commands("/set base dec hex").expect("commands should parse");
         assert!(matches!(
             &commands[..],
             [

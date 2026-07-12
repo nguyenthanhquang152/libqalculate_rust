@@ -114,6 +114,9 @@ fn main() {
         .as_ref()
         .filter(|file| file.mode == cli::CommandFileMode::Test)
     {
+        // Batch-test mode is a native parity gate: unsupported rows must not be
+        // satisfied by the C++ evaluator even when the caller omitted the env gate.
+        std::env::set_var("QALCULATE_DISABLE_FALLBACK", "1");
         if command_file.path.is_empty() {
             print!("> \x1b[31m\nWARNING: 0 tests were run (indentation needs to be tab-based)\n\n\x1b[0m");
             return;
@@ -427,7 +430,7 @@ fn evaluate_expression(
     calc: &mut Calculator,
     expression: &str,
 ) -> Result<EvaluationOutcome, String> {
-    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let fallback_disabled = fallback_disabled(invocation);
     let report_fallback = std::env::var("QALCULATE_REPORT_FALLBACK").as_deref() == Ok("1");
 
     let defs = &invocation.definitions;
@@ -543,7 +546,7 @@ fn reformat_session_answer(
     invocation: &cli::CliInvocation,
     calc: &mut Calculator,
 ) -> Result<Option<cli::repl::ReplEvaluation>, String> {
-    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let fallback_disabled = fallback_disabled(invocation);
     let settings = evaluation_settings(invocation, fallback_disabled);
     let setting_refs = settings.iter().map(String::as_str).collect::<Vec<_>>();
     let result = match (invocation.output_mode, invocation.terse) {
@@ -608,7 +611,7 @@ fn evaluation_settings(invocation: &cli::CliInvocation, fallback_disabled: bool)
 }
 
 fn prepare_calculator(invocation: &cli::CliInvocation) -> Result<Calculator, String> {
-    let fallback_disabled = std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1");
+    let fallback_disabled = fallback_disabled(invocation);
     let defs = &invocation.definitions;
     let mut calc = Calculator::new();
     if defs.global_defs && defs.currencies && !fallback_disabled && !calc.load_exchange_rates() {
@@ -627,6 +630,14 @@ fn prepare_calculator(invocation: &cli::CliInvocation) -> Result<Calculator, Str
         return Err("failed to load global definitions".to_owned());
     }
     Ok(calc)
+}
+
+fn fallback_disabled(invocation: &cli::CliInvocation) -> bool {
+    std::env::var("QALCULATE_DISABLE_FALLBACK").as_deref() == Ok("1")
+        || invocation
+            .command_file
+            .as_ref()
+            .is_some_and(|file| file.mode == cli::CommandFileMode::Test)
 }
 
 fn upstream_batch_files() -> Result<Vec<PathBuf>, String> {

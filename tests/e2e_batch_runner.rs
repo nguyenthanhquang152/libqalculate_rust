@@ -253,6 +253,45 @@ fn test_qalc_rs_reports_the_first_differing_multiline_expected_line() {
 }
 
 #[test]
+fn test_qalc_rs_reports_an_early_mismatch_before_a_late_invalid_command() {
+    let fixture_dir = tempdir().expect("temporary fixture directory");
+    let fixture = fixture_dir.path().join("early-mismatch.batch");
+    std::fs::write(&fixture, "1\n\t2\n/set base not-a-base\n")
+        .expect("write early mismatch fixture");
+
+    let mut cmd = CargoCommand::cargo_bin("qalc-rs").expect("qalc-rs binary should build");
+    cmd.arg("--test-file")
+        .arg(&fixture)
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data")
+        .assert()
+        .code(1)
+        .stdout("\x1B[31m\nMismatch detected at line 2\n1\nexpected '2'\nreceived '1'\n\n\x1B[0m")
+        .stderr("");
+}
+
+#[test]
+fn test_qalc_rs_test_file_forces_cpp_fallback_off() {
+    let fixture_dir = tempdir().expect("temporary fixture directory");
+    let fixture = fixture_dir.path().join("fallback-disabled.batch");
+    std::fs::write(&fixture, "multiply(1, 2)\n\t2\n").expect("write fallback-disabled fixture");
+
+    let mut cmd = CargoCommand::cargo_bin("qalc-rs").expect("qalc-rs binary should build");
+    let output = cmd
+        .arg("--test-file")
+        .arg(&fixture)
+        .env("QALCULATE_DEFINITIONS_DIR", "../libqalculate/data")
+        .env_remove("QALCULATE_DISABLE_FALLBACK")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .output()
+        .expect("qalc-rs should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+    assert!(stderr.contains("[qalc-rs-metadata] fallback=disabled"));
+    assert!(!stderr.contains("fallback=cpp-fallback-enabled"));
+}
+
+#[test]
 fn test_qalc_rs_executes_unasserted_setup_and_cleanup() {
     let fixture_dir = tempdir().expect("temporary fixture directory");
     let fixture = fixture_dir.path().join("setup.batch");

@@ -1,6 +1,7 @@
 use super::ListType;
 use libqalculate_rust::parser::commands::{
-    parse_command, ApproximationMode, AssumeKind, SessionCommand, SetCommand, SetSetting,
+    parse_base, parse_command, ApproximationMode, AssumeKind, SessionCommand, SetCommand,
+    SetSetting,
 };
 use libqalculate_rust::parser::lexer::Span;
 
@@ -244,17 +245,6 @@ pub(crate) fn serialize_setting(command: &SessionCommand) -> String {
             AssumeKind::Unknown => "assume unknown".to_string(),
         },
     }
-}
-
-fn parse_base(value: &str) -> Option<u32> {
-    let base = match value.to_ascii_lowercase().as_str() {
-        "bin" | "binary" => 2,
-        "oct" | "octal" => 8,
-        "dec" | "decimal" => 10,
-        "hex" | "hexadecimal" => 16,
-        other => other.parse().ok()?,
-    };
-    (2..=36).contains(&base).then_some(base)
 }
 
 #[cfg(test)]
