@@ -12,7 +12,7 @@ or API call remains the one shown by the upstream source.
 
 | ID | Upstream source | Source context | Rust command/API | Required data/settings | Owner task | Status | Evidence |
 |---|---|---|---|---|---|---|---|
-| `README-CLI-001` | `../libqalculate/README.md:40` | `qalc 5+2` | `qalc-rs 5+2` | terse result normalization; normal definitions; fallback disabled; pinned locale/home | [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_readme_cli_arithmetic_matches_upstream` |
+| `README-CLI-001` | `../libqalculate/README.md:40` | `qalc 5+2` | `qalc-rs 5+2` | exact non-terse equation; normal definitions; fallback disabled; pinned locale/home | [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_readme_cli_arithmetic_matches_upstream` |
 | `README-CLI-002` | `../libqalculate/README.md:42` | `qalc --help` | `qalc-rs --help` | behavioral help invariant; evaluation/fallback path unreachable | [#60], [#65] | `native-pass` | `tests/e2e_cli.rs::cli_help_and_version_aliases_match_upstream` |
 | `MAN-CLI-SET-001` | `../libqalculate/man/qalc.1:103` | `\-\-set "base 16"` | `qalc-rs -t -s "base 16" -- 52` | output base 16; normal definitions; fallback disabled | [#60], [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_man_set_base_16_matches_upstream` |
 | `README-NUMBASE-001` | `../libqalculate/README.md:346` | `52 to bin` | `qalc-rs -t -- "52 to bin"` | normal definitions; fallback disabled | [#26], [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_readme_number_base_matches_upstream` |

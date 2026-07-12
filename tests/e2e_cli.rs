@@ -2992,7 +2992,7 @@ fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
 
 #[test]
 fn docs_example_readme_cli_arithmetic_matches_upstream() {
-    assert_docs_cli_example_matches_upstream(&["-c0", "-t", "--", "5+2"]);
+    assert_docs_cli_example_matches_upstream(&["-c0", "--", "5+2"]);
 }
 
 #[test]

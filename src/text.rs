@@ -661,6 +661,24 @@ pub(crate) fn format_raw_expression(expr: &Expression) -> String {
     }
 }
 
+fn format_simple_positive_addition(input: &str) -> Option<String> {
+    // Parsing canonicalizes commutative additions, but qalc's equation prefix
+    // preserves the order typed for a simple numeric sum.
+    let mut operands = input.split('+');
+    let lhs = operands.next()?.trim();
+    let rhs = operands.next()?.trim();
+    if lhs.is_empty() || rhs.is_empty() || operands.next().is_some() {
+        return None;
+    }
+
+    let lhs_number = lhs.parse::<Number>().ok()?;
+    let rhs_number = rhs.parse::<Number>().ok()?;
+    if lhs_number.is_negative() || rhs_number.is_negative() {
+        return None;
+    }
+    Some(format!("{lhs} + {rhs}"))
+}
+
 pub(crate) fn format_qalc_equation(
     input: &str,
     output: &str,
@@ -686,7 +704,9 @@ pub(crate) fn format_qalc_equation(
                     }
                 }
             }
-            if let Expression::Division {
+            if let Some(formatted) = format_simple_positive_addition(trimmed_input) {
+                formatted
+            } else if let Expression::Division {
                 numerator,
                 denominator,
             } = &expression
@@ -883,6 +903,10 @@ mod tests {
         assert_eq!(
             format_qalc_equation("1+1", "2", false, true, 0),
             "1 + 1 = 2"
+        );
+        assert_eq!(
+            format_qalc_equation("5+2", "7", false, true, 0),
+            "5 + 2 = 7"
         );
         assert_eq!(
             format_qalc_equation("warning(1)", "warning: first\n0", false, true, 1),
