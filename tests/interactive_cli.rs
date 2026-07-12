@@ -456,6 +456,38 @@ fn interactive_answer_retains_exact_value_behind_approximate_display() {
 }
 
 #[test]
+fn exact_currency_answer_remains_exact_after_reformat() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1 USD to USD\nset unicode off\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("1 × USD to USD = $1.000000000")
+                .and(predicate::str::contains("approx.").not())
+                .and(predicate::str::contains("≈").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_fraction_reformat_uses_the_new_exact_relation() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1/3\nset fr 2\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0.3333333333 = 1/3"))
+        .stderr("");
+}
+
+#[test]
 fn fallback_disabled_native_results_remain_available_as_answers() {
     let mut session = isolated_session();
     session
@@ -761,6 +793,22 @@ fn embedded_markup_assignments_persist_with_cpp_fallback_enabled() {
                 .and(predicate::str::contains("Variable: x"))
                 .and(predicate::str::contains("Value: 5"))
                 .and(predicate::str::contains("40.18527536")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn native_text_embedded_assignments_are_available_to_cpp_fallback() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("set base 16\n10\n(x:=ans)+1\nset base 10\nEi(x)\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Ei(x) = 2492.228976")
+                .and(predicate::str::contains("warning:").not()),
         )
         .stderr("");
 }

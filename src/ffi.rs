@@ -36,6 +36,7 @@ pub(crate) mod sys {
             name: &str,
             expression: &str,
         ) -> bool;
+        fn qalc_print_session_variable(calc: Pin<&mut Calculator>, name: &str) -> Result<String>;
         fn qalc_clear_session_answers(calc: Pin<&mut Calculator>);
         fn qalc_delete_session_variable(calc: Pin<&mut Calculator>, name: &str) -> bool;
         fn qalc_print_session_answer(
@@ -415,7 +416,7 @@ impl Calculator {
     }
 
     /// Return values for variables assigned by an interactive expression.
-    pub fn session_assignment_renderings(&self, expr: &str) -> Vec<(String, String)> {
+    pub fn session_assignment_renderings(&mut self, expr: &str) -> Vec<(String, String)> {
         let mut names = Vec::new();
         if let Ok(parsed) = crate::parser::operators::parse_expression(expr) {
             collect_assignment_names(&parsed, &mut names);
@@ -426,27 +427,37 @@ impl Calculator {
         names.sort();
         names.dedup();
 
-        let fallback = self.session_answer_rendering();
-        names
-            .into_iter()
-            .filter(|name| !crate::session::SessionAnswerState::is_managed_alias(name))
-            .filter_map(|name| {
-                let rendering = self
-                    .native_context
-                    .variables
-                    .get(&name)
-                    .and_then(|value| {
-                        crate::session::format_answer(
-                            crate::session::AnswerFormatProfile::Qalc,
-                            value,
-                            crate::session::NativeSessionSettings::default(),
-                        )
-                        .map(|(rendering, _)| rendering)
-                    })
-                    .or_else(|| fallback.clone())?;
-                Some((name, rendering))
-            })
-            .collect()
+        let mut renderings = Vec::new();
+        for name in names {
+            if crate::session::SessionAnswerState::is_managed_alias(&name) {
+                continue;
+            }
+            let native_rendering = self.native_context.variables.get(&name).and_then(|value| {
+                crate::session::format_answer(
+                    crate::session::AnswerFormatProfile::Qalc,
+                    value,
+                    crate::session::NativeSessionSettings::default(),
+                )
+                .map(|(rendering, _)| rendering)
+            });
+            if let Some(rendering) =
+                native_rendering.or_else(|| self.cpp_session_variable_rendering(&name))
+            {
+                renderings.push((name, rendering));
+            }
+        }
+        renderings
+    }
+
+    fn cpp_session_variable_rendering(&mut self, name: &str) -> Option<String> {
+        if self.inner.is_null() {
+            return None;
+        }
+        let rendering = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            sys::qalc_print_session_variable(self.inner.pin_mut(), name).ok()?
+        };
+        (!rendering.is_empty()).then_some(rendering)
     }
 
     /// Re-render the current typed session answer after settings change.
@@ -581,13 +592,20 @@ impl Calculator {
         };
         let answer = answer.clone();
         let previous_rendering = previous_rendering.to_string();
+        let previous_approximate = self.last_output_approximate;
+        let preserve_approximation = expression_is_currency_answer(&answer);
         let formatted = crate::session::format_answer(
             crate::session::AnswerFormatProfile::Qalc,
             &answer,
             parsed_settings,
         );
-        let (rendering, approximate) = if let Some(formatted) = formatted {
-            formatted
+        let (rendering, approximate) = if let Some((rendering, formatted_approximate)) = formatted {
+            let approximate = if preserve_approximation {
+                previous_approximate
+            } else {
+                formatted_approximate
+            };
+            (rendering, approximate)
         } else {
             if self.inner.is_null() {
                 return Ok(None);
@@ -1112,23 +1130,79 @@ impl Calculator {
                 !crate::session::SessionAnswerState::is_managed_alias(name)
                     && before.get(*name) != Some(*value)
             })
-            .filter_map(|(name, value)| {
-                crate::text::format_result_with_numbers(value, &crate::number::Number::to_string)
-                    .map(|expression| (name.clone(), expression))
+            .map(|(name, value)| {
+                let expression = crate::text::format_result_with_numbers(
+                    value,
+                    &crate::number::Number::to_string,
+                )
+                .ok_or_else(|| name.clone())?;
+                let previous_expression = before
+                    .get(name)
+                    .map(|previous| {
+                        crate::text::format_result_with_numbers(
+                            previous,
+                            &crate::number::Number::to_string,
+                        )
+                        .ok_or_else(|| name.clone())
+                    })
+                    .transpose()?;
+                Ok((name.clone(), expression, previous_expression))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, String>>();
+        let mut variables = match variables {
+            Ok(variables) => variables,
+            Err(name) => {
+                self.native_context.variables.clone_from(before);
+                return Err(CalculatorError::NativeEvaluation(format!(
+                    "failed to serialize native session variable '{name}'"
+                )));
+            }
+        };
         if variables.is_empty() {
             return Ok(());
         }
+        variables.sort_by(|left, right| left.0.cmp(&right.0));
 
-        let _guard = FFI_LOCK.lock().unwrap();
-        let mut pin = self.inner.pin_mut();
-        for (name, expression) in variables {
-            if !sys::qalc_set_session_variable(pin.as_mut(), &name, &expression) {
-                return Err(CalculatorError::NativeEvaluation(format!(
-                    "failed to synchronize native session variable '{name}'"
-                )));
+        let failure = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            let mut pin = self.inner.pin_mut();
+            let mut failure = None;
+            for (applied, (name, expression, _)) in variables.iter().enumerate() {
+                if !sys::qalc_set_session_variable(pin.as_mut(), name, expression) {
+                    let mut rollback_failures = Vec::new();
+                    for (rollback_name, _, previous_expression) in variables[..applied].iter().rev()
+                    {
+                        let restored = match previous_expression {
+                            Some(previous) => sys::qalc_set_session_variable(
+                                pin.as_mut(),
+                                rollback_name,
+                                previous,
+                            ),
+                            None => sys::qalc_delete_session_variable(pin.as_mut(), rollback_name),
+                        };
+                        if !restored {
+                            rollback_failures.push(rollback_name.clone());
+                        }
+                    }
+                    failure = Some((name.clone(), rollback_failures));
+                    break;
+                }
             }
+            failure
+        };
+        if let Some((name, rollback_failures)) = failure {
+            self.native_context.variables.clone_from(before);
+            let rollback_detail = if rollback_failures.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; C++ rollback also failed for: {}",
+                    rollback_failures.join(", ")
+                )
+            };
+            return Err(CalculatorError::NativeEvaluation(format!(
+                "failed to synchronize native session variable '{name}'{rollback_detail}"
+            )));
         }
         Ok(())
     }
@@ -1186,6 +1260,15 @@ impl Calculator {
         if self.session_answers.is_enabled()
             && (fallback_disabled || self.session_answers.has_native_answer())
         {
+            let native_variables_before = (!fallback_disabled
+                && crate::parser::operators::parse_expression(expr)
+                    .ok()
+                    .is_some_and(|parsed| {
+                        expression_contains(&parsed, &|node| {
+                            matches!(node, crate::ast::Expression::Assignment { .. })
+                        })
+                    }))
+            .then(|| self.native_context.variables.clone());
             if let Some(output) = native_session_context_output(
                 profile,
                 expr,
@@ -1193,6 +1276,9 @@ impl Calculator {
                 &mut self.native_context,
                 fallback_disabled,
             ) {
+                if let Some(before) = &native_variables_before {
+                    self.synchronize_native_variables_to_cpp(before)?;
+                }
                 return Ok(self.finish_native_output(output));
             }
         }
@@ -1698,6 +1784,26 @@ fn collect_assignment_names(expr: &crate::ast::Expression, names: &mut Vec<Strin
         if let Some(child) = expr.child(index) {
             collect_assignment_names(child, names);
         }
+    }
+}
+
+fn expression_is_currency_answer(expr: &crate::ast::Expression) -> bool {
+    match expr {
+        crate::ast::Expression::Unit {
+            unit, prefix: None, ..
+        } => crate::rates::currency_info(unit.id()).is_some(),
+        crate::ast::Expression::Multiplication(children) => matches!(
+            children.as_slice(),
+            [
+                crate::ast::Expression::Number(_),
+                crate::ast::Expression::Unit {
+                    unit,
+                    prefix: None,
+                    ..
+                }
+            ] if crate::rates::currency_info(unit.id()).is_some()
+        ),
+        _ => false,
     }
 }
 
@@ -3216,6 +3322,71 @@ mod tests {
             .calculate_and_print_qalc_equation_with_settings_and_fallback_state("1/2", &[], 1000)
             .unwrap();
         assert_eq!(exact.output, "1 / 2 = 0.5");
+    }
+
+    #[test]
+    fn cpp_owned_assignment_metadata_uses_the_variable_value() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::unset_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        calc.enable_session_mode();
+        {
+            let _guard = FFI_LOCK.lock().unwrap();
+            assert!(sys::qalc_set_session_variable(
+                calc.inner.pin_mut(),
+                "x",
+                "5"
+            ));
+        }
+        calc.record_cpp_session_answer("1+6", "7".to_string());
+
+        assert_eq!(
+            calc.session_assignment_renderings("(x:=5)+2"),
+            vec![("x".to_string(), "5".to_string())]
+        );
+    }
+
+    #[test]
+    fn native_variable_sync_failure_rolls_back_rust_and_cpp_state() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env = EnvGuard::unset_disabled();
+        configure_definitions_dir();
+
+        let mut calc = Calculator::new();
+        let previous = crate::ast::Expression::Number(crate::number::Number::from_i32(3));
+        calc.native_context
+            .variables
+            .insert("a".to_string(), previous.clone());
+        {
+            let _guard = FFI_LOCK.lock().unwrap();
+            assert!(sys::qalc_set_session_variable(
+                calc.inner.pin_mut(),
+                "a",
+                "3"
+            ));
+        }
+        let before = calc.native_context.variables.clone();
+        calc.native_context.variables.insert(
+            "a".to_string(),
+            crate::ast::Expression::Number(crate::number::Number::from_i32(4)),
+        );
+        calc.native_context.variables.insert(
+            "z!".to_string(),
+            crate::ast::Expression::Number(crate::number::Number::from_i32(5)),
+        );
+
+        let error = calc
+            .synchronize_native_variables_to_cpp(&before)
+            .expect_err("invalid C++ variable name should fail synchronization");
+
+        assert!(error.to_string().contains("z!"));
+        assert_eq!(calc.native_context.variables, before);
+        assert_eq!(
+            calc.cpp_session_variable_rendering("a").as_deref(),
+            Some("3")
+        );
     }
 
     #[test]

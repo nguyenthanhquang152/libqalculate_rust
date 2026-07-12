@@ -302,6 +302,23 @@ private:
     Calculator *prev_calculator;
 };
 
+class CalculatorMessageBlocker {
+public:
+    explicit CalculatorMessageBlocker(Calculator &calculator_ref)
+        : calc(calculator_ref) {
+        calc.beginTemporaryStopMessages();
+    }
+    ~CalculatorMessageBlocker() noexcept {
+        calc.endTemporaryStopMessages();
+    }
+
+    CalculatorMessageBlocker(const CalculatorMessageBlocker&) = delete;
+    CalculatorMessageBlocker& operator=(const CalculatorMessageBlocker&) = delete;
+
+private:
+    Calculator &calc;
+};
+
 std::string print_qalc_parsed_markup(
     const MathStructure &parsed_source,
     const EvaluationOptions &eo,
@@ -611,6 +628,7 @@ bool qalc_set_session_variable(
 ) {
     try {
         CalculatorFfiGuard ffi_guard(calc);
+        CalculatorMessageBlocker message_blocker(calc);
         const std::string variable_name(name.data(), name.size());
         if(!calc.variableNameIsValid(variable_name)) return false;
 
@@ -620,6 +638,25 @@ bool qalc_set_session_variable(
         return variable != nullptr && variable->isLocal();
     } catch (...) {
         return false;
+    }
+}
+
+rust::String qalc_print_session_variable(Calculator &calc, rust::Str name) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        const std::string variable_name(name.data(), name.size());
+        auto *variable = dynamic_cast<KnownVariable*>(calc.getActiveVariable(variable_name));
+        if(variable == nullptr || !variable->isLocal()) return rust::String();
+
+        const MathStructure &value = variable->get();
+        bool is_approximate = value.isApproximate();
+        PrintOptions po = qalc_print_options(true, &is_approximate);
+        po.base = 10;
+        return rust::String(calc.print(value, 0, po));
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception while printing session variable");
     }
 }
 
