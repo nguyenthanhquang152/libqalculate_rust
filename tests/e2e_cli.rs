@@ -2947,7 +2947,7 @@ fn test_batch_workflow_stops_parsing_after_test_file() {
     }
 }
 
-fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
+fn docs_upstream_qalc() -> PathBuf {
     let upstream = std::env::var_os("QALCULATE_ORACLE")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("../libqalculate/src/qalc"));
@@ -2956,6 +2956,11 @@ fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
         "docs example parity requires an upstream qalc binary at {}",
         upstream.display()
     );
+    upstream
+}
+
+fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
+    let upstream = docs_upstream_qalc();
 
     let rust_home = tempdir().expect("Rust CLI home");
     let mut rust = qalc_rs_raw();
@@ -2965,13 +2970,14 @@ fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
         .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
         .env("QALCULATE_DISABLE_FALLBACK", "1")
         .env("QALCULATE_REPORT_FALLBACK", "1")
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
         .assert()
         .success()
         .get_output()
         .clone();
-    assert!(
-        String::from_utf8_lossy(&rust_output.stderr).contains("[qalc-rs-metadata] fallback=native")
-    );
+    assert_eq!(rust_output.stderr, b"[qalc-rs-metadata] fallback=native\n");
 
     let upstream_home = tempdir().expect("upstream home");
     let mut oracle = Command::new(&upstream);
@@ -2988,11 +2994,48 @@ fn assert_docs_cli_example_matches_upstream(args: &[&str]) {
         .clone();
 
     assert_eq!(rust_output.stdout, oracle_output.stdout);
+    assert!(oracle_output.stderr.is_empty());
 }
 
 #[test]
 fn docs_example_readme_cli_arithmetic_matches_upstream() {
     assert_docs_cli_example_matches_upstream(&["-c0", "--", "5+2"]);
+}
+
+#[test]
+fn docs_example_readme_help_matches_upstream() {
+    let upstream = docs_upstream_qalc();
+
+    let rust_home = tempdir().expect("Rust CLI home");
+    let mut rust = qalc_rs_raw();
+    let rust_output = rust
+        .arg("--help")
+        .env("HOME", rust_home.path())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let upstream_home = tempdir().expect("upstream home");
+    let mut oracle = Command::new(&upstream);
+    let oracle_output = oracle
+        .arg("--help")
+        .env("HOME", upstream_home.path())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    assert_eq!(rust_output.stdout, oracle_output.stdout);
+    assert_eq!(rust_output.stderr, oracle_output.stderr);
 }
 
 #[test]

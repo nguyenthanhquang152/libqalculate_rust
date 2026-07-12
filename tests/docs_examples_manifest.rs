@@ -45,9 +45,13 @@ fn assert_owner_links(manifest: &str, owner: &str, id: &str) {
             .find(']')
             .unwrap_or_else(|| panic!("owner link is closed for {id}"));
         let label = &link[..=end];
+        let issue_number = label
+            .strip_prefix("[#")
+            .and_then(|label| label.strip_suffix(']'))
+            .unwrap_or_else(|| panic!("owner link uses an issue label for {id}: {label}"));
         assert!(
             manifest.contains(&format!(
-                "{label}: https://github.com/nguyenthanhquang152/libqalculate_rust/issues/"
+                "{label}: https://github.com/nguyenthanhquang152/libqalculate_rust/issues/{issue_number}"
             )),
             "owner link definition is missing for {id}: {label}"
         );
@@ -98,18 +102,19 @@ fn docs_example_manifest_has_traceable_sources_owners_and_statuses() {
             "source must point at the adjacent upstream checkout: {id}"
         );
         let source_path = repository_path(source_path);
-        if source_path.exists() {
-            let source_text =
-                fs::read_to_string(&source_path).expect("upstream source is readable");
-            let anchored_line = source_text
-                .lines()
-                .nth(source_line - 1)
-                .unwrap_or_else(|| panic!("source line is in range for {id}"));
-            assert!(
-                anchored_line.contains(context),
-                "upstream context for {id} drifted: {anchored_line:?}"
-            );
-        }
+        assert!(
+            source_path.exists(),
+            "upstream source must exist for {id}: {source_path:?}"
+        );
+        let source_text = fs::read_to_string(&source_path).expect("upstream source is readable");
+        let anchored_line = source_text
+            .lines()
+            .nth(source_line - 1)
+            .unwrap_or_else(|| panic!("source line is in range for {id}"));
+        assert!(
+            anchored_line.contains(context),
+            "upstream context for {id} drifted: {anchored_line:?}"
+        );
 
         match status.as_str() {
             "native-pass" => {
