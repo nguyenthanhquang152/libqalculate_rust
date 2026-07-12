@@ -2947,19 +2947,51 @@ fn test_batch_workflow_stops_parsing_after_test_file() {
     }
 }
 
-fn docs_upstream_qalc() -> Option<PathBuf> {
-    let upstream = std::env::var_os("QALCULATE_ORACLE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("../libqalculate/src/qalc"));
-    if upstream.exists() {
-        Some(upstream)
+fn select_docs_upstream_qalc(configured: Option<PathBuf>, adjacent: PathBuf) -> Option<PathBuf> {
+    if let Some(upstream) = configured {
+        assert!(
+            upstream.exists(),
+            "configured docs-example oracle is unavailable: {}",
+            upstream.display()
+        );
+        return Some(upstream);
+    }
+
+    if adjacent.exists() {
+        Some(adjacent)
     } else {
         eprintln!(
             "skipping optional upstream docs-example comparison: {} is unavailable",
-            upstream.display()
+            adjacent.display()
         );
         None
     }
+}
+
+fn docs_upstream_qalc() -> Option<PathBuf> {
+    select_docs_upstream_qalc(
+        std::env::var_os("QALCULATE_ORACLE").map(PathBuf::from),
+        PathBuf::from("../libqalculate/src/qalc"),
+    )
+}
+
+#[test]
+fn docs_oracle_discovery_skips_an_unavailable_implicit_oracle() {
+    let root = tempdir().expect("temporary oracle root");
+    let missing = root.path().join("qalc");
+
+    assert_eq!(select_docs_upstream_qalc(None, missing), None);
+}
+
+#[test]
+fn docs_oracle_discovery_rejects_an_unavailable_configured_oracle() {
+    let root = tempdir().expect("temporary oracle root");
+    let missing = root.path().join("qalc");
+
+    let failure = std::panic::catch_unwind(|| {
+        select_docs_upstream_qalc(Some(missing.clone()), missing);
+    });
+    assert!(failure.is_err());
 }
 
 fn assert_docs_cli_example_matches_upstream(args: &[&str]) {

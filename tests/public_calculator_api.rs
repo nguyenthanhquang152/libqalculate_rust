@@ -1,18 +1,11 @@
+use libqalculate_rust::ffi::Calculator as UpstreamCalculator;
 use libqalculate_rust::messages::{CalculatorMessage, MessageStage, MessageType};
 use libqalculate_rust::options::{ApproximationMode, NumberFractionFormat};
 use libqalculate_rust::Calculator;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn upstream_data_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../libqalculate/data")
-}
-
-fn upstream_qalc() -> Option<PathBuf> {
-    std::env::var_os("QALCULATE_ORACLE")
-        .map(PathBuf::from)
-        .or_else(|| Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../libqalculate/src/qalc")))
-        .filter(|path| path.exists())
 }
 
 #[test]
@@ -48,35 +41,16 @@ fn native_calculator_uses_the_qalc_public_precision_default() {
 
 #[test]
 fn native_calculator_matches_the_upstream_simple_api_example() {
-    let Some(qalc) = upstream_qalc() else {
-        eprintln!("skipping public API differential; upstream qalc is not built");
-        return;
-    };
-
-    let upstream = Command::new(qalc)
-        .env("TZ", "UTC")
-        .env("LC_ALL", "C.UTF-8")
-        .env("LANG", "C.UTF-8")
-        .env("QALCULATE_DEFINITIONS_DIR", upstream_data_dir())
-        .args([
-            "-defaults",
-            "-terse",
-            "-set",
-            "decimal_comma 0",
-            "-set",
-            "curconv 0",
-            "1 + 1",
-        ])
-        .output()
-        .expect("upstream qalc starts");
-    assert!(upstream.status.success());
-    assert!(upstream.stderr.is_empty());
+    let mut upstream_calculator = UpstreamCalculator::new();
+    let upstream = upstream_calculator
+        .calculate_and_print("1 + 1", 2_000)
+        .expect("upstream Calculator::calculateAndPrint example succeeds");
 
     let mut calculator = Calculator::new();
     let native = calculator
         .calculate_and_print("1 + 1")
         .expect("native example succeeds");
-    assert_eq!(native, String::from_utf8_lossy(&upstream.stdout).trim());
+    assert_eq!(native, upstream);
 }
 
 #[test]

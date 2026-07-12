@@ -16,7 +16,7 @@ or API call remains the one shown by the upstream source.
 | `README-CLI-002` | `../libqalculate/README.md:42` | `qalc --help` | `qalc-rs --help` | exact help output; evaluation/fallback path unreachable | [#60], [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_readme_help_matches_upstream` |
 | `MAN-CLI-SET-001` | `../libqalculate/man/qalc.1:103` | `\-\-set "base 16"` | `qalc-rs -t -s "base 16" -- 52` | output base 16; normal definitions; fallback disabled | [#60], [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_man_set_base_16_matches_upstream` |
 | `README-NUMBASE-001` | `../libqalculate/README.md:346` | `52 to bin` | `qalc-rs -t -- "52 to bin"` | normal definitions; fallback disabled | [#26], [#65] | `native-pass` | `tests/e2e_cli.rs::docs_example_readme_number_base_matches_upstream` |
-| `CALCULATOR-API-001` | `../libqalculate/libqalculate/Calculator.h:39` | `calculateAndPrint("1 + 1"` | `Calculator::calculate_and_print("1 + 1")` | Rust-owned session; no FFI fallback | [#64], [#65] | `native-pass` | `src/calculator.rs::calculate_and_print("1 + 1")` |
+| `CALCULATOR-API-001` | `../libqalculate/libqalculate/Calculator.h:39` | `calculateAndPrint("1 + 1"` | `Calculator::calculate_and_print("1 + 1")` | direct upstream `Calculator::calculateAndPrint` FFI oracle; Rust-owned session; no native-side FFI fallback | [#64], [#65] | `native-pass` | `tests/public_calculator_api.rs::native_calculator_matches_the_upstream_simple_api_example` |
 | `README-SYMBOLIC-001` | `../libqalculate/README.md:81` | `Symbolic calculations` | representative symbolic, function, unit, and plot examples | feature-specific data and options | [#25]-[#50], [#83] | `pending` | `pending` |
 | `README-ADVANCED-001` | `../libqalculate/README.md:120` | `Basic functions and operators` | remaining function, algebra, calculus, matrix, statistics, and uncertainty examples | feature-specific oracle promotion | [#15], [#25]-[#44], [#83] | `pending` | `pending` |
 | `README-DATETIME-001` | `../libqalculate/README.md:318` | `Time and date` | dynamic and calendar examples outside the pinned deterministic slice | timezone/clock policy and feature-specific fixtures | [#51]-[#54], [#83] | `pending` | `pending` |
@@ -25,9 +25,12 @@ or API call remains the one shown by the upstream source.
 
 ## Status policy
 
-- `native-pass`: the evidence path names a checked test or doctest. CLI
-  calculation cases explicitly disable the C++ fallback; control-flow-only
-  flags such as `--help` cannot enter the evaluation/fallback path.
+- `native-pass`: the evidence path names a checked Rust-vs-C++ test. CLI
+  calculation cases run from `just test-oracle` and explicitly disable the C++
+  fallback; control-flow-only flags such as `--help` cannot enter the
+  evaluation/fallback path. The API case compares the native façade with a
+  direct upstream `Calculator::calculateAndPrint` call through the separately
+  named oracle-only FFI wrapper.
 - `pending`: the upstream example family remains owned by the linked task or
   Epic #83 follow-up; no easier replacement example is substituted.
 - `out-of-scope`: reserved for an approved rationale. No selected example uses
