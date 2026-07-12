@@ -263,7 +263,7 @@ fn evaluate_expression(
     let selective_definitions_disabled =
         !defs.units || !defs.currencies || !defs.functions || !defs.variables || !defs.datasets;
     if selective_definitions_disabled
-        && libqalculate_rust::ffi::native_expression_uses_disabled_definition_family(
+        && calc.session_expression_uses_disabled_definition_family(
             expression,
             defs.units,
             defs.currencies,
@@ -278,9 +278,7 @@ fn evaluate_expression(
             return Err("selective definitions are incompatible with fallback".to_string());
         }
     }
-    if !defs.global_defs
-        && libqalculate_rust::ffi::native_expression_uses_global_definitions(expression)
-    {
+    if !defs.global_defs && calc.session_expression_uses_global_definitions(expression) {
         return Err("global definitions are disabled for this native expression".to_string());
     }
 

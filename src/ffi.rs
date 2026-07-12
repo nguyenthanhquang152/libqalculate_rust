@@ -2,10 +2,20 @@
 //! Safe Rust wrapper and FFI bindings for C++ libqalculate's Calculator.
 
 use cxx::UniquePtr;
+use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 static FFI_LOCK: Mutex<()> = Mutex::new(());
+type CatalogCacheEntry<T> = Arc<OnceLock<Option<Arc<T>>>>;
+type CatalogCache<T> = OnceLock<Mutex<HashMap<PathBuf, CatalogCacheEntry<T>>>>;
+
+const MAX_CACHED_DEFINITION_DIRS: usize = 8;
+static FUNCTION_VARIABLE_CATALOG_CACHE: CatalogCache<
+    crate::definitions_catalog::FunctionVariableCatalog,
+> = OnceLock::new();
+static PREFIX_UNIT_CATALOG_CACHE: CatalogCache<crate::units::PrefixUnitCatalog> = OnceLock::new();
 
 // Keep these bit assignments synchronized with the named constants in
 // `ffi_bridge.cc`; they are the compact options ABI for calculate_and_print_qalc.
@@ -168,8 +178,7 @@ pub fn native_expression_uses_global_definitions(expr: &str) -> bool {
         return false;
     };
 
-    let usage = native_definition_usage(&parsed);
-    usage.currencies || usage_uses_unit_definition(&usage) || usage.datasets
+    definition_usage_uses_global_definitions(&native_definition_usage(&parsed))
 }
 
 /// Return whether an expression uses any selectively disabled definition family.
@@ -187,10 +196,31 @@ pub fn native_expression_uses_disabled_definition_family(
     let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
         return true;
     };
-    let usage = native_definition_usage(&parsed);
+    definition_usage_uses_disabled_family(
+        &native_definition_usage(&parsed),
+        units_enabled,
+        currencies_enabled,
+        functions_enabled,
+        variables_enabled,
+        datasets_enabled,
+    )
+}
+
+fn definition_usage_uses_global_definitions(usage: &NativeDefinitionUsage) -> bool {
+    usage.currencies || usage_uses_unit_definition(usage) || usage.datasets
+}
+
+fn definition_usage_uses_disabled_family(
+    usage: &NativeDefinitionUsage,
+    units_enabled: bool,
+    currencies_enabled: bool,
+    functions_enabled: bool,
+    variables_enabled: bool,
+    datasets_enabled: bool,
+) -> bool {
     let uses_disabled_function_or_variable =
-        uses_disabled_function_or_variable_definition(&usage, functions_enabled, variables_enabled);
-    (!units_enabled && usage_uses_unit_definition(&usage))
+        uses_disabled_function_or_variable_definition(usage, functions_enabled, variables_enabled);
+    (!units_enabled && usage_uses_unit_definition(usage))
         || (!currencies_enabled && usage.currencies)
         || (!datasets_enabled && usage.datasets)
         || uses_disabled_function_or_variable
@@ -213,9 +243,8 @@ fn usage_uses_unit_definition(usage: &NativeDefinitionUsage) -> bool {
         return false;
     }
 
-    let Ok(catalog) =
-        crate::units::load_prefix_unit_catalog_from_dir(crate::rates::definitions_dir())
-    else {
+    let definitions_dir = crate::rates::definitions_dir();
+    let Some(catalog) = cached_prefix_unit_catalog(&definitions_dir) else {
         return true;
     };
     usage
@@ -235,9 +264,8 @@ fn uses_disabled_function_or_variable_definition(
         return false;
     }
 
-    let Ok(catalog) = crate::definitions_catalog::load_function_variable_catalog_from_dir(
-        crate::rates::definitions_dir(),
-    ) else {
+    let definitions_dir = crate::rates::definitions_dir();
+    let Some(catalog) = cached_function_variable_catalog(&definitions_dir) else {
         return true;
     };
 
@@ -262,6 +290,59 @@ fn uses_disabled_function_or_variable_definition(
     uses_disabled_function || uses_disabled_variable
 }
 
+fn cached_function_variable_catalog(
+    definitions_dir: &Path,
+) -> Option<Arc<crate::definitions_catalog::FunctionVariableCatalog>> {
+    cached_catalog(
+        &FUNCTION_VARIABLE_CATALOG_CACHE,
+        definitions_dir,
+        |definitions_dir| {
+            crate::definitions_catalog::load_function_variable_catalog_from_dir(definitions_dir)
+                .ok()
+        },
+    )
+}
+
+fn cached_prefix_unit_catalog(
+    definitions_dir: &Path,
+) -> Option<Arc<crate::units::PrefixUnitCatalog>> {
+    cached_catalog(
+        &PREFIX_UNIT_CATALOG_CACHE,
+        definitions_dir,
+        |definitions_dir| crate::units::load_prefix_unit_catalog_from_dir(definitions_dir).ok(),
+    )
+}
+
+fn cached_catalog<T>(
+    cache: &CatalogCache<T>,
+    definitions_dir: &Path,
+    load: impl FnOnce(&Path) -> Option<T>,
+) -> Option<Arc<T>> {
+    let entry = {
+        let cache = cache.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut entries = cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(entry) = entries.get(definitions_dir) {
+            Arc::clone(entry)
+        } else {
+            if entries.len() >= MAX_CACHED_DEFINITION_DIRS {
+                if let Some(evicted) = entries.keys().next().cloned() {
+                    entries.remove(&evicted);
+                }
+            }
+            let entry = Arc::new(OnceLock::new());
+            entries.insert(definitions_dir.to_path_buf(), Arc::clone(&entry));
+            entry
+        }
+    };
+
+    entry
+        .get_or_init(|| load(definitions_dir).map(Arc::new))
+        .as_ref()
+        .map(Arc::clone)
+}
+
 fn push_definition_name(names: &mut Vec<String>, name: &str) {
     if !names.iter().any(|candidate| candidate == name) {
         names.push(name.to_string());
@@ -269,8 +350,15 @@ fn push_definition_name(names: &mut Vec<String>, name: &str) {
 }
 
 fn native_definition_usage(expr: &crate::ast::Expression) -> NativeDefinitionUsage {
+    native_definition_usage_with_locals(expr, &|_| false)
+}
+
+fn native_definition_usage_with_locals(
+    expr: &crate::ast::Expression,
+    is_local: &impl Fn(&str) -> bool,
+) -> NativeDefinitionUsage {
     let mut usage = NativeDefinitionUsage::default();
-    collect_native_definition_usage(expr, false, &mut usage);
+    collect_native_definition_usage(expr, false, &mut usage, is_local);
     usage
 }
 
@@ -278,6 +366,7 @@ fn collect_native_definition_usage(
     expr: &crate::ast::Expression,
     dataset_argument: bool,
     usage: &mut NativeDefinitionUsage,
+    is_local: &impl Fn(&str) -> bool,
 ) {
     use crate::ast::Expression;
 
@@ -292,14 +381,24 @@ fn collect_native_definition_usage(
             let is_dataset = crate::datasets::is_dataset_function_name(function.id());
             usage.datasets |= is_dataset;
             for arg in args {
-                collect_native_definition_usage(arg, dataset_argument || is_dataset, usage);
+                collect_native_definition_usage(
+                    arg,
+                    dataset_argument || is_dataset,
+                    usage,
+                    is_local,
+                );
             }
         }
         Expression::Unit { .. } => usage.units = true,
         Expression::Variable(variable) => {
-            push_definition_name(&mut usage.variable_names, variable.id());
+            if !is_local(variable.id()) {
+                push_definition_name(&mut usage.variable_names, variable.id());
+            }
         }
         Expression::Symbolic(symbol) => {
+            if is_local(symbol.name()) {
+                return;
+            }
             if crate::unit_conversion::may_contain_unit_candidate(expr) {
                 usage.units = true;
             } else if !dataset_argument {
@@ -309,7 +408,7 @@ fn collect_native_definition_usage(
         _ => {
             for index in 0..expr.child_count() {
                 if let Some(child) = expr.child(index) {
-                    collect_native_definition_usage(child, dataset_argument, usage);
+                    collect_native_definition_usage(child, dataset_argument, usage, is_local);
                 }
             }
         }
@@ -383,6 +482,45 @@ impl Calculator {
         if enabled {
             self.session_answers.enable();
         }
+    }
+
+    /// Return whether an expression uses global definitions not shadowed by
+    /// variables in this calculator session.
+    pub fn session_expression_uses_global_definitions(&self, expr: &str) -> bool {
+        let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
+            return false;
+        };
+        let usage = native_definition_usage_with_locals(&parsed, &|name| {
+            self.native_context.variables.contains_key(name)
+        });
+        definition_usage_uses_global_definitions(&usage)
+    }
+
+    /// Return whether an expression uses selectively disabled definitions not
+    /// shadowed by variables in this calculator session.
+    pub fn session_expression_uses_disabled_definition_family(
+        &self,
+        expr: &str,
+        units_enabled: bool,
+        currencies_enabled: bool,
+        functions_enabled: bool,
+        variables_enabled: bool,
+        datasets_enabled: bool,
+    ) -> bool {
+        let Ok(parsed) = crate::parser::operators::parse_expression(expr) else {
+            return true;
+        };
+        let usage = native_definition_usage_with_locals(&parsed, &|name| {
+            self.native_context.variables.contains_key(name)
+        });
+        definition_usage_uses_disabled_family(
+            &usage,
+            units_enabled,
+            currencies_enabled,
+            functions_enabled,
+            variables_enabled,
+            datasets_enabled,
+        )
     }
 
     /// Delete a user-defined variable from the current interactive session.
@@ -1608,7 +1746,13 @@ fn native_markup_output_for_parsed(
     ) else {
         return Ok(None);
     };
-    let mut output = NativeOutput::plain(output).with_answer(evaluated, answer_rendering);
+    let profile = if terse {
+        PrintProfile::Api
+    } else {
+        PrintProfile::Qalc
+    };
+    let mut output = native_output_with_messages(profile, output, &mut markup_context)
+        .with_answer(evaluated, answer_rendering);
     output.approximate = approximate;
     if contains_assignment {
         context.variables = markup_context.variables;
@@ -2066,10 +2210,14 @@ fn native_session_context_output(
     if !is_assignment && !uses_session_variable {
         return None;
     }
+    if expression_uses_unresolved_global_value(&parsed, context) {
+        return None;
+    }
 
-    crate::session::apply_raw_settings_to_context(context, settings)?;
-    context.clear_messages();
-    let answer = context.parse_and_evaluate_expression(expr).ok()?;
+    let mut evaluated_context = context.clone();
+    crate::session::apply_raw_settings_to_context(&mut evaluated_context, settings)?;
+    evaluated_context.clear_messages();
+    let answer = evaluated_context.parse_and_evaluate_expression(expr).ok()?;
     if expression_contains(&answer, &|node| {
         matches!(node, crate::ast::Expression::FunctionCall { .. })
     }) {
@@ -2082,6 +2230,7 @@ fn native_session_context_output(
             .ok()
             .flatten()
         {
+            *context = evaluated_context;
             return Some(output);
         }
     }
@@ -2092,10 +2241,60 @@ fn native_session_context_output(
     };
     let (rendering, approximate) =
         crate::session::format_answer(answer_profile, &answer, session_settings)?;
-    let mut output = native_output_with_messages(profile, rendering.clone(), context)
-        .with_answer(answer, rendering);
+    let mut output =
+        native_output_with_messages(profile, rendering.clone(), &mut evaluated_context)
+            .with_answer(answer, rendering);
     output.approximate = approximate;
+    *context = evaluated_context;
     Some(output)
+}
+
+fn expression_uses_unresolved_global_value(
+    expr: &crate::ast::Expression,
+    context: &crate::context::CalculatorContext,
+) -> bool {
+    let mut unresolved_names = Vec::new();
+    collect_unresolved_value_names(expr, context, &mut unresolved_names);
+    if unresolved_names.is_empty() {
+        return false;
+    }
+
+    let definitions_dir = crate::rates::definitions_dir();
+    let definitions = cached_function_variable_catalog(&definitions_dir);
+    let units = cached_prefix_unit_catalog(&definitions_dir);
+
+    unresolved_names.iter().any(|name| {
+        definitions
+            .as_ref()
+            .is_some_and(|catalog| catalog.variables().find_by_name(name).is_some())
+            || units
+                .as_ref()
+                .is_some_and(|catalog| catalog.unit_by_name(name).is_some())
+    })
+}
+
+fn collect_unresolved_value_names(
+    expr: &crate::ast::Expression,
+    context: &crate::context::CalculatorContext,
+    names: &mut Vec<String>,
+) {
+    let candidate = match expr {
+        crate::ast::Expression::Symbolic(symbol) => Some(symbol.name()),
+        crate::ast::Expression::Variable(variable) => Some(variable.id()),
+        crate::ast::Expression::Unit { unit, .. } => Some(unit.id()),
+        _ => None,
+    };
+    if let Some(name) = candidate {
+        if !context.variables.contains_key(name) && !names.iter().any(|candidate| candidate == name)
+        {
+            names.push(name.to_string());
+        }
+    }
+    for index in 0..expr.child_count() {
+        if let Some(child) = expr.child(index) {
+            collect_unresolved_value_names(child, context, names);
+        }
+    }
 }
 
 fn native_datetime_output(
@@ -3174,6 +3373,53 @@ mod tests {
 
     fn configure_definitions_dir() {
         std::env::set_var(DEFINITIONS_DIR_ENV, definitions_dir());
+    }
+
+    #[test]
+    fn definition_catalog_caches_reuse_loaded_catalogs() {
+        let definitions_dir = definitions_dir();
+        let first_definitions = cached_function_variable_catalog(&definitions_dir)
+            .expect("function and variable catalog should load");
+        let second_definitions = cached_function_variable_catalog(&definitions_dir)
+            .expect("function and variable catalog should be cached");
+        assert!(std::sync::Arc::ptr_eq(
+            &first_definitions,
+            &second_definitions
+        ));
+
+        let first_units = cached_prefix_unit_catalog(&definitions_dir)
+            .expect("prefix and unit catalog should load");
+        let second_units = cached_prefix_unit_catalog(&definitions_dir)
+            .expect("prefix and unit catalog should be cached");
+        assert!(std::sync::Arc::ptr_eq(&first_units, &second_units));
+    }
+
+    #[test]
+    fn catalog_cache_bounds_paths_and_remembers_failed_loads() {
+        let cache = CatalogCache::<usize>::new();
+        let failed_loads = std::sync::atomic::AtomicUsize::new(0);
+        for _ in 0..2 {
+            assert!(cached_catalog(&cache, Path::new("missing"), |_| {
+                failed_loads.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                None
+            })
+            .is_none());
+        }
+        assert_eq!(failed_loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+
+        for index in 0..MAX_CACHED_DEFINITION_DIRS {
+            let path = PathBuf::from(format!("definitions-{index}"));
+            assert_eq!(
+                cached_catalog(&cache, &path, |_| Some(index)).as_deref(),
+                Some(&index)
+            );
+        }
+        let entries = cache
+            .get()
+            .expect("cache should be initialized")
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(entries.len(), MAX_CACHED_DEFINITION_DIRS);
     }
 
     #[test]

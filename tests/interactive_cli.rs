@@ -567,6 +567,42 @@ fn assumption_changes_recalculate_the_last_expression() {
 }
 
 #[test]
+fn assumption_changes_do_not_rebind_answer_aliases_in_the_last_expression() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("1\nans+1\nassume unknown\nans\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("ans = 2").and(predicate::str::contains("ans + 1 = 3").not()),
+        )
+        .stderr("");
+}
+
+#[test]
+fn assumption_changes_do_not_replay_managed_answer_assignments() {
+    let mut session = isolated_session();
+    let output = session
+        .command
+        .args(["-i", "-c0"])
+        .write_stdin("1\nans:=5\nassume unknown\nquit\n")
+        .assert()
+        .success()
+        .stderr("")
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).expect("interactive output should be UTF-8");
+    assert_eq!(
+        output.matches("ans:=5 = 5").count(),
+        1,
+        "assumption changes must reformat, not replay, managed answer assignments: {output}"
+    );
+}
+
+#[test]
 fn stored_answer_reformat_uses_the_evaluated_value_with_a_new_input_base() {
     let mut session = isolated_session();
     session
@@ -810,6 +846,53 @@ fn native_text_embedded_assignments_are_available_to_cpp_fallback() {
             predicate::str::contains("Ei(x) = 2492.228976")
                 .and(predicate::str::contains("warning:").not()),
         )
+        .stderr("");
+}
+
+#[test]
+fn declined_native_session_probe_does_not_commit_assignments() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1\nfoo(ans + (x:=1))\nx+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("x + 1 = 2").not())
+        .stderr(
+            predicate::str::contains("foo(ans + (x:=1))")
+                .and(predicate::str::contains("expression 'x+1'")),
+        );
+}
+
+#[test]
+fn native_answer_with_global_variable_uses_cpp_fallback() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0"])
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .write_stdin("set base 10\n1/3\nans+pi\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("ans + pi = 3.474925987")
+                .and(predicate::str::contains("pi + 0.3333333333").not()),
+        )
+        .stderr(predicate::str::contains("fallback=cpp-fallback-enabled"));
+}
+
+#[test]
+fn local_variables_shadow_disabled_global_definition_names() {
+    let mut session = isolated_session();
+    session
+        .command
+        .args(["-i", "-c0", "-nounits"])
+        .write_stdin("m:=1\nm+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("m + 1 = 2"))
         .stderr("");
 }
 

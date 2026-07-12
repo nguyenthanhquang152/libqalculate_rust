@@ -1313,6 +1313,31 @@ fn cli_formats_native_html_markup_with_fallback_disabled() {
 }
 
 #[test]
+fn cli_native_markup_preserves_evaluation_messages() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["--html", "--", "acosh(0.5)"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("QALCULATE_REPORT_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("warning: acosh: argument must be >= 1\nacosh(0.5) ≈ nan\n")
+        .stderr(predicate::str::contains(
+            "[qalc-rs-metadata] fallback=native",
+        ));
+
+    let mut terse = qalc_rs_raw();
+    terse
+        .args(["-t", "--html", "--", "acosh(0.5)"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("nan\n")
+        .stderr("");
+}
+
+#[test]
 fn cli_formats_native_html_symbolic_comparison_markup() {
     let mut cmd = qalc_rs_raw();
     cmd.args(["--html", "-set", "assumptions unknown", "--", "x<y"])

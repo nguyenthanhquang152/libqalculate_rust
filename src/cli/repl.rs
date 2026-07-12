@@ -207,7 +207,7 @@ where
                     let Some(expression) = last_expression.clone() else {
                         continue;
                     };
-                    Some(expression)
+                    (!expression_uses_managed_answer_alias(&expression)).then_some(expression)
                 } else {
                     None
                 };
@@ -366,6 +366,36 @@ fn update_local_variables(
     for (name, value) in assignment_renderings {
         local_variables.insert(name.clone(), value.clone());
     }
+}
+
+fn expression_uses_managed_answer_alias(expression: &str) -> bool {
+    let Ok(parsed) = libqalculate_rust::parser::operators::parse_expression(expression) else {
+        return false;
+    };
+    expression_tree_contains(&parsed, &|node| {
+        let name = match node {
+            libqalculate_rust::ast::Expression::Symbolic(symbol) => symbol.name(),
+            libqalculate_rust::ast::Expression::Variable(variable) => variable.id(),
+            libqalculate_rust::ast::Expression::Assignment { variable, .. } => variable,
+            _ => return false,
+        };
+        matches!(
+            name,
+            "ans" | "answer" | "ans1" | "ans2" | "ans3" | "ans4" | "ans5"
+        )
+    })
+}
+
+fn expression_tree_contains(
+    expression: &libqalculate_rust::ast::Expression,
+    predicate: &impl Fn(&libqalculate_rust::ast::Expression) -> bool,
+) -> bool {
+    predicate(expression)
+        || (0..expression.child_count()).any(|index| {
+            expression
+                .child(index)
+                .is_some_and(|child| expression_tree_contains(child, predicate))
+        })
 }
 
 fn render_evaluation<W: Write>(output: &mut W, evaluation: &ReplEvaluation) -> io::Result<()> {
