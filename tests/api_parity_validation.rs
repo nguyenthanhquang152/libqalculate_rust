@@ -100,7 +100,7 @@ fn public_api_parity_matrix_maps_the_native_calculator_surface_by_category() {
         "Definition loading and lookup",
         "Dataset access",
         "Unit conversion",
-        "Options and session commands",
+        "Supported numeric options",
         "Structured messages",
         "Timeout and abort control",
         "Plotting",

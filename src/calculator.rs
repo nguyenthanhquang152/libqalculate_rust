@@ -17,11 +17,10 @@
 
 use crate::ast::Expression;
 use crate::context::CalculatorContext;
-use crate::datasets::DatasetCatalog;
 use crate::definitions::DefinitionIoError;
 use crate::definitions_catalog::FunctionVariableCatalog;
 use crate::messages::{CalculatorMessage, MessageCategory, MessageStage, MessageType};
-use crate::options::{EvaluationOptions, ParseOptions, PrintOptions};
+use crate::options::{ApproximationMode, NumberFractionFormat};
 use crate::parser::names::StaticRegistry;
 use crate::parser::operators::{parse_expression, ParseError};
 use crate::units::PrefixUnitCatalog;
@@ -59,13 +58,13 @@ impl std::error::Error for CalculatorError {}
 ///
 /// The session owns options, variables, definition-name registration, and
 /// structured messages. Loaded XML catalogs are retained so callers can query
-/// the same definitions used for parsing and focused unit conversion.
+/// the definitions used for evaluation and focused unit conversion. Dataset
+/// catalogs remain available through the independent [`crate::datasets`] API.
 #[derive(Debug, Default)]
 pub struct Calculator {
     context: CalculatorContext,
     definitions: Option<FunctionVariableCatalog>,
     units: Option<PrefixUnitCatalog>,
-    datasets: Option<DatasetCatalog>,
 }
 
 impl Calculator {
@@ -75,6 +74,10 @@ impl Calculator {
     }
 
     /// Parses expression text into the public Rust expression tree.
+    ///
+    /// This is a syntax-only operation. Loaded names are resolved when the
+    /// returned tree is passed to [`evaluate`](Self::evaluate), or when callers
+    /// use [`calculate`](Self::calculate).
     pub fn parse(&self, input: &str) -> Result<Expression, ParseError> {
         parse_expression(input)
     }
@@ -115,12 +118,16 @@ impl Calculator {
     /// conversion engine is consulted before general expression evaluation.
     pub fn calculate_and_print(&mut self, input: &str) -> Result<String, CalculatorError> {
         if let Some(units) = &self.units {
+            let mut probe_context = self.context.clone();
             match crate::unit_conversion::native_output_with_catalog(
                 input,
                 units,
-                &mut self.context,
+                &mut probe_context,
             ) {
-                Ok(Some(output)) => return Ok(output.output),
+                Ok(Some(output)) => {
+                    self.context = probe_context;
+                    return Ok(output.output);
+                }
                 Ok(None) => {}
                 Err(message) => return Err(self.record_calculation_error(message)),
             }
@@ -144,7 +151,7 @@ impl Calculator {
         self.calculate_and_print(&format!("{input} to {target}"))
     }
 
-    /// Loads function, variable, prefix, unit, currency, and dataset XML catalogs.
+    /// Loads function, variable, prefix, unit, and currency XML catalogs.
     ///
     /// All source files are parsed before session state changes. If any load
     /// fails, the previously loaded catalogs and name registry remain intact.
@@ -156,7 +163,6 @@ impl Calculator {
         let definitions =
             crate::definitions_catalog::load_function_variable_catalog_from_dir(data_dir)?;
         let units = crate::units::load_prefix_unit_catalog_from_dir(data_dir)?;
-        let datasets = crate::datasets::load_dataset_catalog_from_dir(data_dir)?;
 
         let mut registry = StaticRegistry::with_builtins();
         definitions.register_into(&mut registry);
@@ -165,7 +171,6 @@ impl Calculator {
         self.context.definitions = registry;
         self.definitions = Some(definitions);
         self.units = Some(units);
-        self.datasets = Some(datasets);
         Ok(())
     }
 
@@ -187,48 +192,24 @@ impl Calculator {
         self.units.as_ref()
     }
 
-    /// Returns the loaded dataset catalog, if available.
-    pub fn datasets(&self) -> Option<&DatasetCatalog> {
-        self.datasets.as_ref()
+    /// Returns the approximation mode used by native numeric formatting.
+    pub fn formatting_approximation(&self) -> ApproximationMode {
+        self.context.evaluation_options.approximation
     }
 
-    /// Returns this session's parse options.
-    pub fn parse_options(&self) -> &ParseOptions {
-        &self.context.parse_options
+    /// Sets the approximation mode used by native numeric formatting.
+    pub fn set_formatting_approximation(&mut self, approximation: ApproximationMode) {
+        self.context.evaluation_options.approximation = approximation;
     }
 
-    /// Returns mutable access to this session's parse options.
-    ///
-    /// Only option interactions classified as native in the public API parity
-    /// matrix are currently guaranteed to affect evaluation.
-    pub fn parse_options_mut(&mut self) -> &mut ParseOptions {
-        &mut self.context.parse_options
+    /// Returns the fraction style used by native numeric formatting.
+    pub fn fraction_format(&self) -> NumberFractionFormat {
+        self.context.print_options.number_fraction_format
     }
 
-    /// Returns this session's evaluation options.
-    pub fn evaluation_options(&self) -> &EvaluationOptions {
-        &self.context.evaluation_options
-    }
-
-    /// Returns mutable access to this session's evaluation options.
-    ///
-    /// Only option interactions classified as native in the public API parity
-    /// matrix are currently guaranteed to affect evaluation.
-    pub fn evaluation_options_mut(&mut self) -> &mut EvaluationOptions {
-        &mut self.context.evaluation_options
-    }
-
-    /// Returns this session's print options.
-    pub fn print_options(&self) -> &PrintOptions {
-        &self.context.print_options
-    }
-
-    /// Returns mutable access to this session's print options.
-    ///
-    /// Only option interactions classified as native in the public API parity
-    /// matrix are currently guaranteed to affect formatting.
-    pub fn print_options_mut(&mut self) -> &mut PrintOptions {
-        &mut self.context.print_options
+    /// Sets the fraction style used by native numeric formatting.
+    pub fn set_fraction_format(&mut self, fraction_format: NumberFractionFormat) {
+        self.context.print_options.number_fraction_format = fraction_format;
     }
 
     /// Returns the current decimal evaluation precision.
@@ -239,14 +220,6 @@ impl Calculator {
     /// Sets the decimal evaluation precision, clamped to at least one digit.
     pub fn set_precision(&mut self, precision_digits: usize) {
         self.context.precision_digits = precision_digits.max(1);
-    }
-
-    /// Applies a typed session command such as `/set precision 20`.
-    ///
-    /// The `set` or `assume` command prefix is required; bare setting names are
-    /// not normalized by this strict library API.
-    pub fn apply_command(&mut self, command: &str) -> Result<(), ParseError> {
-        self.context.apply_command(command)
     }
 
     /// Returns all queued structured messages without removing them.

@@ -1,7 +1,5 @@
 use libqalculate_rust::messages::{CalculatorMessage, MessageStage, MessageType};
-use libqalculate_rust::options::{
-    ApproximationMode, EvaluationOptions, ParseOptions, PrintOptions,
-};
+use libqalculate_rust::options::{ApproximationMode, NumberFractionFormat};
 use libqalculate_rust::Calculator;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -70,11 +68,8 @@ fn native_calculator_matches_the_upstream_simple_api_example() {
 fn native_calculator_exposes_options_and_structured_messages() {
     let mut calculator = Calculator::new();
 
-    let _: &ParseOptions = calculator.parse_options();
-    let _: &EvaluationOptions = calculator.evaluation_options();
-    let _: &PrintOptions = calculator.print_options();
-
-    calculator.evaluation_options_mut().approximation = ApproximationMode::Approximate;
+    calculator.set_formatting_approximation(ApproximationMode::Approximate);
+    calculator.set_fraction_format(NumberFractionFormat::Decimal);
     calculator.set_precision(8);
     assert_eq!(
         calculator
@@ -82,11 +77,11 @@ fn native_calculator_exposes_options_and_structured_messages() {
             .expect("approximate calculation succeeds"),
         "0.33333333"
     );
-
-    calculator
-        .apply_command("/set precision 12")
-        .expect("typed session command applies");
-    assert_eq!(calculator.precision(), 12);
+    assert_eq!(
+        calculator.formatting_approximation(),
+        ApproximationMode::Approximate
+    );
+    assert_eq!(calculator.fraction_format(), NumberFractionFormat::Decimal);
 
     let error = calculator
         .calculate_and_print("5 := x")
@@ -118,11 +113,17 @@ fn native_calculator_loads_and_exposes_definition_catalogs_atomically() {
         .expect("prefix/unit catalog")
         .unit_by_name("m")
         .is_some());
-    assert!(calculator
-        .datasets()
-        .expect("dataset catalog")
-        .dataset_by_name("atom")
-        .is_some());
+    let datasets = libqalculate_rust::datasets::load_dataset_catalog_from_dir(upstream_data_dir())
+        .expect("public dataset catalog loads independently");
+    assert!(datasets.dataset_by_name("atom").is_some());
+
+    let parsed_unit = calculator.parse("m").expect("unit syntax parses");
+    assert!(matches!(
+        calculator
+            .evaluate(&parsed_unit)
+            .expect("loaded registry resolves unit during evaluation"),
+        libqalculate_rust::ast::Expression::Unit { .. }
+    ));
 
     assert_eq!(
         calculator
@@ -139,6 +140,22 @@ fn native_calculator_loads_and_exposes_definition_catalogs_atomically() {
 }
 
 #[test]
+fn unsupported_unit_probe_does_not_duplicate_session_messages() {
+    let mut calculator = Calculator::new();
+    calculator
+        .load_definitions_from_dir(upstream_data_dir())
+        .expect("unit catalog loads");
+
+    let _ = calculator.calculate_and_print("(-1)! + m");
+    let factorial_warnings = calculator
+        .messages()
+        .iter()
+        .filter(|message| message.message().contains("Factorial requires"))
+        .count();
+    assert_eq!(factorial_warnings, 1);
+}
+
+#[test]
 fn failed_definition_reload_preserves_the_previous_catalogs() {
     let mut calculator = Calculator::new();
     calculator
@@ -151,11 +168,6 @@ fn failed_definition_reload_preserves_the_previous_catalogs() {
         .definitions()
         .expect("previous definitions remain available")
         .function_by_name("sin")
-        .is_some());
-    assert!(calculator
-        .datasets()
-        .expect("previous datasets remain available")
-        .dataset_by_name("atom")
         .is_some());
     assert_eq!(
         calculator
