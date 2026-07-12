@@ -54,7 +54,7 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
             .split_whitespace()
             .map(parse_base)
             .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| "No base specified.".to_string())?;
+            .ok_or_else(|| "Illegal base.".to_string())?;
         let setting = |setting| {
             SessionCommand::Set(SetCommand {
                 setting,

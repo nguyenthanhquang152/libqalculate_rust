@@ -2503,27 +2503,241 @@ fn cli_test_file_without_path_reports_upstream_diagnostic_before_handoff() {
 }
 
 #[test]
-fn test_remaining_workflow_handoff_contract() {
+fn cli_runs_terse_stdin_command_stream_without_prompts() {
+    let state = tempdir().expect("temporary state directory");
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .env("XDG_STATE_HOME", state.path())
+        .write_stdin("# setup\n\n1+1\n1+1\n")
+        .assert()
+        .success()
+        .stdout("2\n2\n")
+        .stderr("");
+    assert!(!state.path().join("qalculate/qalc.history").exists());
+}
+
+#[test]
+fn cli_stdin_command_stream_matches_upstream_without_global_definitions() {
+    let upstream = Path::new("../libqalculate/src/qalc");
+    if !upstream.exists() {
+        return;
+    }
+    let input = "1+1\nans+1\nset base 16\n15\nset base 10\n15\n";
+
+    let mut rust = qalc_rs_raw();
+    let rust_output = rust
+        .args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let upstream_home = tempdir().expect("upstream home");
+    let mut oracle = Command::new(upstream);
+    let oracle_output = oracle
+        .args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("HOME", upstream_home.path())
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("TZ", "UTC")
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    assert_eq!(rust_output.stdout, oracle_output.stdout);
+    assert_eq!(rust_output.stderr, oracle_output.stderr);
+}
+
+#[test]
+fn cli_non_terse_stdin_command_stream_prints_equations_without_repl_spacing() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("1+1\n1+1\n")
+        .assert()
+        .success()
+        .stdout("1 + 1 = 2\n1 + 1 = 2\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_stdin_command_stream_reports_invalid_commands_and_continues() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("set base nope\n1+1\n")
+        .assert()
+        .success()
+        .stdout("Illegal base.\n2\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_command_file_runs_before_the_trailing_expression() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let command_path = command_dir.path().join("commands.qalc");
+    std::fs::write(&command_path, "set base 16\n15\n").expect("command file");
+
+    for flag in ["-f", "-file", "--file"] {
+        let mut cmd = qalc_rs_raw();
+        cmd.args(["-c0", "-t", flag])
+            .arg(&command_path)
+            .arg("10")
+            .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+            .env("QALCULATE_DISABLE_FALLBACK", "1")
+            .assert()
+            .success()
+            .stdout("0xF\n0xA\n")
+            .stderr("");
+    }
+}
+
+#[test]
+fn cli_command_stream_quit_skips_remaining_input_and_trailing_expression() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let command_path = command_dir.path().join("commands.qalc");
+    std::fs::write(&command_path, "1+1\nquit\n1+1\n").expect("command file");
+
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f"])
+        .arg(&command_path)
+        .arg("1+1")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("2\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_command_file_trailing_errors_keep_upstream_success_status() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let command_path = command_dir.path().join("commands.qalc");
+    std::fs::write(&command_path, "1+1\n").expect("command file");
+
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f"])
+        .arg(&command_path)
+        .arg("foo(ans)")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .assert()
+        .success()
+        .stdout("2\n")
+        .stderr(predicate::str::contains(
+            "expression 'foo(ans)' has no native Rust implementation",
+        ));
+}
+
+#[test]
+fn cli_interactive_mode_continues_after_a_trailing_expression_error() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let command_path = command_dir.path().join("commands.qalc");
+    std::fs::write(&command_path, "1+1\n").expect("command file");
+
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-i", "-c0", "-t", "-f"])
+        .arg(&command_path)
+        .arg("foo(ans)")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("ans+1\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::starts_with("2\n> ans+1\n")
+                .and(predicate::str::contains("  3\n"))
+                .and(predicate::str::ends_with("> quit\n")),
+        )
+        .stderr(predicate::str::contains(
+            "expression 'foo(ans)' has no native Rust implementation",
+        ));
+}
+
+#[test]
+fn cli_interactive_info_retains_variables_from_the_trailing_expression() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let command_path = command_dir.path().join("commands.qalc");
+    std::fs::write(&command_path, "1+1\n").expect("command file");
+
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-i", "-c0", "-t", "-f"])
+        .arg(&command_path)
+        .arg("my_var:=10")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("info my_var\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Variable: my_var").and(predicate::str::contains("Value: 10")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn cli_interactive_info_retains_variables_defined_by_a_command_file() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let command_path = command_dir.path().join("commands.qalc");
+    std::fs::write(&command_path, "x:=5\n").expect("command file");
+
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-i", "-c0", "-t", "-f"])
+        .arg(&command_path)
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .env("QALCULATE_DISABLE_FALLBACK", "1")
+        .write_stdin("x+1\ninfo x\nquit\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("  6\n")
+                .and(predicate::str::contains("Variable: x"))
+                .and(predicate::str::contains("Value: 5")),
+        )
+        .stderr("");
+}
+
+#[test]
+fn cli_command_file_without_path_reports_once_and_enters_repl() {
+    let mut cmd = qalc_rs_raw();
+    cmd.arg("-f")
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .success()
+        .stdout("No file specified.\n> ")
+        .stderr("");
+}
+
+#[test]
+fn cli_missing_command_file_matches_upstream_exit_status() {
+    let command_dir = tempdir().expect("temporary command-file directory");
+    let missing = command_dir.path().join("missing.qalc");
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f"])
+        .arg(&missing)
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .assert()
+        .code(1)
+        .stdout(format!("Could not open \"{}\".\n", missing.display()))
+        .stderr("");
+}
+
+#[test]
+fn test_batch_workflow_handoff_contract() {
     let cases: &[(&[&str], &str)] = &[
-        (
-            &["-f", "dummy_file.txt"],
-            "error: Command file execution is not implemented (owner #62)\n",
-        ),
-        (
-            &["-file", "dummy_file.txt"],
-            "error: Command file execution is not implemented (owner #62)\n",
-        ),
-        (
-            &["--file", "dummy_file.txt"],
-            "error: Command file execution is not implemented (owner #62)\n",
-        ),
         (
             &["--test-file", "dummy_test.batch"],
             "error: Test file execution is not implemented (owner #63)\n",
-        ),
-        (
-            &["-f", "dummy.txt", "1+1"],
-            "error: Command file execution is not implemented (owner #62)\n",
         ),
         (
             &[
