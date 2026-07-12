@@ -84,3 +84,30 @@ fn public_api_parity_matrix_keeps_fallback_distinct_from_native() {
         }
     }
 }
+
+#[test]
+fn public_api_parity_matrix_maps_the_native_calculator_surface_by_category() {
+    let matrix = fs::read_to_string("docs/public_api_parity_matrix.md")
+        .expect("docs/public_api_parity_matrix.md should be readable");
+
+    assert!(matrix.contains("## Native `Calculator` Surface"));
+    assert!(matrix.contains("`calculator::Calculator`"));
+
+    for category in [
+        "Construction and ownership",
+        "Parsing and structured evaluation",
+        "Result formatting",
+        "Definition loading and lookup",
+        "Dataset access",
+        "Unit conversion",
+        "Supported numeric options",
+        "Structured messages",
+        "Timeout and abort control",
+        "Plotting",
+    ] {
+        assert!(
+            matrix.contains(category),
+            "Calculator API mapping should classify category `{category}`"
+        );
+    }
+}

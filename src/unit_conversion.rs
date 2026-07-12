@@ -170,12 +170,39 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
     let mut context = CalculatorContext::default();
     catalog.register_into(&mut context.definitions);
 
+    native_output_for_parsed(parsed, &catalog, &mut context, &format_number)
+}
+
+/// Evaluates a qalc unit expression with caller-owned definitions and session state.
+pub(crate) fn native_output_with_catalog(
+    parsed: Expression,
+    catalog: &PrefixUnitCatalog,
+    context: &mut CalculatorContext,
+    format_number: &dyn Fn(&Number) -> String,
+) -> Result<Option<NativeUnitOutput>, String> {
+    native_output_for_parsed(parsed, catalog, context, format_number)
+}
+
+fn native_output_for_parsed(
+    parsed: Expression,
+    catalog: &PrefixUnitCatalog,
+    context: &mut CalculatorContext,
+    format_number: &dyn Fn(&Number) -> String,
+) -> Result<Option<NativeUnitOutput>, String> {
     match parsed {
         Expression::Conversion { expr, target } => {
-            let evaluated_expr = crate::eval::evaluate_ast(&expr, &mut context)?;
-            let evaluated_target = crate::eval::evaluate_ast(&target, &mut context)?;
-            let target = conversion_target(&evaluated_target, &catalog)?;
-            let mut source = reduce_quantity(&evaluated_expr, &catalog)?;
+            let evaluated_expr = crate::eval::evaluate_ast(&expr, context)?;
+            let mut source = match reduce_quantity(&evaluated_expr, catalog) {
+                Ok(source) => source,
+                Err(_) => return Ok(None),
+            };
+            if source.units.is_unitless()
+                && crate::eval::is_supported_number_conversion_target(&target)
+            {
+                return Ok(None);
+            }
+            let evaluated_target = crate::eval::evaluate_ast(&target, context)?;
+            let target = conversion_target(&evaluated_target, catalog, format_number)?;
             if source.units.is_unitless() {
                 let ConversionTarget::Unit { units, .. } = &target else {
                     return Ok(None);
@@ -186,13 +213,13 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
                 };
             }
             Ok(Some(NativeUnitOutput {
-                output: format_conversion(&source, target, &catalog)?,
+                output: format_conversion(&source, target, catalog, format_number)?,
                 answer: evaluated_expr,
             }))
         }
         other => {
-            let evaluated = crate::eval::evaluate_ast(&other, &mut context)?;
-            let quantity = match reduce_quantity(&evaluated, &catalog) {
+            let evaluated = crate::eval::evaluate_ast(&other, context)?;
+            let quantity = match reduce_quantity(&evaluated, catalog) {
                 Ok(quantity) => quantity,
                 Err(_) => return Ok(None),
             };
@@ -200,9 +227,11 @@ pub(crate) fn native_output_with_answer(expr: &str) -> Result<Option<NativeUnitO
                 return Ok(None);
             }
             Ok(
-                format_automatic_quantity(&quantity, &catalog).map(|output| NativeUnitOutput {
-                    output,
-                    answer: evaluated,
+                format_automatic_quantity(&quantity, catalog, format_number).map(|output| {
+                    NativeUnitOutput {
+                        output,
+                        answer: evaluated,
+                    }
                 }),
             )
         }
@@ -343,6 +372,7 @@ fn symbol_looks_like_unit(name: &str) -> bool {
 fn conversion_target(
     target: &Expression,
     catalog: &PrefixUnitCatalog,
+    format_number: &dyn Fn(&Number) -> String,
 ) -> Result<ConversionTarget, String> {
     if let Expression::Symbolic(symbol) = target {
         match symbol.name() {
@@ -356,14 +386,14 @@ fn conversion_target(
         Expression::Negate(inner) => (inner.as_ref(), false),
         _ => (
             target,
-            target_display(target).is_some_and(|display| display == "ft"),
+            target_display(target, format_number).is_some_and(|display| display == "ft"),
         ),
     };
     let quantity = reduce_quantity(target_expr, catalog)?;
     if !quantity.value.is_one() {
         return Err("unit conversion target must be unit-only".to_string());
     }
-    let display = target_display(target_expr)
+    let display = target_display(target_expr, format_number)
         .ok_or_else(|| "unsupported unit conversion target display".to_string())?;
     Ok(ConversionTarget::Unit {
         units: quantity.units,
@@ -376,6 +406,7 @@ fn format_conversion(
     source: &Quantity,
     target: ConversionTarget,
     catalog: &PrefixUnitCatalog,
+    format_number: &dyn Fn(&Number) -> String,
 ) -> Result<String, String> {
     match target {
         ConversionTarget::Base => {
@@ -399,7 +430,7 @@ fn format_conversion(
                 if !source.units.same_dimensions(&units) {
                     return Err("incompatible unit conversion target".to_string());
                 }
-                return format_mixed_feet(source, &units, catalog);
+                return format_mixed_feet(source, &units, catalog, format_number);
             }
             let value = if source.units.same_dimensions(&units) {
                 source.base_value().div(&units.factor)
@@ -413,9 +444,15 @@ fn format_conversion(
     }
 }
 
-fn format_automatic_quantity(quantity: &Quantity, catalog: &PrefixUnitCatalog) -> Option<String> {
+fn format_automatic_quantity(
+    quantity: &Quantity,
+    catalog: &PrefixUnitCatalog,
+    format_number: &dyn Fn(&Number) -> String,
+) -> Option<String> {
     for (unit_name, display) in [("V", "V"), ("J", "J"), ("N", "N"), ("Pa", "Pa"), ("W", "W")] {
-        if let Some(output) = format_quantity_as_unit(quantity, catalog, unit_name, display) {
+        if let Some(output) =
+            format_quantity_as_unit(quantity, catalog, unit_name, display, format_number)
+        {
             return Some(output);
         }
     }
@@ -457,6 +494,7 @@ fn format_quantity_as_unit(
     catalog: &PrefixUnitCatalog,
     unit_name: &str,
     display: &str,
+    format_number: &dyn Fn(&Number) -> String,
 ) -> Option<String> {
     let target = resolve_unit_with_prefix(catalog, unit_name, None, 1).ok()?;
     if !quantity.units.same_dimensions(&target) {
@@ -470,6 +508,7 @@ fn format_mixed_feet(
     source: &Quantity,
     target_feet: &UnitProduct,
     catalog: &PrefixUnitCatalog,
+    format_number: &dyn Fn(&Number) -> String,
 ) -> Result<String, String> {
     let feet = source.base_value().div(&target_feet.factor);
     if feet.is_negative() {
@@ -754,7 +793,7 @@ fn fixed_decimal_from_scientific(value: &str) -> Option<String> {
     Some(out)
 }
 
-fn target_display(expr: &Expression) -> Option<String> {
+fn target_display(expr: &Expression, format_number: &dyn Fn(&Number) -> String) -> Option<String> {
     match expr {
         Expression::Unit { unit, prefix, .. } => {
             let mut out = String::new();
@@ -768,27 +807,27 @@ fn target_display(expr: &Expression) -> Option<String> {
         Expression::Multiplication(children) => children
             .as_slice()
             .iter()
-            .map(target_display)
+            .map(|child| target_display(child, format_number))
             .collect::<Option<Vec<_>>>()
             .map(|parts| parts.join("*")),
         Expression::Division {
             numerator,
             denominator,
         } => {
-            let numerator = target_display(numerator)?;
-            let denominator = target_display(denominator)?;
+            let numerator = target_display(numerator, format_number)?;
+            let denominator = target_display(denominator, format_number)?;
             Some(format!("{numerator}/{denominator}"))
         }
         Expression::Power { base, exponent } => {
-            let base = target_display(base)?;
+            let base = target_display(base, format_number)?;
             let exponent = match exponent.as_ref() {
                 Expression::Number(number) => format_number(number),
-                _ => target_display(exponent)?,
+                _ => target_display(exponent, format_number)?,
             };
             Some(format!("{base}^{exponent}"))
         }
-        Expression::Inverse(child) => Some(format!("1/{}", target_display(child)?)),
-        Expression::Negate(child) => target_display(child),
+        Expression::Inverse(child) => Some(format!("1/{}", target_display(child, format_number)?)),
+        Expression::Negate(child) => target_display(child, format_number),
         _ => None,
     }
 }

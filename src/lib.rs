@@ -1,9 +1,14 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
-#![doc = "Quality scaffold for the Rust port of libqalculate."]
+#![doc = "Native Rust port surface for libqalculate 5.11.0 compatibility work."]
 
 /// Upstream libqalculate version recorded when this port workspace was initialized.
 pub const UPSTREAM_LIBQALCULATE_VERSION: &str = "5.11.0";
+
+/// Native calculator session façade.
+pub mod calculator;
+
+pub use calculator::{Calculator, CalculatorError};
 
 /// Utilities for reading upstream libqalculate batch fixtures.
 pub mod batch;
@@ -23,11 +28,13 @@ pub mod simplify;
 /// Native symbolic / polynomial algorithms.
 pub mod symbolic;
 
-/// FFI bindings to C++ Calculator.
+/// Transitional FFI bindings to the C++ calculator.
 ///
 /// This is the **only** module that uses `#![allow(unsafe_code)]` to override
 /// the crate-level `#![deny(unsafe_code)]`. All unsafe FFI operations are
-/// contained here behind the safe `Calculator` wrapper.
+/// contained here behind the separately named [`ffi::Calculator`]. This module
+/// is fallback/oracle infrastructure and is not the native public parity API;
+/// use the crate-root [`Calculator`] for native sessions.
 pub mod ffi;
 
 mod markup;
