@@ -95,13 +95,16 @@ pub fn parse_batch_cases_with_source_lines(
     input: &str,
 ) -> Result<Vec<LocatedBatchCase>, BatchError> {
     let items = parse_batch_items(input)?;
-    let cases = items
-        .into_iter()
-        .filter_map(|item| match item {
-            BatchItem::Case(case) => Some(case),
-            _ => None,
-        })
-        .collect();
+    let mut cases = Vec::new();
+    for item in items {
+        match item {
+            BatchItem::Case(case) => cases.push(case),
+            BatchItem::Unasserted { expression, .. } => {
+                return Err(BatchError::MissingExpected { expression });
+            }
+            BatchItem::Command { .. } => {}
+        }
+    }
     Ok(cases)
 }
 
@@ -202,6 +205,13 @@ pub enum BatchItem {
     },
     /// A parsed located batch case.
     Case(LocatedBatchCase),
+    /// An expression without expected output.
+    Unasserted {
+        /// One-based source line where the expression appears.
+        source_line: usize,
+        /// The expression.
+        expression: String,
+    },
 }
 
 /// Parse a libqalculate `.batch` fixture into a sequence of commands and located cases.
@@ -256,7 +266,11 @@ fn flush_batch_items(
         return Ok(());
     };
     if current_expected.is_empty() {
-        return Err(BatchError::MissingExpected { expression });
+        items.push(BatchItem::Unasserted {
+            source_line,
+            expression,
+        });
+        return Ok(());
     }
     items.push(BatchItem::Case(LocatedBatchCase {
         source_line,
@@ -268,31 +282,19 @@ fn flush_batch_items(
 /// Return true for upstream batch session commands that affect later cases.
 pub fn is_session_command(line: &str) -> bool {
     let line = line.trim_start();
-    if line
-        .get(..4)
-        .is_some_and(|p| p.eq_ignore_ascii_case("set "))
-    {
-        return true;
-    }
-    if line
-        .get(..5)
-        .is_some_and(|p| p.eq_ignore_ascii_case("/set "))
-    {
-        return true;
-    }
-    if line
-        .get(..7)
-        .is_some_and(|p| p.eq_ignore_ascii_case("assume "))
-    {
-        return true;
-    }
-    if line
-        .get(..8)
-        .is_some_and(|p| p.eq_ignore_ascii_case("/assume "))
-    {
-        return true;
-    }
-    false
+    [
+        "set ",
+        "/set ",
+        "assume ",
+        "/assume ",
+        "assumptions ",
+        "/assumptions ",
+    ]
+    .iter()
+    .any(|prefix| {
+        line.get(..prefix.len())
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
+    })
 }
 
 #[cfg(test)]
@@ -323,6 +325,15 @@ mod tests {
         assert_eq!(cases.len(), 2);
         assert_eq!(cases[0].expression, "sqrt(x)");
         assert_eq!(cases[1].expression, "x");
+    }
+
+    #[test]
+    fn recognizes_plural_assumption_commands() {
+        for command in ["assumptions positive", "/assumptions positive"] {
+            let input = format!("{command}\n1\n\t1\n");
+            let items = parse_batch_items(&input).expect("items should parse");
+            assert!(matches!(items[0], BatchItem::Command { .. }));
+        }
     }
 
     #[test]
@@ -417,5 +428,32 @@ mod tests {
             }
             _ => panic!("Expected Case item"),
         }
+    }
+
+    #[test]
+    fn parse_batch_items_preserves_unasserted_setup_and_cleanup() {
+        let input = "x:=2\nx+1\n\t3\ndelete x\n";
+        let items = parse_batch_items(input).expect("items should parse");
+
+        assert_eq!(items.len(), 3);
+        assert!(matches!(
+            &items[0],
+            BatchItem::Unasserted {
+                source_line: 1,
+                expression,
+            } if expression == "x:=2"
+        ));
+        assert!(matches!(
+            &items[1],
+            BatchItem::Case(LocatedBatchCase { source_line: 2, case })
+                if case.expression == "x+1" && case.expected == ["3"]
+        ));
+        assert!(matches!(
+            &items[2],
+            BatchItem::Unasserted {
+                source_line: 4,
+                expression,
+            } if expression == "delete x"
+        ));
     }
 }

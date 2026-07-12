@@ -160,7 +160,8 @@ fn parse_set_setting(args: &str, span: Span) -> Result<SetSetting, ParseError> {
             .parse::<u32>()
             .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
         Ok(SetSetting::InputBase(num))
-    } else if let Some(val) = strip_setting_prefix(&lower_args, &["output base", "outbase"]) {
+    } else if let Some(val) = strip_setting_prefix(&lower_args, &["output base", "outbase", "base"])
+    {
         let num = val
             .parse::<u32>()
             .map_err(|_| ParseError::new(ParseErrorKind::InvalidSettingValue, span))?;
@@ -295,5 +296,10 @@ mod tests {
             parsed_setting("set max decimals 2"),
             SetSetting::MaxDecimals(2)
         );
+    }
+
+    #[test]
+    fn parses_batch_output_base_alias() {
+        assert_eq!(parsed_setting("/set base 16"), SetSetting::OutputBase(16));
     }
 }
