@@ -287,6 +287,20 @@ fn evaluate_repl_request(
                 })
             })
         }
+        cli::repl::ReplRequest::DefineVariable { name, expression } => calculator
+            .define_session_variable(&name, &expression)
+            .map(|rendering| {
+                Some(cli::repl::ReplEvaluation {
+                    output: String::new(),
+                    answer_rendering: None,
+                    assignment_renderings: vec![(name, rendering)],
+                })
+            })
+            .ok_or_else(|| "Illegal name.".to_string()),
+        cli::repl::ReplRequest::DefineFunction { name, expression } => calculator
+            .define_session_function(&name, &expression)
+            .then_some(None)
+            .ok_or_else(|| "Illegal name.".to_string()),
         cli::repl::ReplRequest::Delete(name) => {
             if calculator.delete_session_variable(&name) {
                 Ok(None)

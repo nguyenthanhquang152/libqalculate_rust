@@ -76,6 +76,8 @@ pub(crate) struct ReplEvaluation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReplRequest {
     Evaluate(String),
+    DefineVariable { name: String, expression: String },
+    DefineFunction { name: String, expression: String },
     Delete(String),
     ReformatLastAnswer,
 }
@@ -377,7 +379,9 @@ where
                     }
                     Ok(None) => {}
                     Err(message) => {
-                        invocation.interactive_settings.truncate(previous_len);
+                        if options.output_style != OutputStyle::CommandStream {
+                            invocation.interactive_settings.truncate(previous_len);
+                        }
                         if writeln!(error, "error: {message}").is_err() {
                             return 2;
                         }
@@ -477,6 +481,31 @@ where
                         if writeln!(error, "error: {message}").is_err() {
                             return 2;
                         }
+                    }
+                }
+            }
+            InteractiveCommand::DefineVariable { name, expression } => {
+                history.record(&line);
+                match evaluate(invocation, ReplRequest::DefineVariable { name, expression }) {
+                    Ok(Some(evaluation)) => update_local_variables(
+                        &mut session.local_variables,
+                        &evaluation.assignment_renderings,
+                    ),
+                    Ok(None) => {}
+                    Err(message) => {
+                        if writeln!(error, "error: {message}").is_err() {
+                            return 2;
+                        }
+                    }
+                }
+            }
+            InteractiveCommand::DefineFunction { name, expression } => {
+                history.record(&line);
+                if let Err(message) =
+                    evaluate(invocation, ReplRequest::DefineFunction { name, expression })
+                {
+                    if writeln!(error, "error: {message}").is_err() {
+                        return 2;
                     }
                 }
             }

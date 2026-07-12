@@ -2582,6 +2582,47 @@ fn cli_stdin_command_stream_reports_invalid_commands_and_continues() {
 }
 
 #[test]
+fn cli_command_stream_definitions_are_silent_stateful_and_preserve_ans() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("1+1\nvariable ans 5\nans\nvariable rate 5\nans\nrate+1\nfunction twice 2*\\x\nans\ntwice(3)\nvariable zero\nzero\nfunction empty\nempty(3)\n")
+        .assert()
+        .success()
+        .stdout("2\n5\n5\n6\n5\n6\n0\n0\n")
+        .stderr("");
+}
+
+#[test]
+fn cli_command_stream_keeps_settings_after_reformat_failure() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("1/3\nset precision 20\n1/3\n")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::starts_with("0.3333333333\n")
+                .and(predicate::str::ends_with("0.33333333333333333333\n")),
+        )
+        .stderr(predicate::str::contains(
+            "session settings are not supported by the C++ FFI fallback path: precision 20",
+        ));
+}
+
+#[test]
+fn cli_command_stream_only_treats_hash_as_an_expression_comment() {
+    let mut cmd = qalc_rs_raw();
+    cmd.args(["-c0", "-nodefs", "-t", "-f", "-"])
+        .env("QALCULATE_DEFINITIONS_DIR", definitions_dir())
+        .write_stdin("set base 16 # invalid command suffix\n1+1 # expression comment\nquit # not a control command\n2+2\n")
+        .assert()
+        .success()
+        .stdout("Illegal base.\n2\n0\n4\n")
+        .stderr("");
+}
+
+#[test]
 fn cli_command_file_runs_before_the_trailing_expression() {
     let command_dir = tempdir().expect("temporary command-file directory");
     let command_path = command_dir.path().join("commands.qalc");

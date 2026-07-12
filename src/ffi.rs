@@ -46,6 +46,11 @@ pub(crate) mod sys {
             name: &str,
             expression: &str,
         ) -> bool;
+        fn qalc_set_session_function(
+            calc: Pin<&mut Calculator>,
+            name: &str,
+            expression: &str,
+        ) -> bool;
         fn qalc_print_session_variable(calc: Pin<&mut Calculator>, name: &str) -> Result<String>;
         fn qalc_clear_session_answers(calc: Pin<&mut Calculator>);
         fn qalc_delete_session_variable(calc: Pin<&mut Calculator>, name: &str) -> bool;
@@ -539,6 +544,38 @@ impl Calculator {
             sys::qalc_delete_session_variable(self.inner.pin_mut(), name)
         };
         native_removed || cpp_removed
+    }
+
+    /// Define a variable without rotating the interactive answer history.
+    pub fn define_session_variable(&mut self, name: &str, expression: &str) -> Option<String> {
+        if self.inner.is_null() {
+            return None;
+        }
+        let defined = {
+            let _guard = FFI_LOCK.lock().unwrap();
+            sys::qalc_set_session_variable(self.inner.pin_mut(), name, expression)
+        };
+        if !defined {
+            return None;
+        }
+
+        if let Ok(parsed) = crate::parser::operators::parse_expression(expression) {
+            if let Ok(value) = crate::eval::evaluate_ast(&parsed, &mut self.native_context) {
+                self.native_context
+                    .variables
+                    .insert(name.to_string(), value);
+            }
+        }
+        self.cpp_session_variable_rendering(name)
+    }
+
+    /// Define a user function without rotating the interactive answer history.
+    pub fn define_session_function(&mut self, name: &str, expression: &str) -> bool {
+        if self.inner.is_null() {
+            return false;
+        }
+        let _guard = FFI_LOCK.lock().unwrap();
+        sys::qalc_set_session_function(self.inner.pin_mut(), name, expression)
     }
 
     /// Return the display rendering of the current typed session answer.

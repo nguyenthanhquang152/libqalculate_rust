@@ -19,6 +19,14 @@ pub(crate) enum InteractiveCommand {
     },
     Info(String),
     Delete(String),
+    DefineVariable {
+        name: String,
+        expression: String,
+    },
+    DefineFunction {
+        name: String,
+        expression: String,
+    },
     Unknown,
     Expression(String),
 }
@@ -86,6 +94,16 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
     let command_name = command_parts.next().unwrap_or_default();
     let command_argument = command_parts.next().map(str::trim).unwrap_or_default();
 
+    if command_name.eq_ignore_ascii_case("variable") {
+        let (name, expression) = parse_named_definition(command_argument)?;
+        return Ok(InteractiveCommand::DefineVariable { name, expression });
+    }
+
+    if command_name.eq_ignore_ascii_case("function") {
+        let (name, expression) = parse_named_definition(command_argument)?;
+        return Ok(InteractiveCommand::DefineFunction { name, expression });
+    }
+
     if command_name.eq_ignore_ascii_case("help") {
         return Ok(InteractiveCommand::Help(
             (!command_argument.is_empty()).then(|| command_argument.to_string()),
@@ -149,6 +167,35 @@ pub(crate) fn parse_interactive_command(line: &str) -> Result<InteractiveCommand
     }
 
     Ok(InteractiveCommand::Expression(trimmed.to_string()))
+}
+
+fn parse_named_definition(argument: &str) -> Result<(String, String), String> {
+    let argument = argument.trim();
+    if argument.is_empty() {
+        return Err("Illegal name.".to_string());
+    }
+
+    let (name, expression) = if let Some(quoted) = argument.strip_prefix('"') {
+        let Some(closing_quote) = quoted.find('"') else {
+            return Err("Illegal name.".to_string());
+        };
+        (&quoted[..closing_quote], quoted[closing_quote + 1..].trim())
+    } else {
+        argument
+            .find(char::is_whitespace)
+            .map_or((argument, ""), |separator| {
+                (&argument[..separator], argument[separator..].trim())
+            })
+    };
+
+    if name.is_empty() {
+        return Err("Illegal name.".to_string());
+    }
+    let expression = expression
+        .strip_prefix('"')
+        .and_then(|expression| expression.strip_suffix('"'))
+        .unwrap_or(expression);
+    Ok((name.to_string(), expression.to_string()))
 }
 
 pub(crate) fn serialize_setting(command: &SessionCommand) -> String {
@@ -276,6 +323,38 @@ mod tests {
         assert_eq!(
             parse_interactive_command("/typo"),
             Ok(InteractiveCommand::Unknown)
+        );
+    }
+
+    #[test]
+    fn parses_variable_and_function_definition_commands() {
+        assert_eq!(
+            parse_interactive_command("variable rate 5"),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "rate".to_string(),
+                expression: "5".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command(r#"function "twice" "2*\x""#),
+            Ok(InteractiveCommand::DefineFunction {
+                name: "twice".to_string(),
+                expression: r"2*\x".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("variable zero"),
+            Ok(InteractiveCommand::DefineVariable {
+                name: "zero".to_string(),
+                expression: String::new(),
+            })
+        );
+        assert_eq!(
+            parse_interactive_command("function empty"),
+            Ok(InteractiveCommand::DefineFunction {
+                name: "empty".to_string(),
+                expression: String::new(),
+            })
         );
     }
 }

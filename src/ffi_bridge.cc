@@ -1,4 +1,6 @@
 #include "ffi_bridge.h"
+#include "Function.h"
+#include "MathStructure-support.h"
 #include "Variable.h"
 
 #include <algorithm>
@@ -636,6 +638,42 @@ bool qalc_set_session_variable(
         calc.calculate(variable_name + ":=(" + source + ")");
         Variable *variable = calc.getActiveVariable(variable_name);
         return variable != nullptr && variable->isLocal();
+    } catch (...) {
+        return false;
+    }
+}
+
+bool qalc_set_session_function(
+    Calculator &calc,
+    rust::Str name,
+    rust::Str expression
+) {
+    try {
+        CalculatorFfiGuard ffi_guard(calc);
+        CalculatorMessageBlocker message_blocker(calc);
+        const std::string function_name(name.data(), name.size());
+        if(!calc.functionNameIsValid(function_name)) return false;
+
+        std::string formula(expression.data(), expression.size());
+        const EvaluationOptions evaluation_options;
+        fix_user_function_expression(formula, evaluation_options);
+        if(calc.hasToExpression(formula)) return false;
+
+        MathFunction *function = calc.getActiveFunction(function_name, true);
+        UserFunction *user_function = dynamic_cast<UserFunction*>(function);
+        if(user_function != nullptr && user_function->isLocal() &&
+            user_function->category() == calc.temporaryCategory()) {
+            user_function->setFormula(formula);
+        } else {
+            function = calc.addFunction(new UserFunction(
+                calc.temporaryCategory(),
+                function_name,
+                formula
+            ));
+            if(function != nullptr) function->setChanged(true);
+        }
+        user_function = dynamic_cast<UserFunction*>(function);
+        return user_function != nullptr && user_function->isLocal();
     } catch (...) {
         return false;
     }
